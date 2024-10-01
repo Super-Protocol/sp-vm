@@ -38,7 +38,7 @@ jobs:
       - name: Build
         run: |
           cd sp-kata-containers
-          echo sp-build.sh
+          cat sp-build.sh
           #sudo apt-get update
           #sudo apt-get -y install curl
           #sudo bash -c ./sp-build.sh
