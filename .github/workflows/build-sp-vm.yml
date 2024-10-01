@@ -56,7 +56,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get -y install curl s3cmd
-          sudo bash -c ./sp-build.sh
+          sudo bash ./sp-build.sh /sp
 
       - name: Get the latest release tag
         run: |
