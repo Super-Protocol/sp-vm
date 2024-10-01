@@ -121,7 +121,7 @@ jobs:
             fi
           done
 
-          JSON="${JSON%,\n}"
+          JSON="${JSON%,}"
           JSON+="\n}"
           echo -e "$JSON" > vm.json
 
