@@ -3,18 +3,11 @@ on:
   workflow_call:
   workflow_dispatch:
     inputs:
-      debug:
-        required: false
-        type: string
-        default: false
-      push-to-registry:
-        required: false
-        type: string
-        default: no
       target-branch:
-        required: false
+        required: true
         type: string
-        default: ""
+        description: sp-kata-containers branch
+        default: "sp-main"
       runs-on:
         required: true
         type: choice
@@ -28,11 +21,13 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
 
     steps:
-
-      - uses: actions/checkout@v4
+      - name: Checkout another repository
+        uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.commit-hash }}
-          fetch-depth: 0 # This is needed in order to keep the commit ids history
+          repository: Super-Protocol/sp-kata-containers
+          path: sp-kata-containers
+          fetch-depth: 0
+          ref: ${{ inputs.target-branch }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -42,45 +37,9 @@ jobs:
 
       - name: Build
         run: |
-          sudo apt-get update
-          sudo apt-get -y install curl
-          sudo bash -c ./sp-build.sh
-          sudo rm -rf $build_dir/rootfs
-        env:
-          PUSH_TO_REGISTRY: ${{ inputs.push-to-registry }}
-          ARTEFACT_REGISTRY: ghcr.io
-          ARTEFACT_REGISTRY_USERNAME: ${{ github.actor }}
-          ARTEFACT_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-          TARGET_BRANCH: ${{ inputs.target-branch }}
-          RELEASE: ${{ inputs.stage == 'release' && 'yes' || 'no' }}
-          DEBUG: ${{ inputs.debug }}
-
-      - uses: shallwefootball/s3-upload-action@master
-        name: Upload files to s3
-        id: s3
-        with:
-          aws_key_id: ${{ secrets.AWS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws_bucket: ${{ secrets.AWS_BUCKET }}
-          endpoint: 's-ed1.cloud.gcore.lu'
-          source_dir: 'build'
-          destination_dir: ${{ github.event.repository.updated_at }}
-
-      - name: Generate os-files.txt
-        run: |
-          echo '${{ steps.s3.outputs.object_locations }}' | jq -r '.[]' > os-files.txt
-
-      - name: Generate release body
-        run: |
-          echo ${{github.ref}} > release.txt
-
-      - name: Make github release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          draft: false
-          #body_path: release.txt
-          #token: ${{ secrets.CUSTOM_GITHUB_TOKEN }}
-          files: |
-            os-files.txt
-            release.txt
+          cd sp-kata-containers
+          echo sp-build.sh
+          #sudo apt-get update
+          #sudo apt-get -y install curl
+          #sudo bash -c ./sp-build.sh
+          #sudo rm -rf $build_dir/rootfs
