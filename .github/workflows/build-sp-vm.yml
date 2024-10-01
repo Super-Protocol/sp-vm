@@ -63,31 +63,6 @@ jobs:
           touch build/vmlinuz
           touch build/rootfs.img
 
-          ls -la ./build
-
-      - name: Rm unnessessory files
-        working-directory: sp-kata-containers/build
-        run: |
-          KEEP_LIST=("rootfs.img" "OVMF.fd" "root_hash.txt" "vmlinuz")
-
-          for item in ./*
-          do
-            if [ -e "$item" ]; then
-              keep=false
-              for keep_item in "${KEEP_LIST[@]}"; do
-                if [[ "$(basename "$item")" == "$keep_item" ]]; then
-                  keep=true
-                  break
-                fi
-              done
-
-              if [ "$keep" = false ]; then
-                echo "rm: $item"
-                rm -rf "$item"
-              fi
-            fi
-          done
-
       - name: Get the latest release tag
         run: |
           latest_tag=$(git describe --tags `git rev-list --tags --max-count=1`)
@@ -116,6 +91,7 @@ jobs:
                 --host=gateway.storjshare.io \
                 --host-bucket="%(bucket)s.gateway.storjshare.io" \
                 put ${UPLOAD_FILES} "s3://${S3_BUCKET}/${{ env.release_version }}/"
+
       - name: Create JSON asset
         working-directory: sp-kata-containers/build
         run: |
@@ -124,15 +100,23 @@ jobs:
 
           for file in "${FILES[@]}"; do
             if [ -f "$file" ]; then
+              key=$file
+              case $file in
+                rootfs.img) key="rootfs" ;;
+                OVMF.fd) key="bios" ;;
+                root_hash.txt) key="root_hash" ;;
+                vmlinuz) key="kernel" ;;
+              esac
+
               SHA256=$(sha256sum "$file" | awk '{print $1}')
-              JSON+="  \"$(basename "$file" .img | tr - _ | tr '[:upper:]' '[:lower:]')\": {\n"
+              JSON+="  \"${key}: {\n"
               JSON+="    \"bucket\": \"${S3_BUCKET}\",\n"
               JSON+="    \"prefix\": \"${{ env.release_version }}\",\n"
               JSON+="    \"filename\": \"$file\",\n"
               JSON+="    \"sha256\": \"$SHA256\"\n"
               JSON+="  },\n"
             else
-              echo "File not found"
+              echo "File ${file} not found"
               exit 1
             fi
           done
