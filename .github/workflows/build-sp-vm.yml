@@ -51,8 +51,8 @@ jobs:
       - name: Build
         working-directory: sp-kata-containers
         run: |
-          #sudo apt-get update
-          #sudo apt-get -y install curl
+          sudo apt-get update
+          sudo apt-get -y install curl s3cmd
           #sudo bash -c ./sp-build.sh
           mkdir build
           touch build/1.txt
@@ -63,13 +63,9 @@ jobs:
         run: |
           KEEP_LIST=("rootfs.img" "OVMF.fd" "root_hash.txt" "vmlinuz")
 
-          for item in ./* ./.*
+          for item in ./*
           do
             if [ -e "$item" ]; then
-              if [[ "$item" == "./." || "$item" == "./.." ]]; then
-                continue
-              fi
-
               keep=false
               for keep_item in "${KEEP_LIST[@]}"; do
                 if [[ "$(basename "$item")" == "$keep_item" ]]; then
@@ -105,13 +101,14 @@ jobs:
           echo "New version: $release_version"
           echo "release_version=$release_version" >> $GITHUB_ENV
 
-      - uses: shallwefootball/s3-upload-action@master
-        name: Upload files to s3
-        id: s3
-        with:
-          aws_key_id: ${{ secrets.S3_ACCESS_KEY }}
-          aws_secret_access_key: ${{ secrets.S3_SECRET_KEY }}
-          aws_bucket: '%(bucket)s.gateway.storjshare.io'
-          endpoint: 'gateway.storjshare.io'
-          source_dir: 'sp-kata-containers/build'
-          destination_dir: ${{ env.release_version }}
+      - name: Upload files to s3
+        working-directory: sp-kata-containers/build
+        run: |
+          UPLOAD_LIST=("rootfs.img" "OVMF.fd" "root_hash.txt" "vmlinuz")
+          for file in "$UPLOAD_LIST[@]}"; do
+            s3cmd --access_key=${{ secrets.S3_ACCESS_KEY }} \
+                  --secret_key=${{ secrets.S3_SECRET_KEY }} \
+                  --host=gateway.storjshare.io \
+                  --host-bucket="%(bucket)s.gateway.storjshare.io" \
+                  put "$file" "s3://builds-vm/${{ env.release_version }}/$file"
+          done
