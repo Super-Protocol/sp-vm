@@ -84,6 +84,8 @@ jobs:
 
       - name: Get the latest release tag
         run: |
+          pwd
+          git log
           latest_tag=$(git describe --tags `git rev-list --tags --max-count=1`)
           if [ -z "$latest_tag" ]; then
             latest_tag="v1.0.0"
