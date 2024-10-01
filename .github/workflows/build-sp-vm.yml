@@ -121,9 +121,19 @@ jobs:
             fi
           done
 
-          JSON="${JSON%,}"
+          JSON="${JSON%,*}"
           JSON+="\n}"
           echo -e "$JSON" > vm.json
 
           echo "JSON successfully created"
           cat vm.json
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.release_version }}
+          release_name: Release ${{ env.release_version }}
+          draft: false
+          prerelease: true
+          files: |
+            sp-kata-containers/build/vm.json
