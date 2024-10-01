@@ -21,7 +21,7 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
 
     steps:
-      - name: Checkout another repository
+      - name: Get sp-kata-containers sources
         uses: actions/checkout@v4
         with:
           repository: Super-Protocol/sp-kata-containers
@@ -38,7 +38,68 @@ jobs:
       - name: Build
         working-directory: sp-kata-containers
         run: |
-          sudo apt-get update
-          sudo apt-get -y install curl
-          sudo bash -c ./sp-build.sh
-          sudo rm -rf build/rootfs
+          #sudo apt-get update
+          #sudo apt-get -y install curl
+          #sudo bash -c ./sp-build.sh
+          mkdir build
+          touch build/1.txt
+
+      - name: Rm unnessessory files
+        working-directory: sp-kata-containers/build
+        run: |
+          KEEP_LIST=("rootfs.img" "OVMF.fd" "root_hash.txt" "vmlinuz")
+
+          for item in ./* ./.*
+          do
+            if [ -e "$item" ]; then
+              if [[ "$item" == "./." || "$item" == "./.." ]]; then
+                continue
+              fi
+
+              keep=false
+              for keep_item in "${KEEP_LIST[@]}"; do
+                if [[ "$(basename "$item")" == "$keep_item" ]]; then
+                  keep=true
+                  break
+                fi
+              done
+
+              if [ "$keep" = false ]; then
+                echo "rm: $item"
+                rm -rf "$item"
+              fi
+            fi
+          done
+
+      - name: Get the latest release tag
+        run: |
+          latest_tag=$(git describe --tags `git rev-list --tags --max-count=1`)
+          if [ -z "$latest_tag" ]; then
+            latest_tag="v1.0.0"
+          fi
+          echo "Latest tag: $latest_tag"
+          echo "latest_tag=$latest_tag" >> $GITHUB_ENV
+
+      - name: Increment version
+        run: |
+          # Получаем версию без 'v' и разделяем на мажор, минор, патч
+          version=$(echo ${{ env.latest_tag }} | sed 's/v//')
+          IFS='.' read -r major minor patch <<< "$version"
+
+          patch=$((patch + 1))
+          release_version="v$major.$minor.$patch"
+
+          echo "New version: $release_version"
+          echo "release_version=$release_version" >> $GITHUB_ENV
+
+      - uses: shallwefootball/s3-upload-action@master
+        name: Upload files to s3
+        id: s3
+        with:
+          working-directory: sp-kata-containers
+          aws_key_id: ${{ secrets.S3_ACCESS_KEY }}
+          aws_secret_access_key: ${{ secrets.S3_SECRET_KEY }}
+          aws_bucket: 'builds-vm'
+          endpoint: 'gateway.storjshare.io'
+          source_dir: 'build'
+          destination_dir: ${{ env.release_version }}
