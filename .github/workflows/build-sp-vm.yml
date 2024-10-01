@@ -56,6 +56,7 @@ jobs:
           #sudo bash -c ./sp-build.sh
           mkdir build
           touch build/1.txt
+          ls -la ./build
 
       - name: Rm unnessessory files
         working-directory: sp-kata-containers/build
