@@ -1,30 +1,67 @@
-# This is a basic workflow to help you get started with Actions
-
-name: Build SuperProtocol VM
-
-# Controls when the workflow will run
+name: Build SuperProtocol OS image
 on:
-  # Allows you to run this workflow manually from the Actions tab
+  workflow_call:
   workflow_dispatch:
+    inputs:
+      debug:
+        required: false
+        type: string
+        default: false
+      push-to-registry:
+        required: false
+        type: string
+        default: no
+      target-branch:
+        required: false
+        type: string
+        default: ""
+      runs-on:
+        required: true
+        type: choice
+        description: github runner for build
+        options:
+        - arc-self-hosted
+        - ubuntu-latest
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
-  build:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-latest
+  build-asset:
+    runs-on: ${{ inputs.runs-on }}
 
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit-hash }}
+          fetch-depth: 0 # This is needed in order to keep the commit ids history
 
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build
         run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+          ls -la .
+          sudo apt-get update
+          sudo apt-get -y install curl
+          sudo bash -c ./sp-build.sh
+          build_dir=$(readlink -f build)
+          ls -la $build_dir
+          sudo rm -rf $build_dir/rootfs
+        env:
+          PUSH_TO_REGISTRY: ${{ inputs.push-to-registry }}
+          ARTEFACT_REGISTRY: ghcr.io
+          ARTEFACT_REGISTRY_USERNAME: ${{ github.actor }}
+          ARTEFACT_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH: ${{ inputs.target-branch }}
+          RELEASE: ${{ inputs.stage == 'release' && 'yes' || 'no' }}
+          DEBUG: ${{ inputs.debug }}
+
+      - name: store-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          #name: super-amd64${{ inputs.tarball-suffix }}
+          path: build/**
+          retention-days: 1
+          if-no-files-found: error
