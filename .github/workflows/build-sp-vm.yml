@@ -19,6 +19,9 @@ on:
 jobs:
   build-asset:
     runs-on: ${{ inputs.runs-on }}
+    env:
+      S3_BUCKET: "builds-vm"
+      UPLOAD_FILES: "rootfs.img OVMF.fd root_hash.txt vmlinuz"
 
     steps:
       - name: Checkout repository
@@ -112,4 +115,31 @@ jobs:
                 --secret_key=${{ secrets.S3_SECRET_KEY }} \
                 --host=gateway.storjshare.io \
                 --host-bucket="%(bucket)s.gateway.storjshare.io" \
-                put rootfs.img OVMF.fd root_hash.txt vmlinuz "s3://builds-vm/${{ env.release_version }}/"
+                put ${UPLOAD_FILES} "s3://${S3_BUCKET}/${{ env.release_version }}/"
+      - name: Create JSON asset
+        working-directory: sp-kata-containers/build
+        run: |
+          IFS=' ' read -r -a FILES <<< "${UPLOAD_FILES}"
+          JSON="{\n"
+
+          for file in "${FILES[@]}"; do
+            if [ -f "$file" ]; then
+              SHA256=$(sha256sum "$file" | awk '{print $1}')
+              JSON+="  \"$(basename "$file" .img | tr - _ | tr '[:upper:]' '[:lower:]')\": {\n"
+              JSON+="    \"bucket\": \"${S3_BUCKET}\",\n"
+              JSON+="    \"prefix\": \"${{ env.release_version }}\",\n"
+              JSON+="    \"filename\": \"$file\",\n"
+              JSON+="    \"sha256\": \"$SHA256\"\n"
+              JSON+="  },\n"
+            else
+              echo "File not found"
+              exit 1
+            fi
+          done
+
+          JSON="${JSON%,\n}"
+          JSON+="\n}"
+          echo -e "$JSON" > vm.json
+
+          echo "JSON successfully created"
+          cat vm.json
