@@ -95,7 +95,6 @@ jobs:
 
       - name: Increment version
         run: |
-          # Получаем версию без 'v' и разделяем на мажор, минор, патч
           version=$(echo ${{ env.latest_tag }} | sed 's/v//')
           IFS='.' read -r major minor patch <<< "$version"
 
@@ -109,10 +108,9 @@ jobs:
         name: Upload files to s3
         id: s3
         with:
-          working-directory: sp-kata-containers
           aws_key_id: ${{ secrets.S3_ACCESS_KEY }}
           aws_secret_access_key: ${{ secrets.S3_SECRET_KEY }}
           aws_bucket: 'builds-vm'
           endpoint: 'gateway.storjshare.io'
-          source_dir: 'build'
+          source_dir: 'sp-kata-containers/build'
           destination_dir: ${{ env.release_version }}
