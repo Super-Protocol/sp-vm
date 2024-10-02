@@ -56,8 +56,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get -y install curl s3cmd
-          sudo bash ./sp-build.sh /sp
+          #sudo bash ./sp-build.sh /sp
+          mkdir build
+          cd build
+          touch ${UPLOAD_FILES}
 
+      - name: Set TAG variable
+        run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
 
       - name: Upload files to s3
         working-directory: sp-kata-containers/build
@@ -66,7 +71,7 @@ jobs:
                 --secret_key=${{ secrets.S3_SECRET_KEY }} \
                 --host=gateway.storjshare.io \
                 --host-bucket="%(bucket)s.gateway.storjshare.io" \
-                put ${UPLOAD_FILES} "s3://${S3_BUCKET}/${{ env.release_version }}/"
+                put ${UPLOAD_FILES} "s3://${S3_BUCKET}/${TAG}/"
 
       - name: Create JSON asset
         working-directory: sp-kata-containers/build
@@ -87,7 +92,7 @@ jobs:
               SHA256=$(sha256sum "$file" | awk '{print $1}')
               JSON+="  \"${key}\": {\n"
               JSON+="    \"bucket\": \"${S3_BUCKET}\",\n"
-              JSON+="    \"prefix\": \"${{ env.release_version }}\",\n"
+              JSON+="    \"prefix\": \"${TAG}\",\n"
               JSON+="    \"filename\": \"$file\",\n"
               JSON+="    \"sha256\": \"$SHA256\"\n"
               JSON+="  },\n"
@@ -107,8 +112,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ runner.id }}
-          release_name: Release <build-${{ runner.id }}>
+          tag_name: ${TAG}
+          release_name: Release <${TAG}>
           draft: false
           prerelease: true
           files: |
