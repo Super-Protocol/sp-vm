@@ -56,10 +56,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get -y install curl s3cmd
-          #sudo bash ./sp-build.sh /sp
-          mkdir build
-          cd build
-          touch ${UPLOAD_FILES}
+          sudo bash ./sp-build.sh /sp
 
       - name: Set TAG variable
         run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
