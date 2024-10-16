@@ -37,13 +37,24 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.target-branch }}
 
-      - name: Get sp-kata-containers sources
+      - name: Get sp-vm-tools sources
         uses: actions/checkout@v4
         with:
-          repository: Super-Protocol/sp-kata-containers
-          path: sp-kata-containers
+          repository: super-protocol/sp-vm-tools
+          path: sp-vm-tools
           fetch-depth: 0
-          ref: ${{ inputs.target-branch }}
+
+      - name: Build ca-initializer
+        run: |
+          cd sp-vm-tools/ca-initializer/linux_builder
+          ./build.sh
+
+      - name: Store ca-initializer binary and SuperProtocol CA
+        run: |
+          CERT_FOLDER=sp-kata-containers/tools/osbuilder/rootfs-builder/ubuntu/superprotocol/cert/
+          cp sp-vm-tools/ca-initializer/dist/ca-initializer-linux  $CERT_FOLDER
+          echo "${{ vars.SP_CA_CRT }}" | tee $CERT_FOLDER/superprotocol-ca.crt > /dev/null
+          ls -la $CERT_FOLDER
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
