@@ -67,7 +67,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get -y install curl
-          sudo -v ; curl https://rclone.org/install.sh | sudo bash
           sudo bash ./sp-build.sh /sp
 
       - name: Set TAG variable
