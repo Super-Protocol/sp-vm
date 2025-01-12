@@ -75,14 +75,23 @@ jobs:
       - name: Upload files to Storj
         working-directory: sp-kata-containers/build
         run: |
-          rclone copy \
-            --multi-thread-streams 8 \
-            --s3-provider Storj \
-            --s3-access-key-id=${{ secrets.S3_ACCESS_KEY }} \
-            --s3-secret-access-key=${{ secrets.S3_SECRET_KEY }} \
-            --s3-endpoint=gateway.storjshare.io \
-            ${UPLOAD_FILES} ":s3:${S3_BUCKET}/${TAG}/"
-          
+         for file in ${UPLOAD_FILES}; do
+           if [ -f "$file" ]; then
+             echo "Uploading $file to ${S3_BUCKET}/${TAG}/"
+             rclone copy \
+               --multi-thread-streams 8 \
+               --s3-provider Storj \
+               --s3-access-key-id=${{ secrets.S3_ACCESS_KEY }} \
+               --s3-secret-access-key=${{ secrets.S3_SECRET_KEY }} \
+               --s3-endpoint=gateway.storjshare.io \
+               "$file" \
+               ":s3:${S3_BUCKET}/${TAG}/"
+           else
+             echo "File ${file} not found"
+             exit 1
+           fi
+         done
+         
       - name: Create JSON asset
         working-directory: sp-kata-containers/build
         run: |
