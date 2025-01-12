@@ -66,21 +66,24 @@ jobs:
         working-directory: sp-kata-containers
         run: |
           sudo apt-get update
-          sudo apt-get -y install curl s3cmd
+          sudo apt-get -y install curl
+          sudo -v ; curl https://rclone.org/install.sh | sudo bash
           sudo bash ./sp-build.sh /sp
 
       - name: Set TAG variable
         run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
 
-      - name: Upload files to s3
+      - name: Upload files to Storj
         working-directory: sp-kata-containers/build
         run: |
-          s3cmd --access_key=${{ secrets.S3_ACCESS_KEY }} \
-                --secret_key=${{ secrets.S3_SECRET_KEY }} \
-                --host=gateway.storjshare.io \
-                --host-bucket="%(bucket)s.gateway.storjshare.io" \
-                put ${UPLOAD_FILES} "s3://${S3_BUCKET}/${TAG}/"
-
+          rclone copy
+            --multi-thread-streams 8 \
+            --s3-provider Storj \
+            --s3-access-key-id=${{ secrets.S3_ACCESS_KEY }} \
+            --s3-secret-access-key=${{ secrets.S3_SECRET_KEY }} \
+            --s3-endpoint=gateway.storjshare.io \
+            ${UPLOAD_FILES} "s3:${S3_BUCKET}/${TAG}/"
+          
       - name: Create JSON asset
         working-directory: sp-kata-containers/build
         run: |
