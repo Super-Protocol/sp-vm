@@ -21,7 +21,7 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     env:
       S3_BUCKET: "builds-vm"
-      UPLOAD_FILES: "rootfs.img OVMF.fd root_hash.txt vmlinuz"
+      UPLOAD_FILES: "rootfs.img OVMF.fd OVMF_AMD.fd root_hash.txt vmlinuz"
 
     steps:
       - name: Checkout repository
@@ -104,6 +104,7 @@ jobs:
               case $file in
                 rootfs.img) key="rootfs" ;;
                 OVMF.fd) key="bios" ;;
+                OVMF_AMD.fd) key="bios_amd" ;;
                 root_hash.txt) key="root_hash" ;;
                 vmlinuz) key="kernel" ;;
               esac
