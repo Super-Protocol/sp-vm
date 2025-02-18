@@ -14,6 +14,7 @@ on:
         description: github runner for build
         options:
         - sp-vm-runner
+        - sp-vm-runner-2
         - ubuntu-latest
 
 jobs:
