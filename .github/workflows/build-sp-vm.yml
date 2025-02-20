@@ -63,15 +63,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set TAG variable
+        run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
+
       - name: Build
         working-directory: sp-kata-containers
         run: |
           sudo apt-get update
           sudo apt-get -y install curl
           sudo bash ./sp-build.sh /sp
-
-      - name: Set TAG variable
-        run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
 
       - name: Upload files to Storj
         working-directory: sp-kata-containers/build
@@ -92,43 +92,6 @@ jobs:
              exit 1
            fi
          done
-         
-      - name: Create JSON asset
-        working-directory: sp-kata-containers/build
-        run: |
-          IFS=' ' read -r -a FILES <<< "${UPLOAD_FILES}"
-          JSON="{\n"
-
-          for file in "${FILES[@]}"; do
-            if [ -f "$file" ]; then
-              key=$file
-              case $file in
-                rootfs.img) key="rootfs" ;;
-                OVMF.fd) key="bios" ;;
-                OVMF_AMD.fd) key="bios_amd" ;;
-                root_hash.txt) key="root_hash" ;;
-                vmlinuz) key="kernel" ;;
-              esac
-
-              SHA256=$(sha256sum "$file" | awk '{print $1}')
-              JSON+="  \"${key}\": {\n"
-              JSON+="    \"bucket\": \"${S3_BUCKET}\",\n"
-              JSON+="    \"prefix\": \"${TAG}\",\n"
-              JSON+="    \"filename\": \"$file\",\n"
-              JSON+="    \"sha256\": \"$SHA256\"\n"
-              JSON+="  },\n"
-            else
-              echo "File ${file} not found"
-              exit 1
-            fi
-          done
-
-          JSON="${JSON%,*}"
-          JSON+="\n}"
-          echo -e "$JSON" > vm.json
-
-          echo "JSON successfully created"
-          cat vm.json
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
