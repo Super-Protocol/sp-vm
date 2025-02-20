@@ -62,15 +62,15 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set TAG variable
+        run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
+
       - name: Build
         working-directory: sp-kata-containers
         run: |
           sudo apt-get update
           sudo apt-get -y install curl
           sudo bash ./sp-build.sh /sp
-
-      - name: Set TAG variable
-        run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
 
       - name: Upload files to Storj
         working-directory: sp-kata-containers/build
@@ -91,11 +91,6 @@ jobs:
              exit 1
            fi
          done
-         
-      - name: Create JSON asset
-        working-directory: sp-kata-containers
-        run: |
-          bash ./sp_calc_hashes.sh
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
