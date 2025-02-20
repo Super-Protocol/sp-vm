@@ -71,7 +71,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get -y install curl
-          sudo bash ./sp-build.sh /sp
+          sudo -E bash ./sp-build.sh /sp
 
       - name: Upload files to Storj
         working-directory: sp-kata-containers/build
