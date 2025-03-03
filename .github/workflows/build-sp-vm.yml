@@ -23,7 +23,6 @@ jobs:
     env:
       S3_BUCKET: "builds-vm"
       UPLOAD_FILES: "rootfs.img OVMF.fd OVMF_AMD.fd root_hash.txt vmlinuz"
-      SP_CA_CRT: "${{ vars.SP_CA_CRT }}"
 
     steps:
       - name: Checkout repository
@@ -39,6 +38,10 @@ jobs:
 
       - name: Set TAG variable
         run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
+
+      - name: Load CA cert
+        run: |
+          echo "${{ vars.SP_CA_CRT }}" > ca.crt;
 
       - name: Build
         run: |
