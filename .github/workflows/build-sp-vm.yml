@@ -47,8 +47,9 @@ jobs:
           sudo -E bash \
               ./build.sh \
               --checkout-to "${{ inputs.target-branch }}" \
-              --upload-s3-bucket "$UPLOAD_S3_BUCKET" \
+              --upload-s3-bucket "$S3_BUCKET" \
               --upload-release-tag "$TAG" \
+              --sp-ca-crt-file "$(realpath ca.crt)" \
               --upload-files "$UPLOAD_FILES";
 
       - name: Upload files to Storj
@@ -80,3 +81,8 @@ jobs:
           prerelease: true
           files: |
             sp-kata-containers/build/vm.json
+
+      - name: Cleanup
+        if: ${{ always() }}
+        run: |
+          rm -rf ca.crt;
