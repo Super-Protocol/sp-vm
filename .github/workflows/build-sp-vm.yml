@@ -39,12 +39,14 @@ jobs:
       - name: Set TAG variable
         run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
 
+      - name: Load CA cert
+        run: echo "SP_CA_CRT=${{ vars.SP_CA_CRT }}" >> $GITHUB_ENV
+
       - name: Build
         run: |
           sudo apt-get update
           sudo apt-get -y install curl
           sudo -E bash \
-              "SP_CA_CRT=${{ vars.SP_CA_CRT }}" \
               ./build.sh \
               --checkout-to "${{ inputs.target-branch }}" \
               --upload-s3-bucket "$UPLOAD_S3_BUCKET" \
