@@ -374,18 +374,19 @@ function main() {
     update_submodules;
     git_clone_repo;
     git_checkout_to_ref;
+    create_build_dir;
 
     # Build part
-    #create_build_dir;
-    #build_ca_initializer;
-    #build_kernel;
-    #add_deb_to_rootfs;
-    #build_rootfs;
-    #build_image;
-    #copy_artifacts;
+    build_ca_initializer;
+    build_kernel;
+    add_deb_to_rootfs;
+    build_rootfs;
+    build_image;
+
+    # Packaging
+    copy_artifacts;
     template_run_vm_sh;
     calc_hashes;
-    # pushd and build
 }
 
 parse_args "$@";
