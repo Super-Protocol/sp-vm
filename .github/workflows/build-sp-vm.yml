@@ -50,10 +50,10 @@ jobs:
           sudo -E bash \
               ./build.sh \
               --checkout-to "${{ inputs.target-branch }}" \
-              --upload-s3-bucket "$S3_BUCKET" \
-              --upload-release-tag "$TAG" \
+              --prepare-to-upload-s3-bucket "$S3_BUCKET" \
+              --prepare-to-upload-release-tag "$TAG" \
               --sp-ca-crt-file "$(realpath ca.crt)" \
-              --upload-files "$UPLOAD_FILES";
+              --prepare-to-upload-files "$UPLOAD_FILES";
 
       - name: Upload files to Storj
         working-directory: kata-containers/build

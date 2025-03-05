@@ -8,17 +8,17 @@ set -euo pipefail;
 DEFAULT_GITHUB_REPO_URL="https://github.com/Super-Protocol/sp-kata-containers";
 DEFAULT_GITHUB_CHECKOUT_TO="sp-main";
 DEFAULT_PROVIDER_CONFIG_DST="/sp";
-DEFAULT_UPLOAD_RELEASE_TAG="build-0";
-DEFAULT_UPLOAD_S3_BUCKET="builds-vm";
-DEFAULT_UPLOAD_FILES="rootfs.img OVMF.fd OVMF_AMD.fd root_hash.txt vmlinuz";
+DEFAULT_PREPARE_TO_UPLOAD_RELEASE_TAG="build-0";
+DEFAULT_PREPARE_TO_UPLOAD_S3_BUCKET="builds-vm";
+DEFAULT_PREPARE_TO_UPLOAD_FILES="rootfs.img OVMF.fd OVMF_AMD.fd root_hash.txt vmlinuz";
 
 # Command line args
 GITHUB_REPO_URL="$DEFAULT_GITHUB_REPO_URL";
 GITHUB_CHECKOUT_TO="$DEFAULT_GITHUB_CHECKOUT_TO";
 PROVIDER_CONFIG_DST="$DEFAULT_PROVIDER_CONFIG_DST";
-UPLOAD_RELEASE_TAG="$DEFAULT_UPLOAD_RELEASE_TAG";
-UPLOAD_S3_BUCKET="$DEFAULT_UPLOAD_S3_BUCKET";
-UPLOAD_FILES="$DEFAULT_UPLOAD_FILES";
+PREPARE_TO_UPLOAD_RELEASE_TAG="$DEFAULT_PREPARE_TO_UPLOAD_RELEASE_TAG";
+PREPARE_TO_UPLOAD_S3_BUCKET="$DEFAULT_PREPARE_TO_UPLOAD_S3_BUCKET";
+PREPARE_TO_UPLOAD_FILES="$DEFAULT_PREPARE_TO_UPLOAD_FILES";
 SP_CA_CRT="${SP_CA_CRT:-""}";
 ALWAYS_CLONE_FLAG="";
 SKIP_PULL_FLAG="";
@@ -34,12 +34,8 @@ LIB_DIR="$SCRIPT_DIR/lib";
 KERNEL_NAME="nvidia-gpu-confidential";
 DISTRO="ubuntu";
 OS_VERSION="noble";
-KUDA_KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb";
+CUDA_KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb";
 ROOTFS_EXTRA_PKGS="init openssh-server netplan.io curl htop open-iscsi cryptsetup ca-certificates gnupg2 kmod";
-
-VM_MEMORY="128G";
-STATE_DISK_SIZE="300G";
-VM_CPU="8";
 
 function export_vars_for_other_scripts() {
     export ROOTFS_DIR;
@@ -102,9 +98,9 @@ function warn_about_defaults() {
     check_default_arg_value "GITHUB_REPO_URL" "$GITHUB_REPO_URL" "$DEFAULT_GITHUB_REPO_URL";
     check_default_arg_value "GITHUB_CHECKOUT_TO" "$GITHUB_CHECKOUT_TO" "$DEFAULT_GITHUB_CHECKOUT_TO";
     check_default_arg_value "PROVIDER_CONFIG_DST" "$PROVIDER_CONFIG_DST" "$DEFAULT_PROVIDER_CONFIG_DST";
-    check_default_arg_value "UPLOAD_RELEASE_TAG" "$UPLOAD_RELEASE_TAG" "$DEFAULT_UPLOAD_RELEASE_TAG";
-    check_default_arg_value "UPLOAD_S3_BUCKET" "$UPLOAD_S3_BUCKET" "$DEFAULT_UPLOAD_S3_BUCKET";
-    check_default_arg_value "UPLOAD_FILES" "$UPLOAD_FILES" "$DEFAULT_UPLOAD_FILES";
+    check_default_arg_value "PREPARE_TO_UPLOAD_RELEASE_TAG" "$PREPARE_TO_UPLOAD_RELEASE_TAG" "$DEFAULT_PREPARE_TO_UPLOAD_RELEASE_TAG";
+    check_default_arg_value "PREPARE_TO_UPLOAD_S3_BUCKET" "$PREPARE_TO_UPLOAD_S3_BUCKET" "$DEFAULT_PREPARE_TO_UPLOAD_S3_BUCKET";
+    check_default_arg_value "PREPARE_TO_UPLOAD_FILES" "$PREPARE_TO_UPLOAD_FILES" "$DEFAULT_PREPARE_TO_UPLOAD_FILES";
 }
 
 function check_git() {
@@ -181,7 +177,7 @@ function add_deb_to_rootfs() {
     find "$KATA_REPO_DIR/tools/packaging/kata-deploy/local-build/build/kernel-$KERNEL_NAME/builddir/" \
         -name "*.deb" \
         -exec cp {} "$BUILD_DIR/rootfs/opt/deb/" \;;
-    wget -P "$BUILD_DIR/rootfs/opt/deb/nvidia" "$KUDA_KEYRING_URL";
+    wget -P "$BUILD_DIR/rootfs/opt/deb/nvidia" "$CUDA_KEYRING_URL";
 }
 
 function build_ca_initializer() {
@@ -233,19 +229,6 @@ function copy_artifacts() {
     cp "$KATA_REPO_DIR/tools/osbuilder/rootfs-builder/ubuntu/superprotocol"/{OVMF.fd,OVMF_AMD.fd} "$KATA_REPO_DIR/build";
 }
 
-function template_run_vm_sh() {
-    log_info "Generating run_vm.sh";
-    ROOT_HASH="$(grep 'Root hash' "$BUILD_DIR/root_hash.txt" | awk '{print $3}')" \
-        VM_CPU="$VM_CPU" \
-        VM_MEMORY="$VM_MEMORY" \
-        STATE_DISK_SIZE="$STATE_DISK_SIZE" \
-        envsubst \
-	    '$ROOT_HASH,$VM_CPU,$VM_MEMORY,$STATE_DISK_SIZE' \
-	    < "$SCRIPT_DIR/templates/run_vm.sh.tmpl" \
-	    > "$BUILD_DIR/run_vm.sh";
-    chmod +x "$BUILD_DIR/run_vm.sh";
-}
-
 function calc_hashes() {
     log_info "Calculating file hashes to file $BUILD_DIR/vm.json";
     local KEY;
@@ -253,7 +236,7 @@ function calc_hashes() {
     local FILES;
     local SHA256;
     local JSON="{\n";
-    IFS=' ' read -r -a FILES <<< "$UPLOAD_FILES";
+    IFS=' ' read -r -a FILES <<< "$PREPARE_TO_UPLOAD_FILES";
     for FILE in "${FILES[@]}"; do
         if [ -f "$BUILD_DIR/$FILE" ]; then
             KEY="$FILE";
@@ -271,8 +254,8 @@ function calc_hashes() {
 
             SHA256=$(sha256sum "$BUILD_DIR/$FILE" | awk '{print $1}');
             JSON+="  \"$KEY\": {\n";
-            JSON+="    \"bucket\": \"$UPLOAD_S3_BUCKET\",\n";
-            JSON+="    \"prefix\": \"$UPLOAD_RELEASE_TAG\",\n";
+            JSON+="    \"bucket\": \"$PREPARE_TO_UPLOAD_S3_BUCKET\",\n";
+            JSON+="    \"prefix\": \"$PREPARE_TO_UPLOAD_RELEASE_TAG\",\n";
             JSON+="    \"filename\": \"$FILE\",\n";
             JSON+="    \"sha256\": \"$SHA256\"\n";
             JSON+="  },\n";
@@ -307,19 +290,19 @@ function parse_args() {
                 GITHUB_REPO_URL="$2";
                 shift 2;
                 ;;
-            --upload-release-tag)
+            --prepare-to-upload-release-tag)
                 check_arg_value "$1" "$2";
-                UPLOAD_RELEASE_TAG="$2";
+                PREPARE_TO_UPLOAD_RELEASE_TAG="$2";
                 shift 2;
                 ;;
-            --upload-files)
+            --prepare-to-upload-files)
                 check_arg_value "$1" "$2";
-                UPLOAD_FILES="$2";
+                PREPARE_TO_UPLOAD_FILES="$2";
                 shift 2;
                 ;;
-            --upload-s3-bucket)
+            --prepare-to-upload-s3-bucket)
                 check_arg_value "$1" "$2";
-                UPLOAD_S3_BUCKET="$2";
+                PREPARE_TO_UPLOAD_S3_BUCKET="$2";
                 shift 2;
                 ;;
             --checkout-to)
@@ -385,7 +368,6 @@ function main() {
 
     # Packaging
     copy_artifacts;
-    template_run_vm_sh;
     calc_hashes;
 }
 
