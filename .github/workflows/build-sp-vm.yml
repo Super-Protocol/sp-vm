@@ -83,7 +83,7 @@ jobs:
           draft: false
           prerelease: true
           files: |
-            sp-kata-containers/build/vm.json
+            kata-containers/build/vm.json
 
       - name: Cleanup
         if: ${{ always() }}
