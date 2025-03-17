@@ -30,33 +30,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get sp-kata-containers sources
-        uses: actions/checkout@v4
-        with:
-          repository: Super-Protocol/sp-kata-containers
-          path: sp-kata-containers
-          fetch-depth: 0
-          ref: ${{ inputs.target-branch }}
-
-      - name: Get sp-vm-tools sources
-        uses: actions/checkout@v4
-        with:
-          repository: super-protocol/sp-vm-tools
-          path: sp-vm-tools
-          fetch-depth: 0
-
-      - name: Build ca-initializer
-        run: |
-          cd sp-vm-tools/ca-initializer/linux_builder
-          ./build.sh
-
-      - name: Store ca-initializer binary and SuperProtocol CA
-        run: |
-          CERT_FOLDER=sp-kata-containers/tools/osbuilder/rootfs-builder/ubuntu/superprotocol/cert/
-          cp sp-vm-tools/ca-initializer/dist/ca-initializer-linux  $CERT_FOLDER
-          echo "${{ vars.SP_CA_CRT }}" | tee $CERT_FOLDER/superprotocol-ca.crt > /dev/null
-          ls -la $CERT_FOLDER
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -66,15 +39,24 @@ jobs:
       - name: Set TAG variable
         run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
 
+      - name: Load CA cert
+        run: |
+          echo "${{ vars.SP_CA_CRT }}" > ca.crt;
+
       - name: Build
-        working-directory: sp-kata-containers
         run: |
           sudo apt-get update
           sudo apt-get -y install curl
-          sudo -E bash ./sp-build.sh /sp
+          sudo -E bash \
+              ./build.sh \
+              --checkout-to "${{ inputs.target-branch }}" \
+              --prepare-to-upload-s3-bucket "$S3_BUCKET" \
+              --prepare-to-upload-release-tag "$TAG" \
+              --sp-ca-crt-file "$(realpath ca.crt)" \
+              --prepare-to-upload-files "$UPLOAD_FILES";
 
       - name: Upload files to Storj
-        working-directory: sp-kata-containers/build
+        working-directory: kata-containers/build
         run: |
          for file in ${UPLOAD_FILES}; do
            if [ -f "$file" ]; then
@@ -102,3 +84,8 @@ jobs:
           prerelease: true
           files: |
             sp-kata-containers/build/vm.json
+
+      - name: Cleanup
+        if: ${{ always() }}
+        run: |
+          rm -rf ca.crt;
