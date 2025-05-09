@@ -180,10 +180,18 @@ function add_deb_to_rootfs() {
     wget -P "$BUILD_DIR/rootfs/opt/deb/nvidia" "$CUDA_KEYRING_URL";
 }
 
-function prepare_superprotocol_ca_cert() {
+function prepare_superprotocol_certs() {
     log_info "Building ca initializer";
     local CERT_FOLDER="$KATA_REPO_DIR/tools/osbuilder/rootfs-builder/ubuntu/superprotocol/cert";
     echo "$SP_CA_CRT" > "$CERT_FOLDER/superprotocol-ca.crt";
+
+    SUPER_REGISTRY_HOST="registry.superprotocol.local";
+    
+    openssl genrsa -out ${CERT_FOLDER}/local-ca.key 2048
+    openssl req -x509 -new -nodes -key ${CERT_FOLDER}/local-ca.key -sha256 -days 3650 -out ${CERT_FOLDER}/local-ca.crt -subj "/ST=Milk Galaxy/L=Planet Earth/O=SuperProtocol/OU=MyUnit/CN=SuperProtocol.com"
+    openssl genrsa -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.key 2048
+    openssl req -new -key ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.key -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.csr -subj "/ST=Milk Galaxy/L=Planet Earth/O=SuperProtocol/OU=MyUnit/CN=${SUPER_REGISTRY_HOST}"
+    openssl x509 -req -CA ${CERT_FOLDER}/local-ca.crt -CAkey ${CERT_FOLDER}/local-ca.key -CAcreateserial -in ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.csr -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.crt -days 3650 -sha256
 }
 
 function build_rootfs() {
@@ -353,7 +361,7 @@ function main() {
     create_build_dir;
 
     # Build part
-    prepare_superprotocol_ca_cert;
+    prepare_superprotocol_certs;
     build_kernel;
     add_deb_to_rootfs;
     build_rootfs;
