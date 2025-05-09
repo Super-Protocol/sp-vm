@@ -180,17 +180,10 @@ function add_deb_to_rootfs() {
     wget -P "$BUILD_DIR/rootfs/opt/deb/nvidia" "$CUDA_KEYRING_URL";
 }
 
-function build_ca_initializer() {
+function prepare_superprotocol_ca_cert() {
     log_info "Building ca initializer";
     local CERT_FOLDER="$KATA_REPO_DIR/tools/osbuilder/rootfs-builder/ubuntu/superprotocol/cert";
-    pushd "$LIB_DIR/sp-vm-tools/ca-initializer/linux_builder" >/dev/null;
-
-    ./build.sh;
-
-    cp "$LIB_DIR/sp-vm-tools/ca-initializer/dist/ca-initializer-linux"  "$CERT_FOLDER";
     echo "$SP_CA_CRT" > "$CERT_FOLDER/superprotocol-ca.crt";
-
-    popd >/dev/null;
 }
 
 function build_rootfs() {
@@ -360,7 +353,7 @@ function main() {
     create_build_dir;
 
     # Build part
-    build_ca_initializer;
+    prepare_superprotocol_ca_cert;
     build_kernel;
     add_deb_to_rootfs;
     build_rootfs;
