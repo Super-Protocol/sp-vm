@@ -187,11 +187,11 @@ function prepare_superprotocol_certs() {
 
     SUPER_REGISTRY_HOST="registry.superprotocol.local";
     
-    openssl genrsa -out ${CERT_FOLDER}/local-ca.key 2048
-    openssl req -x509 -new -nodes -key ${CERT_FOLDER}/local-ca.key -sha256 -days 3650 -out ${CERT_FOLDER}/local-ca.crt -subj "/ST=Milk Galaxy/L=Planet Earth/O=SuperProtocol/OU=MyUnit/CN=SuperProtocol.com"
+    openssl genrsa -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.key 2048
+    openssl req -x509 -new -nodes -key ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.key -sha256 -days 3650 -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.crt -subj "/ST=Milk Galaxy/L=Planet Earth/O=SuperProtocol/OU=MyUnit/CN=SuperProtocol.com"
     openssl genrsa -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.key 2048
     openssl req -new -key ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.key -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.csr -subj "/ST=Milk Galaxy/L=Planet Earth/O=SuperProtocol/OU=MyUnit/CN=${SUPER_REGISTRY_HOST}"
-    openssl x509 -req -CA ${CERT_FOLDER}/local-ca.crt -CAkey ${CERT_FOLDER}/local-ca.key -CAcreateserial -in ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.csr -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.crt -days 3650 -sha256
+    openssl x509 -req -CA ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.crt -CAkey ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.key -CAcreateserial -in ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.csr -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.crt -days 3650 -sha256
 }
 
 function build_rootfs() {
