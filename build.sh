@@ -193,8 +193,10 @@ function prepare_superprotocol_certs() {
 
     # Create registry cert
     openssl genrsa -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.key 2048
-    echo -e "[req]\ndistinguished_name=req_distinguished_name\nreq_extensions=v3_req\nprompt=no\n[req_distinguished_name]\nST=Milk Galaxy\nL=Planet Earth\nO=SuperProtocol\nOU=MyUnit\nCN=${SUPER_REGISTRY_HOST}\n[v3_req]\nsubjectAltName=DNS:${SUPER_REGISTRY_HOST}\n[v3_ca]\nsubjectAltName=DNS:${SUPER_REGISTRY_HOST}\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment" > ${CERT_FOLDER}/san.cnf
-    openssl req -new -x509 -key ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.key -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.crt -config ${CERT_FOLDER}/san.cnf -extensions v3_ca -days 3650 -sha256
+    printf "[req]\ndefault_bits = 2048\nprompt = no\ndistinguished_name = req_distinguished_name\nreq_extensions = req_ext\n[req_distinguished_name]\nC = US\nST = Milk Galaxy\nL = Planet Earth\nO = SuperProtocol\nOU = MyUnit\nCN = ${SUPER_REGISTRY_HOST}\n[req_ext]\nsubjectAltName = @alt_names\n[alt_names]\nDNS.1 = ${SUPER_REGISTRY_HOST}\n[v3_ext]\nsubjectAltName = @alt_names\nbasicConstraints = CA:FALSE\nkeyUsage = digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment\n" > ${CERT_FOLDER}/san.cnf
+    openssl req -new -key ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.key -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.csr -config ${CERT_FOLDER}/san.cnf
+    openssl x509 -req -in ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.csr -CA ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.crt -CAkey ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.key -CAcreateserial -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.crt -days 3650 -sha256 -extfile ${CERT_FOLDER}/san.cnf -extensions v3_ext
+
 }
 
 function build_rootfs() {
