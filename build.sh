@@ -180,17 +180,23 @@ function add_deb_to_rootfs() {
     wget -P "$BUILD_DIR/rootfs/opt/deb/nvidia" "$CUDA_KEYRING_URL";
 }
 
-function build_ca_initializer() {
+function prepare_superprotocol_certs() {
     log_info "Building ca initializer";
     local CERT_FOLDER="$KATA_REPO_DIR/tools/osbuilder/rootfs-builder/ubuntu/superprotocol/cert";
-    pushd "$LIB_DIR/sp-vm-tools/ca-initializer/linux_builder" >/dev/null;
-
-    ./build.sh;
-
-    cp "$LIB_DIR/sp-vm-tools/ca-initializer/dist/ca-initializer-linux"  "$CERT_FOLDER";
     echo "$SP_CA_CRT" > "$CERT_FOLDER/superprotocol-ca.crt";
 
-    popd >/dev/null;
+    SUPER_REGISTRY_HOST="registry.superprotocol.local";
+    
+    # Create CA cert
+    openssl genrsa -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.key 2048
+    openssl req -x509 -new -nodes -key ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.key -sha256 -days 3650 -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.crt -subj "/ST=Milk Galaxy/L=Planet Earth/O=SuperProtocol/OU=MyUnit/CN=SuperProtocol.com"
+
+    # Create registry cert
+    openssl genrsa -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.key 2048
+    printf "[req]\ndefault_bits = 2048\nprompt = no\ndistinguished_name = req_distinguished_name\nreq_extensions = req_ext\n[req_distinguished_name]\nC = US\nST = Milk Galaxy\nL = Planet Earth\nO = SuperProtocol\nOU = MyUnit\nCN = ${SUPER_REGISTRY_HOST}\n[req_ext]\nsubjectAltName = @alt_names\n[alt_names]\nDNS.1 = ${SUPER_REGISTRY_HOST}\n[v3_ext]\nsubjectAltName = @alt_names\nbasicConstraints = CA:FALSE\nkeyUsage = digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment\n" > ${CERT_FOLDER}/san.cnf
+    openssl req -new -key ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.key -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.csr -config ${CERT_FOLDER}/san.cnf
+    openssl x509 -req -in ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.csr -CA ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.crt -CAkey ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.ca.key -CAcreateserial -out ${CERT_FOLDER}/${SUPER_REGISTRY_HOST}.crt -days 3650 -sha256 -extfile ${CERT_FOLDER}/san.cnf -extensions v3_ext
+
 }
 
 function build_rootfs() {
@@ -360,7 +366,7 @@ function main() {
     create_build_dir;
 
     # Build part
-    build_ca_initializer;
+    prepare_superprotocol_certs;
     build_kernel;
     add_deb_to_rootfs;
     build_rootfs;
