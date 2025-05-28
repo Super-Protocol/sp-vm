@@ -35,7 +35,7 @@ KERNEL_NAME="nvidia-gpu-confidential";
 DISTRO="ubuntu";
 OS_VERSION="noble";
 CUDA_KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb";
-ROOTFS_EXTRA_PKGS="init openssh-server netplan.io curl htop open-iscsi cryptsetup ca-certificates gnupg2 kmod";
+ROOTFS_EXTRA_PKGS="init openssh-server netplan.io curl htop open-iscsi cryptsetup ca-certificates gnupg2 kmod gcc-13 build-essential";
 
 function export_vars_for_other_scripts() {
     export ROOTFS_DIR;
