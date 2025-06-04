@@ -1,0 +1,7 @@
+{
+  "mrenclave": "fa768b233c47afbc4d8a31b52eda884116435d9958399ba76fb2526f6d3b09b2",
+  "signature": "tLLl9ufpJVOP5e38frjMy/pw4i9xiBYHq/FFWRHXPLYsOgVNLXbnbgigHLfo8I3R5A78ZpboIBDIQtfMR5BQYwfYQGvGDFFwgiV7/DeIpS7gR/NptR78dML02EXeyE7rT7M8K4s8yLg8noyyXY/Y/kPzM1f60hUx1O6JO8NDODF7+evnuTZudoODJAPTpaS/HMA/fun+wHt7dBwapkOllOZQRmBzQ0Jp9Tbhh9BKr4ez7T1h9yleQcJEz8+PTBJAgHJJu/8Hm8XGQl50fWz467m8Ykniui+JMOv1cHCbttVyPOXWU9ODIj2drribyEe0dnqk+vLRmzQp/Ux0hbigTPmVXMEIW4TD1aAkf5JnCgsMr2j2GDMlfjLPYBz5bbqPdnbk3ldrFRphAXnMtdkqWHEy+SGKXJdSB2o+2M72sKou7u00ObCcu6fekS8ZNjkes22pcouSlml5qGThAY7RlA74rb8NGv/VmQE5IeXJmoBX09gWTAPpmx8UZBvJXphk",
+  "build": "build-152",
+  "description": "root=/dev/vda1 console=ttyS0 systemd.log_level=trace systemd.log_target=log rootfs_verity.scheme=dm-verity rootfs_verity.hash=ed502157c1842810666198cf1e3664d2e5519a1de12463a804472338afde54cd argo_branch=develop argo_sp_env=develop sp-debug=true build=build-152",
+  "creationDate": "2025-06-04T15:03:42.725Z"
+}
