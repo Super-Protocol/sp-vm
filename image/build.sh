@@ -13,7 +13,16 @@ qemu-img create -f raw test.raw 3G
 IMG_PATH=$(realpath test.raw);
 
 # Partitions etc
-parted --script test.raw mklabel gpt mkpart bls_boot ext4 1MiB 1074MiB   mkpart bios_grub 1075MiB 1079MiB   set 2 bios_grub on   mkpart ESP fat32 1079MiB 1190MiB  set 1 bls_boot on set 3 boot on   set 3 esp on   mkpart rootfs ext4 1190MiB 100%
+parted --script test.raw \
+    mklabel gpt \
+    mkpart bls_boot ext4 1MiB 1074MiB \
+    set 1 bls_boot on \
+    mkpart bios_grub 1075MiB 1079MiB \
+    set 2 bios_grub on \
+    mkpart ESP fat32 1079MiB 1190MiB \
+    set 3 boot on \
+    set 3 esp on \
+    mkpart rootfs ext4 1190MiB 100%
 
 # Mounting image
 LOOP_DEV=$(losetup --find --show --partscan test.raw);
@@ -44,11 +53,22 @@ mkdir -p /mnt/boot/efi/EFI/BOOT;
 
 # Installing the GRUB
 ## UEFI
-grub-install --target=x86_64-efi --efi-directory=/mnt/boot/efi --boot-directory=/mnt/boot --no-floppy --modules="normal part_gpt part_msdos multiboot" --no-nvram --removable --bootloader-id=GRUB "$LOOP_DEV";
-#cp /mnt/boot/efi/EFI/GRUB/grubx64.efi /mnt/boot/efi/EFI/BOOT/BOOTX64.EFI;
+grub-install \
+    --target=x86_64-efi \
+    --efi-directory=/mnt/boot/efi \
+    --boot-directory=/mnt/boot \
+    --no-floppy \
+    --modules="normal part_gpt part_msdos multiboot" \
+    --no-nvram \
+    --removable \
+    --bootloader-id=GRUB \
+    "$LOOP_DEV";
 
 ## BIOS
-grub-install --target i386-pc --boot-directory=/mnt/boot "$LOOP_DEV";
+grub-install \
+    --target i386-pc \
+    --boot-directory=/mnt/boot \
+    "$LOOP_DEV";
 
 # Adding files
 cp /files/vmlinuz /mnt/boot/
