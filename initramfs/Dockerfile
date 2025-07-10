@@ -1,8 +1,8 @@
 FROM ubuntu:24.04 AS busybox_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential
-ARG busybox_version=1.36.1
-ADD https://busybox.net/downloads/busybox-${busybox_version}.tar.bz2 /tmp/busybox-${busybox_version}.tar.bz2
-RUN tar -C /tmp -xvf/tmp/busybox-${busybox_version}.tar.bz2
+ARG busybox_version=1_36_1
+ADD https://github.com/mirror/busybox/archive/refs/tags/${busybox_version}.tar.gz /tmp/busybox-${busybox_version}.tar.gz
+RUN tar -C /tmp -xvf/tmp/busybox-${busybox_version}.tar.gz
 WORKDIR /tmp/busybox-${busybox_version}
 ADD files/busybox_config /tmp/busybox-${busybox_version}/.config
 RUN make -j
