@@ -1,3 +1,4 @@
+FROM initramfs_builder AS initramfs_builder
 FROM ubuntu:24.04 AS kernel_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential curl libssl-dev bc elfutils libelf-dev bison flex cpio kmod rsync debhelper
 ARG KERNEL_VERSION=6.12.13

@@ -43,3 +43,6 @@ if ! check_sourced; then
     show_usage;
     exit 1;
 fi
+
+unset -f show_usage;
+unset -f check_sourced;
