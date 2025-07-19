@@ -23,13 +23,15 @@ function chroot_init() {
     mount -t sysfs -o ro none "$OUTPUTDIR/sys";
     mount -t proc -o ro none "$OUTPUTDIR/proc";
     mount -t tmpfs none "$OUTPUTDIR/tmp";
+    mount --bind /dev "$OUTPUTDIR/dev";
     mount -t devpts none "$OUTPUTDIR/dev/pts";
 }
 function chroot_deinit() {
-    umount "$OUTPUTDIR/sys";
-    umount "$OUTPUTDIR/proc";
-    umount "$OUTPUTDIR/tmp";
-    umount "$OUTPUTDIR/dev/pts";
+    umount "$OUTPUTDIR/sys" || true;
+    umount "$OUTPUTDIR/proc" || true;
+    umount "$OUTPUTDIR/tmp" || true;
+    ummount "$OUTPUTDIR/dev/pts" || true;
+    umount "$OUTPUTDIR/dev" || true;
 }
 
 if ! check_sourced; then
