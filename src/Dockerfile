@@ -123,6 +123,7 @@ RUN apt update && apt -y install qemu-utils grub-pc parted udev fdisk e2fsprogs 
 RUN apt -y install grub-efi  # this needs to be installed separately!
 
 ARG OUTPUTROOT=/output
+ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
 ARG VERSION=build-228
 ARG IMAGESIZE=3G
 
