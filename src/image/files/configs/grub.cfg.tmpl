@@ -1,0 +1,27 @@
+set timeout=4
+set default=0
+set root=(hd0,gpt1)
+root_hash="$ROOTFS_HASH"
+kernel_path="/vmlinuz-$KERNEL_VERSION-nvidia-gpu-confidential"
+build="$VERSION"
+
+menuentry 'SP Linux Test' --class ubuntu --class gnu-linux --class gnu --class os {
+    insmod part_gpt
+    search --label bls_boot --set=root
+    linux ${kernel_path} root=LABEL=rootfs ro console=ttyS0 clearcpuid=mtrr systemd.log_level=trace systemd.log_target=log rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} sp-debug=true build=${build}
+}
+menuentry 'SP Linux Non Secure' --class ubuntu --class gnu-linux --class gnu --class os {
+    insmod part_gpt
+    search --label bls_boot --set=root
+    linux ${kernel_path} root=LABEL=rootfs ro console=ttyS0 clearcpuid=mtrr systemd.log_level=trace systemd.log_target=log sp-debug=true build=${build}
+}
+menuentry 'SP Linux Google Debug' --class ubuntu --class gnu-linux --class gnu --class os {
+    insmod part_gpt
+
+    linux ${kernel_path} root=/dev/nvme0n1p1 ro console=ttyS0 clearcpuid=mtrr systemd.log_level=trace systemd.log_target=log rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} sp-debug=true build=${build}
+}
+menuentry 'SP Linux QEMU Debug' --class ubuntu --class gnu-linux --class gnu --class os {
+    insmod part_gpt
+
+    linux ${kernel_path} root=/dev/vda1 ro console=ttyS0 clearcpuid=mtrr systemd.log_level=trace systemd.log_target=log rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} sp-debug=true build=${build}
+}

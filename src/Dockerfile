@@ -116,24 +116,6 @@ RUN /buildroot/files/scripts/install_kernel.sh
 ADD rootfs/files/scripts/chroot.sh /buildroot/files/scripts/
 ADD rootfs/files/scripts/install_nvidia.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
-
-FROM ubuntu:24.04 AS image_builder
-ARG DEBIAN_FRONTEND=noninteractive
-RUN apt update && apt -y install qemu-utils grub-pc parted udev fdisk e2fsprogs dosfstools kpartx
-RUN apt -y install grub-efi  # this needs to be installed separately!
-
-ARG OUTPUTROOT=/output
-ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
-ARG VERSION=build-228
-ARG IMAGESIZE=3G
-
-WORKDIR /output
-ADD kernel/files/scripts/log.sh /buildroot/files/scripts/
-
-ADD image/files/scripts/create_image.sh /buildroot/files/scripts/
-RUN --security=insecure /buildroot/files/scripts/create_image.sh
-
-
 #RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
 #RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
 
@@ -150,3 +132,21 @@ RUN --security=insecure /buildroot/files/scripts/create_image.sh
 # rm -rf "$rootfs_dir/var/run"
 # rm -rf ./var/cache/ ./var/lib ./var/log ./var/tmp
 
+
+FROM ubuntu:24.04 AS image_builder
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt update && apt -y install qemu-utils grub-pc parted udev fdisk e2fsprogs dosfstools kpartx cryptsetup-bin
+RUN apt -y install grub-efi  # this needs to be installed separately!
+
+ARG OUTPUTROOT=/output
+ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
+ARG VERSION=build-228
+ARG KERNEL_VERSION=6.12.13
+
+WORKDIR /output
+ADD kernel/files/scripts/log.sh /buildroot/files/scripts/
+
+ADD image/files/scripts/create_image.sh /buildroot/files/scripts/
+ADD image/files/configs/grub.cfg.tmpl /buildroot/files/configs/
+RUN --mount=type=bind,target=/output/rootfs,readonly,from=rootfs_builder,source=/output/rootfs --security=insecure \
+    /buildroot/files/scripts/create_image.sh

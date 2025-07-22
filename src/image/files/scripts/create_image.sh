@@ -36,16 +36,18 @@ source "$BUILDROOT/files/scripts/log.sh";
 
 function calculate_disk_size() {
     log_info "determinating image part size";
-    ROOTFS_PART_SIZE="$(du -sm "$OUTPUTDIR")";  # MiB
+    # adding extra 6% for ext4 meta
+    ROOTFS_PART_SIZE="$(du -sm "$OUTPUTDIR" | awk '{print int($1 * 1.06)}')";  # MiB
+    # hash part size will be ROOTFS_PART_SIZE * 0.99%
     ROOTFS_HASH_PART_SIZE="$(echo "$ROOTFS_PART_SIZE" | awk '{x = $1 * 0.0099; print (x == int(x)) ? x : int(x)+1}' )";
-    IMAGESIZE="$(( BOOT_PART_SIZE + BIOS_PART_SIZE + ESP_PART_SIZE + ROOTFS_PART_SIZE + ROOTFS_HASH_PART_SIZE ))";
+    # adding extra bytes for filling
+    IMAGESIZE="$(( BOOT_PART_SIZE + BIOS_PART_SIZE + ESP_PART_SIZE + ROOTFS_PART_SIZE + ROOTFS_HASH_PART_SIZE + 10))";
     log_info "total image size will be: $IMAGESIZE MiB";
-    echo "total image size will be: $IMAGESIZE MiB" > /hmmm.txt;
 }
 
 function create_empty_disk() {
     log_info "creating empty disk";
-    qemu-img create -f raw "$OUTPUT_FILE" "$IMAGESIZE";
+    qemu-img create -f raw "$OUTPUT_FILE" "${IMAGESIZE}M";
 }
 
 # Partitions etc
@@ -84,6 +86,7 @@ function mount_image() {
 }
 
 function cleanup() {
+    log_info "umounting image";
     for CUR in $(losetup -a | grep "($OUTPUT_FILE)" | awk -F ':' '{print $1}'); do
         kpartx -d "$CUR" || true;
         losetup -d $CUR || true;
@@ -93,23 +96,39 @@ trap cleanup EXIT;
 
 # Creating fsss
 function create_filesystems() {
-    mkfs.ext4 -L bls_boot /dev/mapper/${LOOP_DEV_NAME}${BOOT_PART};
-    mkfs.fat -F 32 /dev/mapper/${LOOP_DEV_NAME}${EFI_PART};
-    mkfs.ext4 -L rootfs /dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART};
+    log_info "creating filesystems";
+    mkfs.ext4 -L bls_boot "/dev/mapper/${LOOP_DEV_NAME}${BOOT_PART}";
+    mkfs.fat -F 32 "/dev/mapper/${LOOP_DEV_NAME}${ESP_PART}";
+    mkfs.ext4 -m 0 -L rootfs "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART}";
 }
 
 # Mounting all shit
 function mount_partitions() {
-    mkdir -p /mnt/boot;
-    mount /dev/mapper/${LOOP_DEV_NAME}${BOOT_PART} /mnt/boot;
-    mkdir -p /mnt/boot/efi;
-    mount /dev/mapper/${LOOP_DEV_NAME}${EFI_PART} /mnt/boot/efi;
-    mkdir -p /mnt/boot/efi/EFI/BOOT;
+    log_info "mounting partitions";
+    mkdir -p "/mnt/boot";
+    mount "/dev/mapper/${LOOP_DEV_NAME}${BOOT_PART}" "/mnt/boot";
+    mkdir -p "/mnt/boot/efi";
+    mount "/dev/mapper/${LOOP_DEV_NAME}${ESP_PART}" "/mnt/boot/efi";
+    mkdir -p "/mnt/boot/efi/EFI/BOOT";
+    mkdir -p "/mnt/rootfs";
+    mount "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART}" "/mnt/rootfs";
+}
+
+function umount_partitions() {
+    log_info "umounting partitions";
+    umount "/mnt/boot/efi";
+    umount "/mnt/boot";
+}
+
+function umount_rootfs() {
+    log_info "umounting rootfs";
+    umount "/mnt/rootfs";
 }
 
 # Installing the GRUB
 ## UEFI
 function install_grub_efi() {
+    log_info "installing EFI grub";
     grub-install \
         --target=x86_64-efi \
         --efi-directory=/mnt/boot/efi \
@@ -124,15 +143,44 @@ function install_grub_efi() {
 
 ## BIOS
 function install_grub_bios() {
+    log_info "installing BIOS grub";
     grub-install \
         --target i386-pc \
         --boot-directory=/mnt/boot \
         "$LOOP_DEV";
 }
 
-# Adding files
-#cp /files/vmlinuz /mnt/boot/
-#cp /files/grub.cfg /mnt/boot/grub/
+function copy_rootfs() {
+    log_info "copying rootfs";
+    cp -a "$OUTPUTDIR/." "/mnt/rootfs";
+}
+
+function move_boot_data() {
+    log_info "moving boot data to boot partition";
+    mv /mnt/rootfs/boot/* "/mnt/boot/";
+}
+
+function calc_rootfs_hash() {
+    log_info "calculating rootfs hash";
+    veritysetup \
+        format \
+        "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART}" \
+        "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_HASH_PART}" \
+        > "/tmp/rootfs_hash.txt";
+}
+
+function template_grub_config() {
+    log_info "templating grub config";
+    ROOTFS_HASH="$(grep 'Root hash' "/tmp/rootfs_hash.txt" | awk '{print $3}')";
+    ROOTFS_HASH="$ROOTFS_HASH" \
+        VERSION="$VERSION" \
+        KERNEL_VERSION="$KERNEL_VERSION" \
+        envsubst \
+        '$ROOTFS_HASH,$VERSION,$KERNEL_VERSION' \
+        > "/mnt/boot/grub/grub.cfg" \
+        < "$BUILDROOT/files/configs/grub.cfg.tmpl";
+}
+
 calculate_disk_size;
 create_empty_disk;
 create_partitions;
@@ -141,3 +189,9 @@ create_filesystems;
 mount_partitions;
 install_grub_efi;
 install_grub_bios;
+copy_rootfs;
+move_boot_data;
+umount_rootfs;
+calc_rootfs_hash;
+template_grub_config;
+umount_partitions;
