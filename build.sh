@@ -140,7 +140,7 @@ function git_checkout_to_ref() {
     fi
     log_info "Pulling recent changes, set --no-pull flag to skip";
     git pull;
-
+    git show --oneline -s;
     popd >/dev/null;
 }
 
