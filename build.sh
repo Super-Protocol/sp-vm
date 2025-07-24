@@ -183,7 +183,7 @@ function add_deb_to_rootfs() {
 function prepare_superprotocol_certs() {
     log_info "Building ca initializer";
     local CERT_FOLDER="$KATA_REPO_DIR/tools/osbuilder/rootfs-builder/ubuntu/superprotocol/cert";
-    echo "$SP_CA_CRT" > "$CERT_FOLDER/superprotocol-ca.crt";
+    # echo "$SP_CA_CRT" > "$CERT_FOLDER/superprotocol-ca.crt";
 
     SUPER_REGISTRY_HOST="registry.superprotocol.local";
     
@@ -279,6 +279,7 @@ function calc_hashes() {
 }
 
 function check_required_args() {
+    return;
     if [[ -z "$SP_CA_CRT" ]]; then
         log_err "SP_CA_CRT is empty! Use SP_CA_CRT with the cert data or pass --sp-ca-crt-file arg with the path to the crt file";
         exit 2;
@@ -368,13 +369,13 @@ function main() {
     # Build part
     prepare_superprotocol_certs;
     build_kernel;
-    add_deb_to_rootfs;
-    build_rootfs;
-    build_image;
+    #add_deb_to_rootfs;
+    #build_rootfs;
+    #build_image;
 
     # Packaging
-    copy_artifacts;
-    calc_hashes;
+    #copy_artifacts;
+    #calc_hashes;
 }
 
 parse_args "$@";
