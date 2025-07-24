@@ -51,9 +51,10 @@ RUN install gen_init_cpio /usr/sbin/
 
 
 FROM gen_init_cpio_builder AS initramfs_builder
-COPY --from=busybox_builder /initramfs-root /initramfs-root
-COPY --from=lvm2_builder /initramfs-root /initramfs-root
+COPY --from=busybox_builder /initramfs-root/sbin/busybox /initramfs-root/sbin/
+COPY --from=cryptsetup_builder /initramfs-root/sbin/veritysetup.static /initramfs-root/sbin/
 ADD initramfs/files/initramfs.list /initramfs-root/initramfs.list
+ADD initramfs/files/init.sh /initramfs-root/sbin/init.sh
 RUN gen_init_cpio /initramfs-root/initramfs.list | gzip -9 -n > /initramfs-root/initramfs.cpio.gz
 
 
@@ -115,7 +116,7 @@ RUN /buildroot/files/scripts/install_kernel.sh
 
 ADD rootfs/files/scripts/chroot.sh /buildroot/files/scripts/
 ADD rootfs/files/scripts/install_nvidia.sh /buildroot/files/scripts/
-RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
+#RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
 #RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
 #RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
 
