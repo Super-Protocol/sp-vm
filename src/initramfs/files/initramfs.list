@@ -11,6 +11,7 @@ dir /run 0755 0 0
 dir /mnt 0755 0 0
 file /init /initramfs-root/sbin/init.sh 0755 0 0
 file /sbin/busybox /initramfs-root/sbin/busybox 0755 0 0
+file /sbin/blkid /initramfs-root/sbin/blkid 0755 0 0
 file /sbin/veritysetup /initramfs-root/sbin/veritysetup.static 0755 0 0
 slink /bin/sh /sbin/busybox 0755 0 0
 slink /sbin/mount /sbin/busybox 0755 0 0
@@ -19,4 +20,3 @@ slink /sbin/mdev /sbin/busybox 0755 0 0
 slink /sbin/switch_root /sbin/busybox 0755 0 0
 slink /sbin/umount /sbin/busybox 0755 0 0
 slink /sbin/cat /sbin/busybox 0755 0 0
-slink /sbin/blkid /sbin/busybox 0755 0 0

@@ -11,6 +11,17 @@ RUN make -j
 RUN mkdir -p /initramfs-root/sbin
 RUN cp /tmp/busybox-${busybox_version}/busybox /initramfs-root/sbin/busybox
 
+FROM ubuntu:24.04 AS util_linux_builder
+RUN apt-get update && apt-get install -y wget gcc make build-essential
+ARG util_linux_version=2.41
+ADD https://www.kernel.org/pub/linux/utils/util-linux/v${util_linux_version}/util-linux-${util_linux_version}.tar.gz /tmp/util-linux-${util_linux_version}.tar.gz
+RUN tar -C /tmp -xvf/tmp/util-linux-${util_linux_version}.tar.gz
+WORKDIR /tmp/util-linux-${util_linux_version}
+RUN ./configure --disable-shared --enable-static --disable-liblastlog2 -without-tinfo --without-ncurses --disable-ipv6 --disable-pylibmount
+RUN make -j blkid LDFLAGS="--static"
+RUN strip blkid
+RUN mkdir -p /initramfs-root/sbin
+RUN cp /tmp/util-linux-${util_linux_version}/blkid /initramfs-root/sbin/blkid
 
 FROM ubuntu:24.04 AS lvm2_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential git libblkid-dev libaio-dev uuid-dev pkg-config
@@ -21,7 +32,6 @@ WORKDIR /tmp/build-root
 RUN /tmp/lvm2/configure --enable-static_link --disable-selinux --prefix /initramfs-root
 RUN make -j
 RUN make install
-
 
 FROM ubuntu:24.04 AS cryptsetup_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential git libblkid-dev libaio-dev autoconf automake autopoint libtool gettext libssl-dev zlib1g-dev libseccomp2 libseccomp-dev uuid-dev pkg-config libgcrypt20-dev libpopt-dev libjson-c-dev
@@ -52,6 +62,7 @@ RUN install gen_init_cpio /usr/sbin/
 
 FROM gen_init_cpio_builder AS initramfs_builder
 COPY --from=busybox_builder /initramfs-root/sbin/busybox /initramfs-root/sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/blkid /initramfs-root/sbin/
 COPY --from=cryptsetup_builder /initramfs-root/sbin/veritysetup.static /initramfs-root/sbin/
 ADD initramfs/files/initramfs.list /initramfs-root/initramfs.list
 ADD initramfs/files/init.sh /initramfs-root/sbin/init.sh
