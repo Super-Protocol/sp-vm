@@ -97,9 +97,15 @@ trap cleanup EXIT;
 # Creating fsss
 function create_filesystems() {
     log_info "creating filesystems";
-    mkfs.ext4 -L bls_boot "/dev/mapper/${LOOP_DEV_NAME}${BOOT_PART}";
+    mkfs.ext4 \
+        -O ^has_journal,^huge_file,^meta_bg,^ext_attr \
+        -L bls_boot \
+        "/dev/mapper/${LOOP_DEV_NAME}${BOOT_PART}";
     mkfs.fat -F 32 "/dev/mapper/${LOOP_DEV_NAME}${ESP_PART}";
-    mkfs.ext4 -m 0 -L rootfs "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART}";
+    mkfs.ext4 -m 0 \
+        -O ^has_journal,^huge_file,^meta_bg,^ext_attr \
+        -L rootfs \
+        "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART}";
 }
 
 # Mounting all shit
@@ -114,8 +120,8 @@ function mount_partitions() {
     mount "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART}" "/mnt/rootfs";
 }
 
-function umount_partitions() {
-    log_info "umounting partitions";
+function umount_boot_partitions() {
+    log_info "umounting boot partitions";
     umount "/mnt/boot/efi";
     umount "/mnt/boot";
 }
@@ -181,6 +187,16 @@ function template_grub_config() {
         < "$BUILDROOT/files/configs/grub.cfg.tmpl";
 }
 
+function cleanup_rootfs_partition() {
+    log_info "cleaning up rootfs partition";
+    rm -rf "/mnt/rootfs/lost+found";
+}
+
+function cleanup_boot_partition() {
+    log_info "cleaning up boot partition";
+    rm -rf "/mnt/boot/lost+found";
+}
+
 calculate_disk_size;
 create_empty_disk;
 create_partitions;
@@ -191,7 +207,9 @@ install_grub_efi;
 install_grub_bios;
 copy_rootfs;
 move_boot_data;
+cleanup_rootfs_partition;
 umount_rootfs;
 calc_rootfs_hash;
 template_grub_config;
-umount_partitions;
+cleanup_boot_partition;
+umount_boot_partitions;
