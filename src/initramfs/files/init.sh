@@ -7,8 +7,6 @@
 [ -d /mnt ] || mkdir /mnt
 [ -d /tmp ] || mkdir /tmp
 
-echo "hallo, guys, i wanna fuck u";
-
 mount -t sysfs -o nodev,noexec,nosuid sysfs /sys
 mount -t proc -o nodev,noexec,nosuid proc /proc
 

@@ -104,6 +104,16 @@ ADD rootfs/files/scripts/log.sh /buildroot/files/scripts/
 ADD rootfs/files/scripts/create_base_system.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/create_base_system.sh
 
+COPY --from=kernel_builder /output/deb ${OUTPUTDIR}/kernel_deb
+ADD rootfs/files/scripts/install_kernel.sh /buildroot/files/scripts/
+RUN /buildroot/files/scripts/install_kernel.sh
+
+ADD rootfs/files/scripts/chroot.sh /buildroot/files/scripts/
+ADD rootfs/files/scripts/install_nvidia.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
+ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
+RUN --security=insecure /buildroot/files/scripts/install_gve.sh
+
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
 
@@ -120,22 +130,12 @@ ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
 ADD rootfs/files/configs/state_disk_mount/state_disk_mount.service ${OUTPUTDIR}/etc/systemd/system/
 ADD rootfs/files/configs/state_disk_mount/state_disk_mount.sh ${OUTPUTDIR}/usr/local/bin/
 RUN ln -s /etc/systemd/system/state_disk_mount.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/state_disk_mount.service"
-
-COPY --from=kernel_builder /output/deb ${OUTPUTDIR}/kernel_deb
-ADD rootfs/files/scripts/install_kernel.sh /buildroot/files/scripts/
-RUN /buildroot/files/scripts/install_kernel.sh
-
-ADD rootfs/files/scripts/chroot.sh /buildroot/files/scripts/
-ADD rootfs/files/scripts/install_nvidia.sh /buildroot/files/scripts/
-#RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
-#RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
-#RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
+RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
+RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
 
 # after all!
-#ADD files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
-#RUN /buildroot/files/scripts/cleanup_rootfs.sh
-
-# ADD files/scripts/install_nvidia_drivers.sh /buildroot/files/scripts/
+ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
+RUN /buildroot/files/scripts/cleanup_rootfs.sh
 
 # TODO: remove compiler and headers from final image
 # rm -rf $rootfs_dir/usr/share/{bash-completion,bug,doc,info,lintian,locale,man,menu,misc,pixmaps,terminfo,zsh}
