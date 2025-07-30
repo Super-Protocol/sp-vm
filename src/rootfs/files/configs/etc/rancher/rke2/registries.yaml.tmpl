@@ -1,0 +1,13 @@
+configs:
+  "$SUPER_REGISTRY_HOST:32443":
+    tls:
+      ca_file: /opt/super/certs/$SUPER_REGISTRY_HOST.ca.crt
+      key_file: /opt/super/certs/$SUPER_REGISTRY_HOST.key
+      cert_file: /opt/super/certs/$SUPER_REGISTRY_HOST.crt
+  "$LOCAL_REGISTRY_HOST:5000":
+    tls:
+      insecure_skip_verify: true
+mirrors:
+  "*":
+    endpoint:
+      - "http://$LOCAL_REGISTRY_HOST:5000"
