@@ -12,9 +12,12 @@ BUILDROOT="/buildroot";
 # init loggggging;
 source "$BUILDROOT/files/scripts/log.sh";
 
+# chroot functions
+source "$BUILDROOT/files/scripts/chroot.sh";
+
 function cleanup_rootfs() {
     log_info "cleaning up rootfs";
-    rm -rf ${OUTPUTDIR}/kernel_deb;
+    rm -rf "${OUTPUTDIR}/kernel_deb";
     chroot "$OUTPUTDIR" /bin/bash -c \
         'dpkg -r \
             libc6-dev \
@@ -28,6 +31,12 @@ function cleanup_rootfs() {
             linux-headers-6.12.13-nvidia-gpu-confidential \
             g++ \
             gcc';
+    rm -rf ${OUTPUTDIR}/tmp/*;
+    rm -rf ${OUTPUTDIR}/usr/share/{bash-completion,bug,doc,info,lintian,locale,man,menu,misc,pixmaps,terminfo,zsh};
+    rm -rf "${OUTPUTDIR}/var/run";
+    rm -rf ${OUTPUTDIR}/var/{cache,lib,log,tmp};
 }
 
+chroot_init;
 cleanup_rootfs;
+chroot_deinit;

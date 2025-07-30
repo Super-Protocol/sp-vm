@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1-labs
 
+### Start busybox ###
 FROM ubuntu:24.04 AS busybox_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential
 ARG busybox_version=1_36_1
@@ -10,7 +11,9 @@ ADD initramfs/files/busybox_config /tmp/busybox-${busybox_version}/.config
 RUN make -j
 RUN mkdir -p /initramfs-root/sbin
 RUN cp /tmp/busybox-${busybox_version}/busybox /initramfs-root/sbin/busybox
+### End busybox ###
 
+### Start util_linux ###
 FROM ubuntu:24.04 AS util_linux_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential
 ARG util_linux_version=2.41
@@ -22,7 +25,9 @@ RUN make -j blkid LDFLAGS="--static"
 RUN strip blkid
 RUN mkdir -p /initramfs-root/sbin
 RUN cp /tmp/util-linux-${util_linux_version}/blkid /initramfs-root/sbin/blkid
+### End util_linux ###
 
+### Start lvm2 ###
 FROM ubuntu:24.04 AS lvm2_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential git libblkid-dev libaio-dev uuid-dev pkg-config
 ARG lvm2_repo=https://github.com/lvmteam/lvm2
@@ -32,7 +37,9 @@ WORKDIR /tmp/build-root
 RUN /tmp/lvm2/configure --enable-static_link --disable-selinux --prefix /initramfs-root
 RUN make -j
 RUN make install
+### End lvm2 ###
 
+### Start cryptsetup ###
 FROM ubuntu:24.04 AS cryptsetup_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential git libblkid-dev libaio-dev autoconf automake autopoint libtool gettext libssl-dev zlib1g-dev libseccomp2 libseccomp-dev uuid-dev pkg-config libgcrypt20-dev libpopt-dev libjson-c-dev
 COPY --from=lvm2_builder /initramfs-root /initramfs-root
@@ -47,8 +54,9 @@ RUN CFLAGS="-I/initramfs-root/include" CXXFLAGS="-I/initramfs-root/include" LDFL
 RUN make -j
 RUN make install
 RUN strip /initramfs-root/sbin/veritysetup.static
+### End cryptsetup ###
 
-
+### Start gen_init_cpio ###
 FROM ubuntu:24.04 AS gen_init_cpio_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential
 RUN apt -y install git
@@ -58,8 +66,9 @@ RUN git sparse-checkout add usr
 WORKDIR /tmp/linux/usr
 RUN make -j gen_init_cpio
 RUN install gen_init_cpio /usr/sbin/
+### End gen_init_cpio ###
 
-
+### Start initramfs ###
 FROM gen_init_cpio_builder AS initramfs_builder
 COPY --from=busybox_builder /initramfs-root/sbin/busybox /initramfs-root/sbin/
 COPY --from=util_linux_builder /initramfs-root/sbin/blkid /initramfs-root/sbin/
@@ -67,8 +76,9 @@ COPY --from=cryptsetup_builder /initramfs-root/sbin/veritysetup.static /initramf
 ADD initramfs/files/initramfs.list /initramfs-root/initramfs.list
 ADD initramfs/files/init.sh /initramfs-root/sbin/init.sh
 RUN gen_init_cpio /initramfs-root/initramfs.list | gzip -9 -n > /initramfs-root/initramfs.cpio.gz
+### End  ###
 
-
+### Start certs ###
 FROM ubuntu:24.04 AS certs_builder
 RUN apt update && apt install -y openssl
 
@@ -97,9 +107,9 @@ RUN openssl x509 -req \
     -days 3650 -sha256 \
     -extfile "/buildroot/san.cnf" \
     -extensions v3_ext
+### End certs ###
 
-
-
+### Start kernel ###
 FROM ubuntu:24.04 AS kernel_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential curl libssl-dev bc elfutils libelf-dev bison flex cpio kmod rsync debhelper
 ARG KERNEL_VERSION=6.12.13
@@ -119,7 +129,9 @@ RUN /buildroot/files/scripts/merge-configs.sh
 COPY --from=initramfs_builder /initramfs-root/initramfs.cpio.gz /buildroot/files/
 ADD kernel/files/scripts/build-kernel.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/build-kernel.sh
+### End kernel ###
 
+### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
 RUN apt update && apt install -y wget gcc make build-essential debootstrap
 
@@ -153,7 +165,6 @@ RUN cp "${OUTPUTDIR}/usr/share/systemd/tmp.mount" "${OUTPUTDIR}/etc/systemd/syst
 ADD rootfs/files/configs/01-netplan.yaml ${OUTPUTDIR}/etc/netplan/
 ADD rootfs/files/configs/fstab ${OUTPUTDIR}/etc/
 ADD rootfs/files/configs/tdx-attest.conf ${OUTPUTDIR}/etc/
-RUN sed -i "1 s|^.*$|AuthorizedKeysFile ${PROVIDER_CONFIG_DST}/authorized_keys|" "${OUTPUTDIR}/etc/ssh/sshd_config"
 
 ADD rootfs/files/configs/chrony/chrony.conf ${OUTPUTDIR}/etc/chrony/
 ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
@@ -179,7 +190,7 @@ ADD rootfs/files/scripts/refresh_ca_certs.sh /buildroot/files/scripts/refresh_ca
 RUN --security=insecure /buildroot/files/scripts/refresh_ca_certs.sh
 
 # todo: move upper
-RUN apt install -y petname
+RUN apt install -y petname gettext
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
 RUN mkdir -p "${OUTPUTDIR}/etc/rancher/node"
 RUN LC_ALL=C tr -dc '[:alpha:][:digit:]' < /dev/urandom | head -c 32 > "${OUTPUTDIR}/etc/rancher/node/password"
@@ -188,18 +199,51 @@ ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/e
 ADD rootfs/files/configs/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/var/lib/rancher/rke2/rke2-pss.yaml
 ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
 
+ARG LOCAL_REGISTRY_HOST=hauler.local
+ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
+RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
+ADD rootfs/files/configs/etc/rancher/rke2/config.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/config.yaml.tmpl
+ADD rootfs/files/configs/etc/rancher/rke2/registries.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/registries.yaml.tmpl
+ADD rootfs/files/scripts/template_rke2_configs_preinstall.sh /buildroot/files/scripts/template_rke2_configs_preinstall.sh
+RUN /buildroot/files/scripts/template_rke2_configs_preinstall.sh
+ADD rootfs/files/scripts/download_rke2.sh /buildroot/files/scripts/download_rke2.sh
+RUN /buildroot/files/scripts/download_rke2.sh
+ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
+RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
+ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml {OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
+
+ADD rootfs/files/scripts/template_configs_post_rke2install.sh /buildroot/files/scripts/template_configs_post_rke2install.sh
+ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl /buildroot/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd.config.toml.tmpl.tmpl
+ADD rootfs/files/configs/usr/local/lib/systemd/system/rke2-server.env.append /buildroot/files/configs/usr/local/lib/systemd/system/rke2-server.env.append
+ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
+ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
+RUN /buildroot/files/scripts/template_configs_post_rke2install.sh
+
+# copy iscsi configs, cause this partition will be remounted with empty dir
+RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
+ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
+RUN /buildroot/files/scripts/setup_sshd_config.sh
+
+ADD rootfs/files/scripts/install_hauler.sh /buildroot/files/scripts/install_hauler.sh
+RUN --security=insecure /buildroot/files/scripts/install_hauler.sh
+ADD rootfs/files/configs/hauler/rke2-airgap.yaml /buildroot/files/configs/hauler/rke2-airgap.yaml
+ADD rootfs/files/scripts/setup_hauler.sh /buildroot/files/scripts/setup_hauler.sh
+RUN --security=insecure /buildroot/files/scripts/setup_hauler.sh
+
+# check for presence of trusted self-signed CA from Super Protocol
+#awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < /etc/ssl/certs/ca-certificates.crt | grep -i 'super'
+
+
+
 # after all!
-ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
-RUN /buildroot/files/scripts/cleanup_rootfs.sh
+#ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
+#RUN --security=insecure /buildroot/files/scripts/cleanup_rootfs.sh
 
 # TODO: remove compiler and headers from final image
-# rm -rf $rootfs_dir/usr/share/{bash-completion,bug,doc,info,lintian,locale,man,menu,misc,pixmaps,terminfo,zsh}
-# cp --remove-destination /etc/resolv.conf "$rootfs_dir/etc"
 # cp --remove-destination /etc/ssl/certs/ca-certificates.crt "$dir"
-# rm -rf "$rootfs_dir/var/run"
-# rm -rf ./var/cache/ ./var/lib ./var/log ./var/tmp
+### End rootfs ###
 
-
+### Start image ###
 FROM ubuntu:24.04 AS image_builder
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt update && apt -y install qemu-utils grub-pc parted udev fdisk e2fsprogs dosfstools kpartx cryptsetup-bin
@@ -217,3 +261,4 @@ ADD image/files/scripts/create_image.sh /buildroot/files/scripts/
 ADD image/files/configs/grub.cfg.tmpl /buildroot/files/configs/
 RUN --mount=type=bind,target=/output/rootfs,readonly,from=rootfs_builder,source=/output/rootfs --security=insecure \
     /buildroot/files/scripts/create_image.sh
+### End image ###
