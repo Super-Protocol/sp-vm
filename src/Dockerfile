@@ -172,8 +172,8 @@ ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
 ADD rootfs/files/configs/state_disk_mount/state_disk_mount.service ${OUTPUTDIR}/etc/systemd/system/
 ADD rootfs/files/configs/state_disk_mount/state_disk_mount.sh ${OUTPUTDIR}/usr/local/bin/
 RUN ln -s /etc/systemd/system/state_disk_mount.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/state_disk_mount.service"
-RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
-RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
+#RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
+#RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
 
 RUN mkdir -p "${OUTPUTDIR}/etc/super/certs"
@@ -184,13 +184,17 @@ COPY --from=certs_builder /buildroot/registry.superprotocol.local.crt ${OUTPUTDI
 ADD rootfs/files/configs/cert/superprotocol-certs.sh ${OUTPUTDIR}/usr/local/bin/
 ADD rootfs/files/configs/cert/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system
 RUN ln -s /etc/systemd/system/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/superprotocol-certs.service
-# temp, todo remove
-ADD rootfs/files/configs/cert/superprotocol-ca.crt ${OUTPUTDIR}/usr/local/share/ca-certificates/superprotocol-ca.crt
 ADD rootfs/files/scripts/refresh_ca_certs.sh /buildroot/files/scripts/refresh_ca_certs.sh
 RUN --security=insecure /buildroot/files/scripts/refresh_ca_certs.sh
 
+# check for presence of trusted self-signed CA from Super Protocol
+RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < ${OUTPUTDIR}/etc/ssl/certs/ca-certificates.crt | grep -i 'super'
+
 # todo: move upper
 RUN apt install -y petname gettext
+ARG LOCAL_REGISTRY_HOST=hauler.local
+ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
+RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
 RUN mkdir -p "${OUTPUTDIR}/etc/rancher/node"
 RUN LC_ALL=C tr -dc '[:alpha:][:digit:]' < /dev/urandom | head -c 32 > "${OUTPUTDIR}/etc/rancher/node/password"
@@ -199,9 +203,19 @@ ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/e
 ADD rootfs/files/configs/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/var/lib/rancher/rke2/rke2-pss.yaml
 ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
 
-ARG LOCAL_REGISTRY_HOST=hauler.local
-ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
-RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
+# copy iscsi configs, cause this partition will be remounted with empty dir
+RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
+ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
+RUN /buildroot/files/scripts/setup_sshd_config.sh
+
+ADD rootfs/files/scripts/install_hauler.sh /buildroot/files/scripts/install_hauler.sh
+RUN --security=insecure /buildroot/files/scripts/install_hauler.sh
+ADD rootfs/files/configs/hauler/rke2-airgap.yaml /buildroot/files/configs/hauler/rke2-airgap.yaml
+ADD rootfs/files/scripts/setup_hauler.sh /buildroot/files/scripts/setup_hauler.sh
+RUN --security=insecure /buildroot/files/scripts/setup_hauler.sh
+
+# TODO: move hauler and rke2? to anuther independent layers..
+
 ADD rootfs/files/configs/etc/rancher/rke2/config.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/config.yaml.tmpl
 ADD rootfs/files/configs/etc/rancher/rke2/registries.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/registries.yaml.tmpl
 ADD rootfs/files/scripts/template_rke2_configs_preinstall.sh /buildroot/files/scripts/template_rke2_configs_preinstall.sh
@@ -219,25 +233,11 @@ ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
 RUN /buildroot/files/scripts/template_configs_post_rke2install.sh
 
-# copy iscsi configs, cause this partition will be remounted with empty dir
-RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
-ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
-RUN /buildroot/files/scripts/setup_sshd_config.sh
-
-ADD rootfs/files/scripts/install_hauler.sh /buildroot/files/scripts/install_hauler.sh
-RUN --security=insecure /buildroot/files/scripts/install_hauler.sh
-ADD rootfs/files/configs/hauler/rke2-airgap.yaml /buildroot/files/configs/hauler/rke2-airgap.yaml
-ADD rootfs/files/scripts/setup_hauler.sh /buildroot/files/scripts/setup_hauler.sh
-RUN --security=insecure /buildroot/files/scripts/setup_hauler.sh
-
-# check for presence of trusted self-signed CA from Super Protocol
-#awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < /etc/ssl/certs/ca-certificates.crt | grep -i 'super'
-
-
+RUN mkdir -p "${OUTPUTDIR}/sp"
 
 # after all!
-#ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
-#RUN --security=insecure /buildroot/files/scripts/cleanup_rootfs.sh
+ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/cleanup_rootfs.sh
 
 # TODO: remove compiler and headers from final image
 # cp --remove-destination /etc/ssl/certs/ca-certificates.crt "$dir"
@@ -262,3 +262,9 @@ ADD image/files/configs/grub.cfg.tmpl /buildroot/files/configs/
 RUN --mount=type=bind,target=/output/rootfs,readonly,from=rootfs_builder,source=/output/rootfs --security=insecure \
     /buildroot/files/scripts/create_image.sh
 ### End image ###
+
+
+### Start sp_vm ###
+FROM scratch AS sp_vm
+COPY --from=image_builder /output /
+### End sp_vm ###
