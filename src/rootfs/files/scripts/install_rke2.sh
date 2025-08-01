@@ -26,7 +26,15 @@ function enable_rke2_service() {
     chroot "$OUTPUTDIR" /bin/bash -c 'systemctl enable rke2-server.service';
 }
 
+function add_aliases() {
+    log_info "adding aliases";
+    echo "export KUBECONFIG=/var/lib/rancher/rke2/rke2.yaml" >> "$OUTPUTDIR/etc/profile";
+    echo "alias k='/var/lib/rancher/rke2/bin/kubectl'" >> "$OUTPUTDIR/etc/profile";
+    echo "alias kubectl='/var/lib/rancher/rke2/bin/kubectl'" >> "$OUTPUTDIR/etc/profile";
+}
+
 chroot_init;
 install_rke2;
 enable_rke2_service;
 chroot_deinit;
+add_aliases;

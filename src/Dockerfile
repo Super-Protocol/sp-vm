@@ -224,7 +224,7 @@ ADD rootfs/files/scripts/download_rke2.sh /buildroot/files/scripts/download_rke2
 RUN /buildroot/files/scripts/download_rke2.sh
 ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
 RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml {OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
+ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
 
 ADD rootfs/files/scripts/template_configs_post_rke2install.sh /buildroot/files/scripts/template_configs_post_rke2install.sh
 ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl /buildroot/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd.config.toml.tmpl.tmpl
@@ -234,13 +234,23 @@ ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sys
 RUN /buildroot/files/scripts/template_configs_post_rke2install.sh
 
 RUN mkdir -p "${OUTPUTDIR}/sp"
+ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml
+ADD rootfs/files/configs/etc/systemd/system/check-config-files.service ${OUTPUTDIR}/etc/systemd/system/check-config-files.service
+ADD rootfs/files/configs/etc/systemd/system/check-config-files.timer ${OUTPUTDIR}/etc/systemd/system/check-config-files.timer
+ADD rootfs/files/configs/usr/local/bin/check-config-files.sh ${OUTPUTDIR}/usr/local/bin/check-config-files.sh
+RUN ln -sf /etc/systemd/system/check-config-files.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/check-config-files.service"
+RUN ln -sf /etc/systemd/system/check-config-files.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/check-config-files.timer"
+ADD rootfs/files/configs/etc/systemd/system/local-registry.service ${OUTPUTDIR}/etc/systemd/system/local-registry.service
+ADD rootfs/files/configs/usr/local/bin/local-registry.sh ${OUTPUTDIR}/usr/local/bin/local-registry.sh
+RUN ln -sf /etc/systemd/system/local-registry.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/local-registry.service"
+ADD rootfs/files/configs/etc/systemd/system/hardening-vm.service ${OUTPUTDIR}/etc/systemd/system/hardening-vm.service
+ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bin/hardening-vm.sh
+RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
+ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
 # after all!
 ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/cleanup_rootfs.sh
-
-# TODO: remove compiler and headers from final image
-# cp --remove-destination /etc/ssl/certs/ca-certificates.crt "$dir"
 ### End rootfs ###
 
 ### Start image ###

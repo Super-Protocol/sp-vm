@@ -35,6 +35,11 @@ function cleanup_rootfs() {
     rm -rf ${OUTPUTDIR}/usr/share/{bash-completion,bug,doc,info,lintian,locale,man,menu,misc,pixmaps,terminfo,zsh};
     rm -rf "${OUTPUTDIR}/var/run";
     rm -rf ${OUTPUTDIR}/var/{cache,lib,log,tmp};
+    rm -f "${OUTPUTDIR}/etc/systemd/system/sshd.service"
+    rm -f "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/ssh.service"
+    rm -f "${OUTPUTDIR}/etc/systemd/system/sockets.target.wants/ssh.socket"
+    rm -f "${OUTPUTDIR}/etc/systemd/system/ssh.service.requires/ssh.socket"
+    rm -f "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"
     # debug
     chroot "$OUTPUTDIR" usermod -p '$6$WD6M1MokAy0ZAjG4$bUVCV5BQlmJm4QaL8XOeBV7QC7BpLmNAr7glIDVSBAgMPv2eHNWmIw86zTFhlBCXDOV.O1az.zrbx0G0FVdSV/' root;
 }

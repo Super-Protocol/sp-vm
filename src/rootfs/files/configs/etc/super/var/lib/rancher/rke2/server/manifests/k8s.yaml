@@ -1,0 +1,987 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-cilium
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    operator:
+      replicas: 1
+    cni:
+      confPath: /var/lib/cni/net.d
+
+---
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-coredns
+  namespace: kube-system
+spec:
+  valuesContent: |
+    #nodelocal:
+    #  enabled: true
+    servers:
+    - zones:
+      - zone: .
+      port: 53
+      # If serviceType is nodePort you can specify nodePort here
+      # nodePort: 30053
+      plugins:
+      - name: errors
+      # Serves a /health endpoint on :8080, required for livenessProbe
+      - name: health
+        configBlock: |-
+          lameduck 5s
+      # Serves a /ready endpoint on :8181, required for readinessProbe
+      - name: ready
+      # Required to query kubernetes API for data
+      - name: kubernetes
+        parameters: cluster.local in-addr.arpa ip6.arpa
+        configBlock: |-
+          pods insecure
+          fallthrough in-addr.arpa ip6.arpa
+          ttl 30
+      # Serves a /metrics endpoint on :9153, required for serviceMonitor
+      - name: prometheus
+        parameters: 0.0.0.0:9153
+      - name: forward
+        parameters: . /etc/resolv.conf
+      - name: cache
+        parameters: 30
+      - name: loop
+      - name: reload
+      - name: loadbalance
+      - name: hosts
+        configBlock: |-
+          $NODE_IP  registry.superprotocol.local
+          $NODE_IP  hauler.local
+          fallthrough
+
+---
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-ingress-nginx
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    controller:
+      hostPort:
+        enabled: true
+        ports:
+          http: 8880
+          https: 44443
+
+---
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: longhorn-system
+
+---
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: longhorn
+  namespace: kube-system
+spec:
+  repo: https://charts.longhorn.io
+  chart: longhorn
+  version: 1.7.1
+  targetNamespace: longhorn-system
+  # use only with klipper-helm:0.9.2+
+  #oci://hauler.local:5000/hauler/longhorn
+  #insecureSkipTLSVerify: true
+  #plainHTTP: true
+  valuesContent: |-
+    #global:
+    #  cattle:
+    #    systemDefaultRegistry: "hauler.local:5000"
+    csi:
+      attacherReplicaCount: 1
+      provisionerReplicaCount: 1
+      resizerReplicaCount: 1
+      snapshotterReplicaCount: 1
+    persistence:
+      defaultClassReplicaCount: 1
+    longhornUI:
+      replicas: 1
+    defaultSettings:
+      #defaultDataPath: /data/longhorn
+      storageOverProvisioningPercentage: 300 # default 100
+      storageMinimalAvailablePercentage: 5   # default 25
+
+---
+
+apiVersion: longhorn.io/v1beta1
+kind: RecurringJob
+metadata:
+  name: filesystem-trim
+  namespace: longhorn-system
+spec:
+  cron: "22 4 * * *"
+  task: "filesystem-trim"
+  groups:
+  - default
+  concurrency: 2
+
+---
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+
+---
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: argocd
+  namespace: kube-system
+spec:
+  #chart: oci://ghcr.io/argoproj/argo-helm/argo-cd:7.6.5
+  repo: https://argoproj.github.io/argo-helm
+  chart: argo-cd
+  version: 7.6.5
+  targetNamespace: argocd
+  valuesContent: |-
+    configs:
+      cm:
+        ui.bannercontent: "SP-CC-VM"
+        ui.bannerurl: ""
+        ui.bannerpermanent: "true"
+        ui.bannerposition: "both"
+    notifications:
+      enabled: false
+    dex:
+      enabled: false
+    global:
+      image:
+        #tag: quay.io/argoproj/argocd:v2.12.4
+        tag: v2.12.4
+        digest: sha256:4fa3135b836a32c1b366375c6697cddbe279cb6fc315acb11a5395c300f23967
+    redis:
+      image:
+        #tag: public.ecr.aws/docker/library/redis:7.2.4-alpine
+        tag: 7.2.4-alpine
+        digest: sha256:c8bb255c3559b3e458766db810aa7b3c7af1235b204cfdb304e79ff388fe1a5a
+
+---
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: argo-workflows
+  namespace: kube-system
+spec:
+  repo: https://argoproj.github.io/argo-helm
+  chart: argo-workflows
+  version: 0.42.7
+  targetNamespace: argocd
+  valuesContent: |-
+    workflow:
+      serviceAccount:
+        create: true
+        name: "argo-workflow"
+      rbac:
+        create: true
+    controller:
+      image:
+        tag: v3.6.0@sha256:75fb7784fb1798ce1a83fff330a49670dc97020d9e436bc6df6b19f920f93425
+      workflowNamespaces:
+        - super-protocol
+    executor:
+      image:
+        tag: v3.6.0@sha256:cc13a35ec64ccad8fb5a6980502e573f39f4ff28358eca778fe867e62905d053
+    server:
+      image:
+        tag: v3.6.0@sha256:2d9fff5414fa34a3fe56576bbd855233cddcf486081b8232e4f36f64ec0b217c
+      authModes:
+        - server
+
+---
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+
+---
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cert-manager
+  namespace: kube-system
+spec:
+  repo: https://charts.jetstack.io
+  chart: cert-manager
+  version: v1.15.3
+  targetNamespace: cert-manager
+  valuesContent: |-
+    installCRDs: true
+    image: # cert-manager-controller
+      tag: v1.15.3@sha256:eee34b3de2dd63f7e5ac459fc2d407662d433fd267d574557b76ee3c7d4bc44f
+    cainjector:
+      image:
+        tag: v1.15.3@sha256:e0ce8ae280c8d7263663b6a6d3ea5e122632936cde9bdd5321cf7109199f51aa
+    webhook:
+      image:
+        tag: v1.15.3@sha256:fdcb9ac4963fa1bb0c9d7cad38f0ba2c65328aa436f8653c998594d936a96488
+    acmesolver:
+      image:
+        tag: v1.15.3@sha256:71468feed486c4cf3ca431d93f996771531ab2e68f261f1a15be845720802a8a
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: self-signed
+spec:
+  selfSigned: {}
+
+---
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-operator
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: time-slicing-config-all
+  namespace: gpu-operator
+data:
+  any: |-
+    version: v1
+    flags:
+      migStrategy: none
+    sharing:
+      timeSlicing:
+        renameByDefault: false
+        failRequestsGreaterThanOne: false
+        resources:
+        - name: nvidia.com/gpu
+          replicas: 1000
+---
+
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: gpu-operator
+  namespace: gpu-operator
+spec:
+  repo: https://helm.ngc.nvidia.com/nvidia
+  version: v24.9.1
+  chart: gpu-operator
+  targetNamespace: gpu-operator
+  valuesContent: |-
+    driver:
+      enabled: false
+    #nfd:
+    #  nodefeaturerules: true
+    devicePlugin:
+      config:
+        name: time-slicing-config-all
+        default: any
+    toolkit:
+      installDir: "/opt/nvidia"
+      env:
+      - name: CONTAINERD_CONFIG
+        value: /var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl
+      - name: CONTAINERD_SOCKET
+        value: /run/k3s/containerd/containerd.sock
+      - name: CONTAINERD_RUNTIME_CLASS
+        value: nvidia
+      - name: CONTAINERD_SET_AS_DEFAULT
+        value: "true"
+
+#---
+#
+#apiVersion: v1
+#kind: Namespace
+#metadata:
+#  name: logs
+#
+#---
+#
+#apiVersion: v1
+#kind: Namespace
+#metadata:
+#  name: monitoring
+#
+---
+
+##################
+# SUPER-PROTOCOL #
+##################
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: super-protocol
+
+---
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sp-argo-vm
+  namespace: argocd
+spec:
+  ignoreDifferences:
+    - kind: Application
+      group: argoproj.io
+      jsonPointers:
+        - /metadata/annotations/argocd-image-updater.argoproj.io~1mediator.allow-tags
+        - /metadata/annotations/argocd-image-updater.argoproj.io~1loader.allow-tags
+        - /metadata/annotations/argocd-image-updater.argoproj.io~1ec.allow-tags
+        - /metadata/annotations/
+        - /spec/source/helm/valueFiles/1
+  destination:
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    path: argo/clusters/virtual-machine
+    repoURL: git@github.com:Super-Protocol/argo-vm.git
+    targetRevision: main # argo-vm-selected-branch
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+        limit: -1 # unlimited
+        backoff:
+          duration: 5s # the amount to back off. Default unit is seconds, but could also be a duration (e.g. "2m", "1h")
+          factor: 2 # a factor to multiply the base duration after each failed retry
+          maxDuration: 24h # the maximum amount of time allowed for the backoff strategy
+    syncOptions:
+      - CreateNamespace=true
+      - Replace=true
+      - PruneLast=true
+
+---
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: super-aw-sa
+  namespace: argocd
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: super-aw-role
+  namespace: argocd
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["list", "get", "patch"]
+
+- apiGroups: [""]
+  resources: ["pods", "configmaps", "secrets"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["apps", "extensions"]
+  resources: ["deployments", "deployments/rollback", "deployments/scale", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", "patch", "scale"]
+
+- apiGroups: ["argoproj.io"]
+  resources: ["applications", "applicationsets", "appprojects"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+
+- apiGroups: ["argoproj.io"]
+  resources: ["workflowtaskresults"]
+  verbs: ["create", "patch"]
+- apiGroups: ["argoproj.io"]
+  resources: ["workflowartifactgctasks", "workflowartifactgctasks"]
+  verbs: ["list", "watch"]
+- apiGroups: ["argoproj.io"]
+  resources: ["workflowtasksets/status", "workflowartifactgctasks/status"]
+  verbs: ["patch"]
+
+---
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: super-aw-binding
+  namespace: argocd
+subjects:
+- kind: ServiceAccount
+  name: super-aw-sa
+  namespace: argocd
+roleRef:
+  kind: ClusterRole
+  name: super-aw-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pki-curl-config-untrusted
+  namespace: argocd
+data:
+  default.conf: |-
+    clientCertProvider:
+      type: pki-ca
+      challenge:
+        type: untrusted
+        idHex: ""
+        commonIdHex: ""
+      baseUrl: https://ca-subroot1.tee-dev.superprotocol.com:44443/api/v1/pki/
+      caBundle: |
+        -----BEGIN CERTIFICATE-----
+        MIID7TCCAtWgAwIBAgIBATANBgkqhkiG9w0BAQsFADB2MSIwIAYDVQQDExlTdXBl
+        clByb3RvY29sIFRFRSBSb290IENBMQswCQYDVQQGEwJVUzELMAkGA1UECBMCTlkx
+        ETAPBgNVBAcTCE5ldyBZb3JrMRYwFAYDVQQKEw1TdXBlclByb3RvY29sMQswCQYD
+        VQQLEwJJVDAeFw0yNDA4MDEwMDAwMDBaFw0zNDA4MDEwMDAwMDBaMHYxIjAgBgNV
+        BAMTGVN1cGVyUHJvdG9jb2wgVEVFIFJvb3QgQ0ExCzAJBgNVBAYTAlVTMQswCQYD
+        VQQIEwJOWTERMA8GA1UEBxMITmV3IFlvcmsxFjAUBgNVBAoTDVN1cGVyUHJvdG9j
+        b2wxCzAJBgNVBAsTAklUMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA
+        vyaTmEnNuXjj3m80DLYpQkO2PZhT6C0YdQgLxilyUsRUtQinS88Q2Eof3h0NeqB2
+        OMlDMFHRVsIYoi9sdPCINuyYajGy2XUL69al2a2OwiThbZtG6etUEOsBAJmLtnTt
+        IDVmzC8p8C+ZMSpu8bZ3AZNeLxHFY2FdZhqYj3FuWgTLwkvERBnJeVMMsSrz99qD
+        0hLUDo3iGXw99qsGCLlJC3p+S8NoClc9VjOA7x0+nE9zYrSHqwhwRC+tHdMOBUvd
+        5/tPZuDgS3TU++0reo2qnd/O0U59C8XsjP1CrXkz5LDzPSZmMWlaB7hU6edOiUQS
+        h8gskt4JNsFCnc0NamCstwIDAQABo4GFMIGCMAwGA1UdEwQFMAMBAf8wCwYDVR0P
+        BAQDAgL0MB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjAdBgNVHQ4EFgQU
+        jBSiEoknNMPDd9iKVPz0xmseNF4wJwYDVR0RBCAwHoIcY2EudGVlLWRldi5zdXBl
+        cnByb3RvY29sLmNvbTANBgkqhkiG9w0BAQsFAAOCAQEAPBNZ5xm893wUFxKvxbeW
+        V8iPL5rOcACIsPzTo7taF8imkb8UQGA6ofpPPZz59YFayNkVV2xKIi9N1x8iI8lg
+        szGfsvGm9vvgREl+U5tml1guOxv+DTNAR+vYh91VN/Fg3EoMBomMscQccIHMiuFQ
+        C6ru6D0x7aXX8VhYVeDJaJJd+Il/DV3xaFPcMRFhrXLJTBb+JOsnT0kTw5C3RREb
+        DVeduduR+4w6Xdz5XUn34iognpSl05ByO8pGQc2NgZIdpyLIIetFPFwITnrFJOV/
+        XryT5KVK0PaBSuGAMCCV2wQS9TYVDJwn/Kv7fAJ8Kte4UBBC7vSfEtdGXdT5dcYE
+        fw==
+        -----END CERTIFICATE-----
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pki-curl-config-tdx
+  namespace: argocd
+data:
+  default.conf: |-
+    clientCertProvider:
+      type: pki-ca
+      challenge:
+        type: tdx
+      baseUrl: https://ca-subroot4-tee.superprotocol.io:443/api/v1/pki;https://ca-subroot3.tee-dev.superprotocol.io:44443/api/v1/pki
+      caBundle: |
+        -----BEGIN CERTIFICATE-----
+        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
+        AAAAAAAAAKP9h/uxkPlnxiBt+FJ1sCWR3TZxtbgnqHBtPilCnsc/AAAAAAAAAAAA
+        AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD9bSJMCJpO6weDPAs3WXRDR3mnj9UdEZXL
+        yaQ/Qviq6A3jVtUIoKhYOjL3W36u+zK1jbZ+90kgTbFuPcXo6VxdIAAAAQIDBAUG
+        BwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHwUAYg4AAC0tLS0tQkVHSU4gQ0VSVElG
+        SUNBVEUtLS0tLQpNSUlFOGpDQ0JKaWdBd0lCQWdJVWZ3Nm44NU9Ob2FkQjh1TmVN
+        d0ZtWS9iZWlRVXdDZ1lJS29aSXpqMEVBd0l3CmNERWlNQ0FHQTFVRUF3d1pTVzUw
+        Wld3Z1UwZFlJRkJEU3lCUWJHRjBabTl5YlNCRFFURWFNQmdHQTFVRUNnd1IKU1c1
+        MFpXd2dRMjl5Y0c5eVlYUnBiMjR4RkRBU0JnTlZCQWNNQzFOaGJuUmhJRU5zWVhK
+        aE1Rc3dDUVlEVlFRSQpEQUpEUVRFTE1Ba0dBMVVFQmhNQ1ZWTXdIaGNOTWpNd016
+        QTVNVGN3TVRFMFdoY05NekF3TXpBNU1UY3dNVEUwCldqQndNU0l3SUFZRFZRUURE
+        QmxKYm5SbGJDQlRSMWdnVUVOTElFTmxjblJwWm1sallYUmxNUm93R0FZRFZRUUsK
+        REJGSmJuUmxiQ0JEYjNKd2IzSmhkR2x2YmpFVU1CSUdBMVVFQnd3TFUyRnVkR0Vn
+        UTJ4aGNtRXhDekFKQmdOVgpCQWdNQWtOQk1Rc3dDUVlEVlFRR0V3SlZVekJaTUJN
+        R0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEEwSUFCRk83CmlveHJwNFBoOXNwTXE2
+        bDRKc05YSVVCeE9jR21rREFXNDJrZ3NBOWwvS3ZFNkRJRmpyLzF3UTdMcjRQdUln
+        UEsKV2F3aHBrUnJYaDZadk5uWFpCZWpnZ01PTUlJRENqQWZCZ05WSFNNRUdEQVdn
+        QlNWYjEzTnZSdmg2VUJKeWRUMApNODRCVnd2ZVZEQnJCZ05WSFI4RVpEQmlNR0Nn
+        WHFCY2hscG9kSFJ3Y3pvdkwyRndhUzUwY25WemRHVmtjMlZ5CmRtbGpaWE11YVc1
+        MFpXd3VZMjl0TDNObmVDOWpaWEowYVdacFkyRjBhVzl1TDNZMEwzQmphMk55YkQ5
+        allUMXcKYkdGMFptOXliU1psYm1OdlpHbHVaejFrWlhJd0hRWURWUjBPQkJZRUZI
+        Z2FucEY0VXV2SmpCZ2VEQmgvM0xvbAoxU3dwTUE0R0ExVWREd0VCL3dRRUF3SUd3
+        REFNQmdOVkhSTUJBZjhFQWpBQU1JSUNPd1lKS29aSWh2aE5BUTBCCkJJSUNMREND
+        QWlnd0hnWUtLb1pJaHZoTkFRMEJBUVFRUDVwUHZoK0VwcVMxSkpRdGVXN0JrREND
+        QVdVR0NpcUcKU0liNFRRRU5BUUl3Z2dGVk1CQUdDeXFHU0liNFRRRU5BUUlCQWdF
+        SE1CQUdDeXFHU0liNFRRRU5BUUlDQWdFSgpNQkFHQ3lxR1NJYjRUUUVOQVFJREFn
+        RURNQkFHQ3lxR1NJYjRUUUVOQVFJRUFnRURNQkVHQ3lxR1NJYjRUUUVOCkFRSUZB
+        Z0lBL3pBUkJnc3Foa2lHK0UwQkRRRUNCZ0lDQVA4d0VBWUxLb1pJaHZoTkFRMEJB
+        Z2NDQVFBd0VBWUwKS29aSWh2aE5BUTBCQWdnQ0FRQXdFQVlMS29aSWh2aE5BUTBC
+        QWdrQ0FRQXdFQVlMS29aSWh2aE5BUTBCQWdvQwpBUUF3RUFZTEtvWklodmhOQVEw
+        QkFnc0NBUUF3RUFZTEtvWklodmhOQVEwQkFnd0NBUUF3RUFZTEtvWklodmhOCkFR
+        MEJBZzBDQVFBd0VBWUxLb1pJaHZoTkFRMEJBZzRDQVFBd0VBWUxLb1pJaHZoTkFR
+        MEJBZzhDQVFBd0VBWUwKS29aSWh2aE5BUTBCQWhBQ0FRQXdFQVlMS29aSWh2aE5B
+        UTBCQWhFQ0FRMHdId1lMS29aSWh2aE5BUTBCQWhJRQpFQWNKQXdQLy93QUFBQUFB
+        QUFBQUFBQXdFQVlLS29aSWh2aE5BUTBCQXdRQ0FBQXdGQVlLS29aSWh2aE5BUTBC
+        CkJBUUdNR0JxQUFBQU1BOEdDaXFHU0liNFRRRU5BUVVLQVFFd0hnWUtLb1pJaHZo
+        TkFRMEJCZ1FRVnZnMnVWdHYKMU1rM0xTYU9mSjRWSkRCRUJnb3Foa2lHK0UwQkRR
+        RUhNRFl3RUFZTEtvWklodmhOQVEwQkJ3RUJBZjh3RUFZTApLb1pJaHZoTkFRMEJC
+        d0lCQWY4d0VBWUxLb1pJaHZoTkFRMEJCd01CQWY4d0NnWUlLb1pJemowRUF3SURT
+        QUF3ClJRSWhBSWVacWV6bGxETEZjcEFYVmlrellqVVFvOEtGVllqY05SOU14TXFh
+        MHRjaUFpQUgvcGYzZ3VKMEhpTVkKWUN4QTRFZGZWcGVBZ3p3WnEweEpuNlNRN2tV
+        K3BBPT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQotLS0tLUJFR0lOIENFUlRJ
+        RklDQVRFLS0tLS0KTUlJQ2xqQ0NBajJnQXdJQkFnSVZBSlZ2WGMyOUcrSHBRRW5K
+        MVBRenpnRlhDOTVVTUFvR0NDcUdTTTQ5QkFNQwpNR2d4R2pBWUJnTlZCQU1NRVVs
+        dWRHVnNJRk5IV0NCU2IyOTBJRU5CTVJvd0dBWURWUVFLREJGSmJuUmxiQ0JECmIz
+        SndiM0poZEdsdmJqRVVNQklHQTFVRUJ3d0xVMkZ1ZEdFZ1EyeGhjbUV4Q3pBSkJn
+        TlZCQWdNQWtOQk1Rc3cKQ1FZRFZRUUdFd0pWVXpBZUZ3MHhPREExTWpFeE1EVXdN
+        VEJhRncwek16QTFNakV4TURVd01UQmFNSEF4SWpBZwpCZ05WQkFNTUdVbHVkR1Zz
+        SUZOSFdDQlFRMHNnVUd4aGRHWnZjbTBnUTBFeEdqQVlCZ05WQkFvTUVVbHVkR1Zz
+        CklFTnZjbkJ2Y21GMGFXOXVNUlF3RWdZRFZRUUhEQXRUWVc1MFlTQkRiR0Z5WVRF
+        TE1Ba0dBMVVFQ0F3Q1EwRXgKQ3pBSkJnTlZCQVlUQWxWVE1Ga3dFd1lIS29aSXpq
+        MENBUVlJS29aSXpqMERBUWNEUWdBRU5TQi83dDIxbFhTTwoyQ3V6cHh3NzRlSkI3
+        MkV5REdnVzVyWEN0eDJ0VlRMcTZoS2s2eitVaVJaQ25xUjdwc092Z3FGZVN4bG1U
+        bEpsCmVUbWkyV1l6M3FPQnV6Q0J1REFmQmdOVkhTTUVHREFXZ0JRaVpReldXcDAw
+        aWZPRHRKVlN2MUFiT1NjR3JEQlMKQmdOVkhSOEVTekJKTUVlZ1JhQkRoa0ZvZEhS
+        d2N6b3ZMMk5sY25ScFptbGpZWFJsY3k1MGNuVnpkR1ZrYzJWeQpkbWxqWlhNdWFX
+        NTBaV3d1WTI5dEwwbHVkR1ZzVTBkWVVtOXZkRU5CTG1SbGNqQWRCZ05WSFE0RUZn
+        UVVsVzlkCnpiMGI0ZWxBU2NuVTlEUE9BVmNMM2xRd0RnWURWUjBQQVFIL0JBUURB
+        Z0VHTUJJR0ExVWRFd0VCL3dRSU1BWUIKQWY4Q0FRQXdDZ1lJS29aSXpqMEVBd0lE
+        UndBd1JBSWdYc1ZraTB3K2k2VllHVzNVRi8yMnVhWGUwWUpEajFVZQpuQStUakQx
+        YWk1Y0NJQ1liMVNBbUQ1eGtmVFZwdm80VW95aVNZeHJEV0xtVVI0Q0k5Tkt5ZlBO
+        KwotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCi0tLS0tQkVHSU4gQ0VSVElGSUNB
+        VEUtLS0tLQpNSUlDanpDQ0FqU2dBd0lCQWdJVUltVU0xbHFkTkluemc3U1ZVcjlR
+        R3prbkJxd3dDZ1lJS29aSXpqMEVBd0l3CmFERWFNQmdHQTFVRUF3d1JTVzUwWld3
+        Z1UwZFlJRkp2YjNRZ1EwRXhHakFZQmdOVkJBb01FVWx1ZEdWc0lFTnYKY25CdmNt
+        RjBhVzl1TVJRd0VnWURWUVFIREF0VFlXNTBZU0JEYkdGeVlURUxNQWtHQTFVRUNB
+        d0NRMEV4Q3pBSgpCZ05WQkFZVEFsVlRNQjRYRFRFNE1EVXlNVEV3TkRVeE1Gb1hE
+        VFE1TVRJek1USXpOVGsxT1Zvd2FERWFNQmdHCkExVUVBd3dSU1c1MFpXd2dVMGRZ
+        SUZKdmIzUWdRMEV4R2pBWUJnTlZCQW9NRVVsdWRHVnNJRU52Y25CdmNtRjAKYVc5
+        dU1SUXdFZ1lEVlFRSERBdFRZVzUwWVNCRGJHRnlZVEVMTUFrR0ExVUVDQXdDUTBF
+        eEN6QUpCZ05WQkFZVApBbFZUTUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFR
+        Y0RRZ0FFQzZuRXdNRElZWk9qL2lQV3NDemFFS2k3CjFPaU9TTFJGaFdHamJuQlZK
+        ZlZua1k0dTNJamtEWVlMME14TzRtcXN5WWpsQmFsVFZZeEZQMnNKQks1emxLT0IK
+        dXpDQnVEQWZCZ05WSFNNRUdEQVdnQlFpWlF6V1dwMDBpZk9EdEpWU3YxQWJPU2NH
+        ckRCU0JnTlZIUjhFU3pCSgpNRWVnUmFCRGhrRm9kSFJ3Y3pvdkwyTmxjblJwWm1s
+        allYUmxjeTUwY25WemRHVmtjMlZ5ZG1salpYTXVhVzUwClpXd3VZMjl0TDBsdWRH
+        VnNVMGRZVW05dmRFTkJMbVJsY2pBZEJnTlZIUTRFRmdRVUltVU0xbHFkTkluemc3
+        U1YKVXI5UUd6a25CcXd3RGdZRFZSMFBBUUgvQkFRREFnRUdNQklHQTFVZEV3RUIv
+        d1FJTUFZQkFmOENBUUV3Q2dZSQpLb1pJemowRUF3SURTUUF3UmdJaEFPVy81UWtS
+        K1M5Q2lTRGNOb293THVQUkxzV0dmL1lpN0dTWDk0Qmd3VHdnCkFpRUE0SjBsckhv
+        TXMrWG81by9zWDZPOVFXeEhSQXZaVUdPZFJRN2N2cVJYYXFJPQotLS0tLUVORCBD
+        RVJUSUZJQ0FURS0tLS0tCgAwDQYJKoZIhvcNAQELBQADggEBAGHbT1NQEW0t5uYp
+        mskVka8DDrgVEM8She2htuRXNeeTpaImsFWQhQeSqlK/yc3NH2/+RfGGu4UT/zgS
+        4T/oLc8HosQFZxkvcESz1YKtSqHYhfuavlDuR6K0/RS6wy1dADvA6X3b57dJ81EP
+        Z/dda6qpPxXBiwhpfcFJtpiP0tIYhS6LJgFnSAdEE9G1HwYUrCYsjQ2LCgBQDqYB
+        9AWDmUBh8SSdRQzYJfmHG8LTXox/8mD9Hq8HPhzEzSFwu/Yy+KZX9uxEw0vPvmVI
+        balDQD+0bddS+Jvj4ELLmKRk/yX51Lqx6YYr0rSX7t9RaI9F9muzzQ4mWzWA6ief
+        YwF1StA=
+        -----END CERTIFICATE-----
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pki-curl-config-sev-snp
+  namespace: argocd
+data:
+  default.conf: |-
+    clientCertProvider:
+      type: pki-ca
+      challenge:
+        type: sev-snp
+      baseUrl: https://ca-subroot4-tee.superprotocol.io:443/api/v1/pki;https://ca-subroot3.tee-dev.superprotocol.io:44443/api/v1/pki
+      caBundle: |
+        -----BEGIN CERTIFICATE-----
+        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
+        AAAAAAAAAKP9h/uxkPlnxiBt+FJ1sCWR3TZxtbgnqHBtPilCnsc/AAAAAAAAAAAA
+        AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD9bSJMCJpO6weDPAs3WXRDR3mnj9UdEZXL
+        yaQ/Qviq6A3jVtUIoKhYOjL3W36u+zK1jbZ+90kgTbFuPcXo6VxdIAAAAQIDBAUG
+        BwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHwUAYg4AAC0tLS0tQkVHSU4gQ0VSVElG
+        SUNBVEUtLS0tLQpNSUlFOGpDQ0JKaWdBd0lCQWdJVWZ3Nm44NU9Ob2FkQjh1TmVN
+        d0ZtWS9iZWlRVXdDZ1lJS29aSXpqMEVBd0l3CmNERWlNQ0FHQTFVRUF3d1pTVzUw
+        Wld3Z1UwZFlJRkJEU3lCUWJHRjBabTl5YlNCRFFURWFNQmdHQTFVRUNnd1IKU1c1
+        MFpXd2dRMjl5Y0c5eVlYUnBiMjR4RkRBU0JnTlZCQWNNQzFOaGJuUmhJRU5zWVhK
+        aE1Rc3dDUVlEVlFRSQpEQUpEUVRFTE1Ba0dBMVVFQmhNQ1ZWTXdIaGNOTWpNd016
+        QTVNVGN3TVRFMFdoY05NekF3TXpBNU1UY3dNVEUwCldqQndNU0l3SUFZRFZRUURE
+        QmxKYm5SbGJDQlRSMWdnVUVOTElFTmxjblJwWm1sallYUmxNUm93R0FZRFZRUUsK
+        REJGSmJuUmxiQ0JEYjNKd2IzSmhkR2x2YmpFVU1CSUdBMVVFQnd3TFUyRnVkR0Vn
+        UTJ4aGNtRXhDekFKQmdOVgpCQWdNQWtOQk1Rc3dDUVlEVlFRR0V3SlZVekJaTUJN
+        R0J5cUdTTTQ5QWdFR0NDcUdTTTQ5QXdFSEEwSUFCRk83CmlveHJwNFBoOXNwTXE2
+        bDRKc05YSVVCeE9jR21rREFXNDJrZ3NBOWwvS3ZFNkRJRmpyLzF3UTdMcjRQdUln
+        UEsKV2F3aHBrUnJYaDZadk5uWFpCZWpnZ01PTUlJRENqQWZCZ05WSFNNRUdEQVdn
+        QlNWYjEzTnZSdmg2VUJKeWRUMApNODRCVnd2ZVZEQnJCZ05WSFI4RVpEQmlNR0Nn
+        WHFCY2hscG9kSFJ3Y3pvdkwyRndhUzUwY25WemRHVmtjMlZ5CmRtbGpaWE11YVc1
+        MFpXd3VZMjl0TDNObmVDOWpaWEowYVdacFkyRjBhVzl1TDNZMEwzQmphMk55YkQ5
+        allUMXcKYkdGMFptOXliU1psYm1OdlpHbHVaejFrWlhJd0hRWURWUjBPQkJZRUZI
+        Z2FucEY0VXV2SmpCZ2VEQmgvM0xvbAoxU3dwTUE0R0ExVWREd0VCL3dRRUF3SUd3
+        REFNQmdOVkhSTUJBZjhFQWpBQU1JSUNPd1lKS29aSWh2aE5BUTBCCkJJSUNMREND
+        QWlnd0hnWUtLb1pJaHZoTkFRMEJBUVFRUDVwUHZoK0VwcVMxSkpRdGVXN0JrREND
+        QVdVR0NpcUcKU0liNFRRRU5BUUl3Z2dGVk1CQUdDeXFHU0liNFRRRU5BUUlCQWdF
+        SE1CQUdDeXFHU0liNFRRRU5BUUlDQWdFSgpNQkFHQ3lxR1NJYjRUUUVOQVFJREFn
+        RURNQkFHQ3lxR1NJYjRUUUVOQVFJRUFnRURNQkVHQ3lxR1NJYjRUUUVOCkFRSUZB
+        Z0lBL3pBUkJnc3Foa2lHK0UwQkRRRUNCZ0lDQVA4d0VBWUxLb1pJaHZoTkFRMEJB
+        Z2NDQVFBd0VBWUwKS29aSWh2aE5BUTBCQWdnQ0FRQXdFQVlMS29aSWh2aE5BUTBC
+        QWdrQ0FRQXdFQVlMS29aSWh2aE5BUTBCQWdvQwpBUUF3RUFZTEtvWklodmhOQVEw
+        QkFnc0NBUUF3RUFZTEtvWklodmhOQVEwQkFnd0NBUUF3RUFZTEtvWklodmhOCkFR
+        MEJBZzBDQVFBd0VBWUxLb1pJaHZoTkFRMEJBZzRDQVFBd0VBWUxLb1pJaHZoTkFR
+        MEJBZzhDQVFBd0VBWUwKS29aSWh2aE5BUTBCQWhBQ0FRQXdFQVlMS29aSWh2aE5B
+        UTBCQWhFQ0FRMHdId1lMS29aSWh2aE5BUTBCQWhJRQpFQWNKQXdQLy93QUFBQUFB
+        QUFBQUFBQXdFQVlLS29aSWh2aE5BUTBCQXdRQ0FBQXdGQVlLS29aSWh2aE5BUTBC
+        CkJBUUdNR0JxQUFBQU1BOEdDaXFHU0liNFRRRU5BUVVLQVFFd0hnWUtLb1pJaHZo
+        TkFRMEJCZ1FRVnZnMnVWdHYKMU1rM0xTYU9mSjRWSkRCRUJnb3Foa2lHK0UwQkRR
+        RUhNRFl3RUFZTEtvWklodmhOQVEwQkJ3RUJBZjh3RUFZTApLb1pJaHZoTkFRMEJC
+        d0lCQWY4d0VBWUxLb1pJaHZoTkFRMEJCd01CQWY4d0NnWUlLb1pJemowRUF3SURT
+        QUF3ClJRSWhBSWVacWV6bGxETEZjcEFYVmlrellqVVFvOEtGVllqY05SOU14TXFh
+        MHRjaUFpQUgvcGYzZ3VKMEhpTVkKWUN4QTRFZGZWcGVBZ3p3WnEweEpuNlNRN2tV
+        K3BBPT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQotLS0tLUJFR0lOIENFUlRJ
+        RklDQVRFLS0tLS0KTUlJQ2xqQ0NBajJnQXdJQkFnSVZBSlZ2WGMyOUcrSHBRRW5K
+        MVBRenpnRlhDOTVVTUFvR0NDcUdTTTQ5QkFNQwpNR2d4R2pBWUJnTlZCQU1NRVVs
+        dWRHVnNJRk5IV0NCU2IyOTBJRU5CTVJvd0dBWURWUVFLREJGSmJuUmxiQ0JECmIz
+        SndiM0poZEdsdmJqRVVNQklHQTFVRUJ3d0xVMkZ1ZEdFZ1EyeGhjbUV4Q3pBSkJn
+        TlZCQWdNQWtOQk1Rc3cKQ1FZRFZRUUdFd0pWVXpBZUZ3MHhPREExTWpFeE1EVXdN
+        VEJhRncwek16QTFNakV4TURVd01UQmFNSEF4SWpBZwpCZ05WQkFNTUdVbHVkR1Zz
+        SUZOSFdDQlFRMHNnVUd4aGRHWnZjbTBnUTBFeEdqQVlCZ05WQkFvTUVVbHVkR1Zz
+        CklFTnZjbkJ2Y21GMGFXOXVNUlF3RWdZRFZRUUhEQXRUWVc1MFlTQkRiR0Z5WVRF
+        TE1Ba0dBMVVFQ0F3Q1EwRXgKQ3pBSkJnTlZCQVlUQWxWVE1Ga3dFd1lIS29aSXpq
+        MENBUVlJS29aSXpqMERBUWNEUWdBRU5TQi83dDIxbFhTTwoyQ3V6cHh3NzRlSkI3
+        MkV5REdnVzVyWEN0eDJ0VlRMcTZoS2s2eitVaVJaQ25xUjdwc092Z3FGZVN4bG1U
+        bEpsCmVUbWkyV1l6M3FPQnV6Q0J1REFmQmdOVkhTTUVHREFXZ0JRaVpReldXcDAw
+        aWZPRHRKVlN2MUFiT1NjR3JEQlMKQmdOVkhSOEVTekJKTUVlZ1JhQkRoa0ZvZEhS
+        d2N6b3ZMMk5sY25ScFptbGpZWFJsY3k1MGNuVnpkR1ZrYzJWeQpkbWxqWlhNdWFX
+        NTBaV3d1WTI5dEwwbHVkR1ZzVTBkWVVtOXZkRU5CTG1SbGNqQWRCZ05WSFE0RUZn
+        UVVsVzlkCnpiMGI0ZWxBU2NuVTlEUE9BVmNMM2xRd0RnWURWUjBQQVFIL0JBUURB
+        Z0VHTUJJR0ExVWRFd0VCL3dRSU1BWUIKQWY4Q0FRQXdDZ1lJS29aSXpqMEVBd0lE
+        UndBd1JBSWdYc1ZraTB3K2k2VllHVzNVRi8yMnVhWGUwWUpEajFVZQpuQStUakQx
+        YWk1Y0NJQ1liMVNBbUQ1eGtmVFZwdm80VW95aVNZeHJEV0xtVVI0Q0k5Tkt5ZlBO
+        KwotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCi0tLS0tQkVHSU4gQ0VSVElGSUNB
+        VEUtLS0tLQpNSUlDanpDQ0FqU2dBd0lCQWdJVUltVU0xbHFkTkluemc3U1ZVcjlR
+        R3prbkJxd3dDZ1lJS29aSXpqMEVBd0l3CmFERWFNQmdHQTFVRUF3d1JTVzUwWld3
+        Z1UwZFlJRkp2YjNRZ1EwRXhHakFZQmdOVkJBb01FVWx1ZEdWc0lFTnYKY25CdmNt
+        RjBhVzl1TVJRd0VnWURWUVFIREF0VFlXNTBZU0JEYkdGeVlURUxNQWtHQTFVRUNB
+        d0NRMEV4Q3pBSgpCZ05WQkFZVEFsVlRNQjRYRFRFNE1EVXlNVEV3TkRVeE1Gb1hE
+        VFE1TVRJek1USXpOVGsxT1Zvd2FERWFNQmdHCkExVUVBd3dSU1c1MFpXd2dVMGRZ
+        SUZKdmIzUWdRMEV4R2pBWUJnTlZCQW9NRVVsdWRHVnNJRU52Y25CdmNtRjAKYVc5
+        dU1SUXdFZ1lEVlFRSERBdFRZVzUwWVNCRGJHRnlZVEVMTUFrR0ExVUVDQXdDUTBF
+        eEN6QUpCZ05WQkFZVApBbFZUTUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFR
+        Y0RRZ0FFQzZuRXdNRElZWk9qL2lQV3NDemFFS2k3CjFPaU9TTFJGaFdHamJuQlZK
+        ZlZua1k0dTNJamtEWVlMME14TzRtcXN5WWpsQmFsVFZZeEZQMnNKQks1emxLT0IK
+        dXpDQnVEQWZCZ05WSFNNRUdEQVdnQlFpWlF6V1dwMDBpZk9EdEpWU3YxQWJPU2NH
+        ckRCU0JnTlZIUjhFU3pCSgpNRWVnUmFCRGhrRm9kSFJ3Y3pvdkwyTmxjblJwWm1s
+        allYUmxjeTUwY25WemRHVmtjMlZ5ZG1salpYTXVhVzUwClpXd3VZMjl0TDBsdWRH
+        VnNVMGRZVW05dmRFTkJMbVJsY2pBZEJnTlZIUTRFRmdRVUltVU0xbHFkTkluemc3
+        U1YKVXI5UUd6a25CcXd3RGdZRFZSMFBBUUgvQkFRREFnRUdNQklHQTFVZEV3RUIv
+        d1FJTUFZQkFmOENBUUV3Q2dZSQpLb1pJemowRUF3SURTUUF3UmdJaEFPVy81UWtS
+        K1M5Q2lTRGNOb293THVQUkxzV0dmL1lpN0dTWDk0Qmd3VHdnCkFpRUE0SjBsckhv
+        TXMrWG81by9zWDZPOVFXeEhSQXZaVUdPZFJRN2N2cVJYYXFJPQotLS0tLUVORCBD
+        RVJUSUZJQ0FURS0tLS0tCgAwDQYJKoZIhvcNAQELBQADggEBAGHbT1NQEW0t5uYp
+        mskVka8DDrgVEM8She2htuRXNeeTpaImsFWQhQeSqlK/yc3NH2/+RfGGu4UT/zgS
+        4T/oLc8HosQFZxkvcESz1YKtSqHYhfuavlDuR6K0/RS6wy1dADvA6X3b57dJ81EP
+        Z/dda6qpPxXBiwhpfcFJtpiP0tIYhS6LJgFnSAdEE9G1HwYUrCYsjQ2LCgBQDqYB
+        9AWDmUBh8SSdRQzYJfmHG8LTXox/8mD9Hq8HPhzEzSFwu/Yy+KZX9uxEw0vPvmVI
+        balDQD+0bddS+Jvj4ELLmKRk/yX51Lqx6YYr0rSX7t9RaI9F9muzzQ4mWzWA6ief
+        YwF1StA=
+        -----END CERTIFICATE-----
+
+---
+
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: super-init-manifests
+  namespace: argocd
+spec:
+  concurrencyPolicy: 'Replace'
+  schedule: '*/5 * * * *'
+  stopStrategy:
+    expression: 'cronworkflow.succeeded >= 1'
+  successfulJobsHistoryLimit: 1
+  suspend: false
+  timezone: 'UTC'
+  workflowSpec:
+    serviceAccountName: super-aw-sa
+    entrypoint: main
+    templates:
+      - name: main
+        dag:
+          tasks:
+            - name: pki-config-challenge
+              template: pki-config-challenge
+
+            - name: get-secrets-for-tdx
+              template: get-secrets-for-tdx
+              depends: pki-config-challenge
+              when: "'{{tasks.pki-config-challenge.outputs.parameters.challenge-type}}' == tdx"
+
+            - name: get-secrets-for-sev-snp
+              template: get-secrets-for-sev-snp
+              depends: pki-config-challenge
+              when: "'{{tasks.pki-config-challenge.outputs.parameters.challenge-type}}' == 'sev-snp'"
+
+            - name: get-secrets-for-untrusted
+              template: get-secrets-for-untrusted
+              depends: pki-config-challenge
+              when: "'{{tasks.pki-config-challenge.outputs.parameters.challenge-type}}' == untrusted"
+
+            - name: apply-secrets
+              template: apply-secrets
+              depends: "get-secrets-for-tdx.Succeeded || get-secrets-for-sev-snp.Succeeded || get-secrets-for-untrusted.Succeeded"
+
+            - name: force-sync-root-argocd-app
+              template: force-sync-root-argocd-app
+              depends: "apply-secrets.Succeeded"
+
+
+      - name: pki-config-challenge
+        script:
+          # TODO pin tag
+          image: bitnami/kubectl
+          command: [bash, -c]
+          source: |
+            set -e
+            NAMESPACE="argocd"
+            PKI_CONFIGMAP_NAME="pki-curl-config"
+            CHALLENGE_FILE="secret.sp-pki-challenge.yaml"
+            cd "/sp/manifests"
+
+            CPU_TYPE=$(kubectl -n super-protocol get configmap cpu-type -o jsonpath='{.data.cpu-type}' 2>/dev/null);
+            if [[ $CPU_TYPE == "untrusted" ]]; then
+              # Is PKI challenge overridden via custom / developer tokens?
+              if [[ -f $CHALLENGE_FILE ]]; then
+                idHex=$(yq eval '.stringData.idHex' "$CHALLENGE_FILE")
+                commonIdHex=$(yq eval '.stringData.commonIdHex' "$CHALLENGE_FILE")
+                # update configmap
+                filtered_configmap=$(kubectl get configmap "$PKI_CONFIGMAP_NAME-untrusted" -n $NAMESPACE -o yaml | \
+                  yq eval "del(.metadata) | .metadata.name = \"$PKI_CONFIGMAP_NAME-untrusted\"" - | \
+                    sed -e "s/idHex: .*/idHex: $idHex/" \
+                    -e "s/commonIdHex: .*/commonIdHex: $commonIdHex/")
+                echo "$filtered_configmap" | kubectl apply -n $NAMESPACE -f -
+              fi
+            else
+                # created by tools/osbuilder/rootfs-builder/ubuntu/superprotocol/check-config-files.sh
+                if [[ -z "${CPU_TYPE:-}" ]];then
+                    echo "Failed to get CPU type from cpu-type configmap in super-protocol ns!";
+                    exit 1;
+                fi
+            fi
+
+            echo "$CPU_TYPE" > /tmp/challenge-type
+          volumeMounts:
+            - name: sp-config-volume
+              mountPath: "/sp"
+            - name: host-kernel-cmdline
+              mountPath: /host-kernel-cmdline
+              readOnly: true
+        outputs:
+          parameters:
+            - name: challenge-type
+              valueFrom:
+                path: /tmp/challenge-type
+
+
+      - name: get-secrets-for-tdx
+        container:
+          image: registry.superprotocol.local:5000/super-protocol/tee-pki-curl:v1.5.1
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+              SD=/opt/super/deploy
+              rm -rf $SD && mkdir -p $SD
+              node dist/app.js https://secrets.tee-dev.superprotocol.io:44443/repos/Super-Protocol/tdx-vm-secrets/tarball/main --config /pki-config/default.conf > $SD/secrets_repo.tar.gz
+              mkdir -p $SD/secrets_repo && cd $SD/secrets_repo
+              tar -xzf $SD/secrets_repo.tar.gz
+              inner_dir=$(find ./ -mindepth 1 -maxdepth 1 -type d)
+              cd $inner_dir
+              cp -r k8s/* $SD/
+          volumeMounts:
+            - name: sp-deploy
+              mountPath: /opt/super
+            - name: pki-config-tdx
+              mountPath: /pki-config
+              readOnly: true
+            - name: dev-tdx-guest
+              mountPath: /dev/tdx_guest
+            - name: tdx-attest-conf
+              readOnly: true
+              mountPath: /etc/tdx-attest.conf
+          securityContext:
+            privileged: true
+
+      - name: get-secrets-for-sev-snp
+        container:
+          image: registry.superprotocol.local:5000/super-protocol/tee-pki-curl:v1.5.1
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+              SD=/opt/super/deploy
+              rm -rf $SD && mkdir -p $SD
+              node dist/app.js https://secrets.tee-dev.superprotocol.io:44443/repos/Super-Protocol/tdx-vm-secrets/tarball/main --config /pki-config/default.conf > $SD/secrets_repo.tar.gz
+              mkdir -p $SD/secrets_repo && cd $SD/secrets_repo
+              tar -xzf $SD/secrets_repo.tar.gz
+              inner_dir=$(find ./ -mindepth 1 -maxdepth 1 -type d)
+              cd $inner_dir
+              cp -r k8s/* $SD/
+          volumeMounts:
+            - name: sp-deploy
+              mountPath: /opt/super
+            - name: pki-config-sev-snp
+              mountPath: /pki-config
+              readOnly: true
+            - name: dev-sev-guest
+              mountPath: /dev/sev-guest
+          securityContext:
+            privileged: true
+
+      - name: get-secrets-for-untrusted
+        container:
+          image: registry.superprotocol.local:5000/super-protocol/tee-pki-curl:v1.5.1
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+              SD=/opt/super/deploy
+              rm -rf $SD && mkdir -p $SD
+              node dist/app.js https://secrets.tee-dev.superprotocol.com:44443/repos/Super-Protocol/tdx-vm-secrets/tarball/main --config /pki-config/default.conf > $SD/secrets_repo.tar.gz
+              mkdir -p $SD/secrets_repo && cd $SD/secrets_repo
+              tar -xzf $SD/secrets_repo.tar.gz
+              inner_dir=$(find ./ -mindepth 1 -maxdepth 1 -type d)
+              cd $inner_dir
+              cp -r k8s/* $SD/
+          volumeMounts:
+            - name: sp-deploy
+              mountPath: /opt/super
+            - name: pki-config-untrusted
+              mountPath: /pki-config
+              readOnly: true
+
+
+      - name: apply-secrets
+        container:
+          # TODO pin tag
+          image: bitnami/kubectl
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+              cd /opt/super/deploy
+              for file in *.yaml; do
+                kubectl apply -f "$file"
+              done
+              rm -rf /opt/super/deploy/*
+          volumeMounts:
+            - name: sp-deploy
+              mountPath: /opt/super
+
+
+      - name: force-sync-root-argocd-app
+        container:
+          image: quay.io/argoproj/argocd:v2.13.1@sha256:19608c266cc41e4986d9b1c2b79ea4c42bb9430269eefc5005e9d65be4d22868
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+              ARGOCD_APP_NAME=sp-argo-vm
+              argocd login argocd-server.argocd.svc:80 --username admin --password $ARGOCD_PASSWORD --insecure
+              argocd app sync $ARGOCD_APP_NAME --force
+          env:
+          - name: ARGOCD_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: argocd-initial-admin-secret
+                key: password
+
+
+    volumes:
+    - name: sp-config-volume
+      hostPath:
+        path: "/sp"
+        type: Directory
+    - name: sp-deploy
+      hostPath:
+        path: /opt/super
+        type: Directory
+    - name: pki-config-untrusted
+      configMap:
+        name: pki-curl-config-untrusted
+    - name: pki-config-tdx
+      configMap:
+        name: pki-curl-config-tdx
+    - name: pki-config-sev-snp
+      configMap:
+        name: pki-curl-config-sev-snp
+    - name: host-kernel-cmdline
+      hostPath:
+        path: /proc/cmdline
+        type: File
+    - name: tdx-attest-conf
+      hostPath:
+        path: /etc/tdx-attest.conf
+        type: File
+    - name: dev-tdx-guest
+      hostPath:
+        path: /dev/tdx_guest
+        type: ''
+    - name: dev-sev-guest
+      hostPath:
+        path: /dev/sev-guest
+        type: ''
