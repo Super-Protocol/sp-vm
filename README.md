@@ -1,25 +1,25 @@
 # sp-vm
 
 ## Overview
-The Super Protocol confidential virtual machine image
+The Super Protocol confidential virtual machine image.
 
-## build
-To get working mounts during docker build process use:
+## Build
+To enable working mounts during the Docker build process, use the following commands:
 ```bash
-docker buildx create --use --name insecure-builder --buildkitd-flags '--allow-insecure-entitlement security.insecure'
-docker buildx build -t sp-vm --allow security.insecure . --output type=local,dest=./out
+docker buildx create --use --name insecure-builder --buildkitd-flags '--allow-insecure-entitlement security.insecure';
+docker buildx build -t sp-vm --allow security.insecure . --output type=local,dest=./out;
 ```
-The build artifacts can be found in $(pwd)/out directory
+The build artifacts will be located in the $(pwd)/out directory.
 
-## Test run
-The future start_superprotocol.sh script changes is required, but now you can test it someway like this:
+## Test Run
+The `start_superprotocol.sh` script will require changes in the future, but for now, you can test the VM using the following steps:
 
-### Create state disk
+### Create State Disk
 ```bash
 qemu-img create -f qcow2 state.qcow2 500G;
 ```
 
-### Create provider config disk
+### Create Provider Config Disk
 ```bash
 dd if=/dev/zero of=provider.img bs=1M count=1;
 mkfs.ext4 -O ^has_journal,^huge_file,^meta_bg,^ext_attr -L provider_config provider.img;
@@ -52,6 +52,6 @@ losetup -d "$DEVICE";
     -drive file=provider.img,if=virtio,format=raw;
 ```
 
-## Referencies
-Some parts of code, including [kernel configs](src/kernel/files/configs/fragments) taken or/and inspired by [Kata Containers](https://github.com/kata-containers/kata-containers) distributed under [Apache-2.0 license](https://github.com/kata-containers/kata-containers/blob/main/LICENSE)
+## References
+Some parts of the code, including [kernel configs](src/kernel/files/configs/fragments), were taken from or inspired by [Kata Containers](https://github.com/kata-containers/kata-containers), which is distributed under the [Apache-2.0 license](https://github.com/kata-containers/kata-containers/blob/main/LICENSE).
 
