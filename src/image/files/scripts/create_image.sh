@@ -18,7 +18,7 @@ BOOT_PART_SIZE="100";  # MiB
 BIOS_PART="p2";
 BIOS_PART_SIZE="4";  # MiB
 ESP_PART="p3";
-ESP_PART_SIZE="10";  # MiB
+ESP_PART_SIZE="100";  # MiB
 ROOTFS_PART="p4";
 # ROOTFS_PART_SIZE will be calculated later
 ROOTFS_HASH_PART="p5";
@@ -116,6 +116,7 @@ function mount_partitions() {
     mkdir -p "/mnt/boot/efi";
     mount "/dev/mapper/${LOOP_DEV_NAME}${ESP_PART}" "/mnt/boot/efi";
     mkdir -p "/mnt/boot/efi/EFI/BOOT";
+    mkdir -p "/mnt/boot/efi/boot/grub";
     mkdir -p "/mnt/rootfs";
     mount "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART}" "/mnt/rootfs";
 }
@@ -145,6 +146,7 @@ function install_grub_efi() {
         --removable \
         --bootloader-id=GRUB \
         "$LOOP_DEV";
+    mv "/mnt/boot/efi/EFI/BOOT/grub.cfg" "/mnt/boot/efi/boot/grub/";
 }
 
 ## BIOS
