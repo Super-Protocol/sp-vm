@@ -1,5 +1,8 @@
 # sp-vm
 
+## Overview
+The Super Protocol confidential virtual machine image
+
 ## build
 To get working mounts during docker build process use:
 ```bash
@@ -48,3 +51,7 @@ losetup -d "$DEVICE";
     -drive file=state.qcow2,if=virtio,format=qcow2 \
     -drive file=provider.img,if=virtio,format=raw;
 ```
+
+## Referencies
+Some parts of code, including [kernel configs](src/kernel/files/configs/fragments) taken or/and inspired by [Kata Containers](https://github.com/kata-containers/kata-containers) distributed under [Apache-2.0 license](https://github.com/kata-containers/kata-containers/blob/main/LICENSE)
+
