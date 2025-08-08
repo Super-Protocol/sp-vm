@@ -23,6 +23,7 @@ jobs:
     env:
       S3_BUCKET: "builds-vm"
       UPLOAD_FILES: "rootfs.img OVMF.fd OVMF_AMD.fd root_hash.txt vmlinuz"
+      PKI_CONTAINER_PATH: /tmp/pki-authority.tar
 
     steps:
       - name: Checkout repository
@@ -42,6 +43,21 @@ jobs:
       - name: Load CA cert
         run: |
           echo "${{ vars.SP_CA_CRT }}" > ca.crt;
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to TEE PKI Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.TEE_PKI_USERNAME }}
+          password: ${{ secrets.TEE_PKI_ACCESS_TOKEN }}
+
+      - name: Pull TEE PKI Authority Service image
+        run: |
+          docker pull ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-16776712061
+          docker save ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-16776712061 -o "${PKI_CONTAINER_PATH}"
 
       - name: Build
         run: |
