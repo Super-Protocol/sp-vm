@@ -35,7 +35,7 @@ KERNEL_NAME="nvidia-gpu-confidential";
 DISTRO="ubuntu";
 OS_VERSION="noble";
 CUDA_KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb";
-ROOTFS_EXTRA_PKGS="init openssh-server netplan.io curl htop open-iscsi cryptsetup ca-certificates gnupg2 kmod gcc-13 build-essential";
+ROOTFS_EXTRA_PKGS="init openssh-server netplan.io curl htop open-iscsi cryptsetup ca-certificates gnupg2 kmod gcc-13 build-essential lxc lxc-templates";
 
 function export_vars_for_other_scripts() {
     export ROOTFS_DIR;
@@ -203,12 +203,18 @@ function build_rootfs() {
     log_info "Building rootfs";
     pushd "$KATA_REPO_DIR/tools/osbuilder/rootfs-builder" >/dev/null;
 
+    # Check if PKI_CONTAINER_PATH exists
+    if [ ! -f "${PKI_CONTAINER_PATH}" ]; then
+        echo "Error: PKI_CONTAINER_PATH ('${PKI_CONTAINER_PATH}') not found."
+        exit 1
+    fi
     script -fec 'sudo -E \
         USE_DOCKER=true \
         PROVIDER_CONFIG_DST="$PROVIDER_CONFIG_DST" \
         CONFIDENTIAL_GUEST=yes \
         MEASURED_ROOTFS=yes \
         EXTRA_PKGS="$ROOTFS_EXTRA_PKGS" \
+        PKI_CONTAINER_PATH="$PKI_CONTAINER_PATH" \
         ./rootfs.sh "$DISTRO"';
 
     popd >/dev/null;
