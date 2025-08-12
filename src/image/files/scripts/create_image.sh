@@ -7,11 +7,11 @@ set -euo pipefail;
 # OUTPUTROOT
 # OUTPUTDIR
 # IMAGESIZE
-# VERSION
+# SP_VM_IMAGE_VERSION
 
 # private const
 BUILDROOT="/buildroot";
-OUTPUT_FILENAME="sp_$VERSION.img";
+OUTPUT_FILENAME="sp-vm-${SP_VM_IMAGE_VERSION}.img";
 OUTPUT_FILE="$OUTPUTROOT/$OUTPUT_FILENAME";
 BOOT_PART="p1";
 BOOT_PART_SIZE="100";  # MiB
@@ -181,10 +181,10 @@ function template_grub_config() {
     log_info "templating grub config";
     ROOTFS_HASH="$(grep 'Root hash' "/tmp/rootfs_hash.txt" | awk '{print $3}')";
     ROOTFS_HASH="$ROOTFS_HASH" \
-        VERSION="$VERSION" \
+        SP_VM_IMAGE_VERSION="$SP_VM_IMAGE_VERSION" \
         KERNEL_VERSION="$KERNEL_VERSION" \
         envsubst \
-        '$ROOTFS_HASH,$VERSION,$KERNEL_VERSION' \
+        '$ROOTFS_HASH,$SP_VM_IMAGE_VERSION,$KERNEL_VERSION' \
         > "/mnt/boot/grub/grub.cfg" \
         < "$BUILDROOT/files/configs/grub.cfg.tmpl";
 }

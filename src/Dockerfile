@@ -131,6 +131,22 @@ ADD kernel/files/scripts/build-kernel.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/build-kernel.sh
 ### End kernel ###
 
+### Start hauler ###
+FROM ubuntu:24.04 AS hauler_builder
+RUN apt update && apt -y install curl
+ARG HAULER_VERSION="1.1.0"
+RUN mkdir -p "/opt/hauler/.hauler"
+RUN ln -s "/opt/hauler/.hauler" "/root/.hauler"
+RUN curl -sfL https://get.hauler.dev | bash
+WORKDIR /opt/hauler
+ADD hauler/files/configs/rke2-airgap.yaml /opt/hauler/rke2-airgap.yaml
+RUN hauler store sync --store rke2-store --platform linux/amd64 --files /opt/hauler/rke2-airgap.yaml
+RUN rm /opt/hauler/rke2-airgap.yaml
+RUN hauler store add --store rke2-store image ghcr.io/super-protocol/tee-pki-curl:v1.5.1 --platform linux/amd64
+# TODO: add argo-cd, argo-workflows, cert-manager, gpu-operator, longhorn charts
+RUN hauler store save --store rke2-store --filename rke2-airgap.tar.zst
+### End hauler ###
+
 ### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
 RUN apt update && apt install -y wget gcc make build-essential debootstrap
@@ -208,11 +224,11 @@ RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
 ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
 RUN /buildroot/files/scripts/setup_sshd_config.sh
 
-ADD rootfs/files/scripts/install_hauler.sh /buildroot/files/scripts/install_hauler.sh
-RUN --security=insecure /buildroot/files/scripts/install_hauler.sh
-ADD rootfs/files/configs/hauler/rke2-airgap.yaml /buildroot/files/configs/hauler/rke2-airgap.yaml
-ADD rootfs/files/scripts/setup_hauler.sh /buildroot/files/scripts/setup_hauler.sh
-RUN --security=insecure /buildroot/files/scripts/setup_hauler.sh
+RUN mkdir -p "$OUTPUTDIR/etc/super/opt/hauler";
+RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
+RUN ln -sf "/opt/hauler/.hauler" "${OUTPUTDIR}/root/.hauler";
+COPY --from=hauler_builder /opt/hauler/rke2-airgap.tar.zst ${OUTPUTDIR}/etc/super/opt/hauler/
+COPY --from=hauler_builder /usr/local/bin/hauler ${OUTPUTDIR}/usr/local/bin/
 
 # TODO: move hauler and rke2? to anuther independent layers..
 
@@ -261,7 +277,9 @@ RUN apt -y install grub-efi  # this needs to be installed separately!
 
 ARG OUTPUTROOT=/output
 ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
-ARG VERSION=build-228
+
+# is required by passing build arg, value example: SP_VM_IMAGE_VERSION=build-1
+ARG SP_VM_IMAGE_VERSION
 ARG KERNEL_VERSION=6.12.13
 
 WORKDIR /output

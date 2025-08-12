@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -euo pipefail;
+
 # Define source and destination paths
 declare -A files=(
     ["/etc/super/var/lib/rancher/rke2/rke2-pss.yaml"]="/var/lib/rancher/rke2/rke2-pss.yaml"
@@ -23,28 +25,41 @@ for src in "${!files[@]}"; do
     fi
 done
 
+# this service is designed to start before rke2 creates own directories
+mkdir -p "/var/lib/rancher/rke2/server/manifests";
+
+# kubernetes main auto-apply manifest
+K8S="/var/lib/rancher/rke2/server/manifests/k8s.yaml"
+
 # Overriding hauler int IP
-NODE_DEFAULT_IFACE="$(ip route get 8.8.8.8 2>/dev/null | awk '{print $5}' | grep . )";
-NODE_IP="$(ip a show $NODE_DEFAULT_IFACE | grep inet | grep -v inet6 | awk '{print $2}' | awk -F '/' '{print $1}')";
+NODE_DEFAULT_IFACE="$({ ip route get 8.8.8.8 2>/dev/null | awk '{print $5}' | grep '.'; } || echo)";
+if [[ -z "$NODE_DEFAULT_IFACE" ]]; then
+    echo "Failed to get default network interface, please ensure your VM has an internet access";
+    exit 1;
+fi
+NODE_IP="$({ ip a show "$NODE_DEFAULT_IFACE" 2>/dev/null | grep 'inet ' | awk '{print $2}' | awk -F '/' '{print $1}'; } || echo)";
+if [[ -z "$NODE_IP" ]]; then
+    echo "Failed to get ip of the default network interface $NODE_DEFAULT_IFACE, please ensure your VM has an internet access";
+    exit 1;
+fi
 
 NODE_IP="$NODE_IP" \
     envsubst \
     '$NODE_IP' \
     < "/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml" \
-    > "/var/lib/rancher/rke2/server/manifests/k8s.yaml";
+    > "$K8S";
 
-K8S="/var/lib/rancher/rke2/server/manifests/k8s.yaml"
-CMDLINE="$(cat /proc/cmdline)"
-ARGO_BRANCH="main"
+CMDLINE="$(cat /proc/cmdline)";
+ARGO_BRANCH="main";
 
 if [[ "$CMDLINE" == *"sp-debug=true"* ]]; then
-    ARGO_BRANCH_CMDLINE="$(cat /proc/cmdline | grep -o 'argo_branch=[^ ]*' | cut -d= -f2)"
+    ARGO_BRANCH_CMDLINE="$({ grep -o 'argo_branch=[^ ]*' < /proc/cmdline | cut -d= -f2; } || echo)";
     if [[ -n "$ARGO_BRANCH_CMDLINE" ]]; then
         ARGO_BRANCH="$ARGO_BRANCH_CMDLINE"
     fi
 fi
 
-CURRENT_ARGO_BRANCH="$(grep -E 'targetRevision\W+(\w+)' "$K8S" | awk '{print $2}')"
+CURRENT_ARGO_BRANCH="$({ grep -E 'targetRevision\W+(\w+)' "$K8S" | awk '{print $2}'; } || echo)";
 if [[ "$CURRENT_ARGO_BRANCH" != "$ARGO_BRANCH" ]]; then
     echo "Setting $ARGO_BRANCH in $K8S, current: $CURRENT_ARGO_BRANCH"
     sed -ri "s|targetRevision:\W+\w+|targetRevision: $ARGO_BRANCH|" "$K8S";
@@ -59,6 +74,7 @@ if [[ -f "$CPU_TYPE_CONFIGMAP_MANIFEST" ]]; then  # if already defined
     exit 0;
 fi
 
+# TODO: activate
 #if [[ "$CMDLINE" == *"sp-debug=true"* ]]; then
 #    CPU_TYPE="untrusted";
 if [[ -c "/dev/tdx_guest" ]]; then
