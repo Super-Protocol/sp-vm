@@ -7,7 +7,7 @@ The Super Protocol confidential virtual machine image.
 To enable working mounts during the Docker build process, use the following commands:
 ```bash
 docker buildx create --use --name insecure-builder --buildkitd-flags '--allow-insecure-entitlement security.insecure';
-docker buildx build -t sp-vm --allow security.insecure . --output type=local,dest=./out;
+docker buildx build -t sp-vm --allow security.insecure src --output type=local,dest=./out --build-arg SP_VM_IMAGE_VERSION=build-0;
 ```
 The build artifacts will be located in the $(pwd)/out directory.
 
