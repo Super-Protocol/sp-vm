@@ -4,7 +4,7 @@
 The Super Protocol confidential virtual machine image.
 
 ## Build
-To enable working mounts during the Docker build process, use the following commands:
+To make possible use `mount`, `losetup`, etc. inside chroot during the Docker build process we need to create an appropriate builder:
 ```bash
 docker buildx create --use --name insecure-builder --buildkitd-flags '--allow-insecure-entitlement security.insecure'
 docker buildx build -t sp-vm --allow security.insecure src --output type=local,dest=./out
@@ -13,7 +13,7 @@ docker buildx build -t sp-vm --allow security.insecure src --output type=local,d
 You can pass optional build arguments via docker `--build-arg`, list:
 - SP_VM_IMAGE_VERSION - build tag, default `build-local`
 - S3_BUCKET - only for `vm.json`, default `local`
-```
+
 The build artifacts will be located in the $(pwd)/out directory.
 
 ## Test Run
