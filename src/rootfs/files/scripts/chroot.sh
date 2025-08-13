@@ -30,7 +30,7 @@ function chroot_deinit() {
     umount "$OUTPUTDIR/sys" || true;
     umount "$OUTPUTDIR/proc" || true;
     umount "$OUTPUTDIR/tmp" || true;
-    ummount "$OUTPUTDIR/dev/pts" || true;
+    umount "$OUTPUTDIR/dev/pts" || true;
     umount "$OUTPUTDIR/dev" || true;
 }
 

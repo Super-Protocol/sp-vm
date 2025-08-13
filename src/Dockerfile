@@ -20,7 +20,7 @@ ARG util_linux_version=2.41
 ADD https://www.kernel.org/pub/linux/utils/util-linux/v${util_linux_version}/util-linux-${util_linux_version}.tar.gz /tmp/util-linux-${util_linux_version}.tar.gz
 RUN tar -C /tmp -xvf/tmp/util-linux-${util_linux_version}.tar.gz
 WORKDIR /tmp/util-linux-${util_linux_version}
-RUN ./configure --disable-shared --enable-static --disable-liblastlog2 -without-tinfo --without-ncurses --disable-ipv6 --disable-pylibmount
+RUN ./configure --disable-shared --enable-static --disable-liblastlog2 --without-tinfo --without-ncurses --disable-ipv6 --disable-pylibmount
 RUN make -j blkid LDFLAGS="--static"
 RUN strip blkid
 RUN mkdir -p /initramfs-root/sbin
@@ -142,7 +142,7 @@ WORKDIR /opt/hauler
 ADD hauler/files/configs/rke2-airgap.yaml /opt/hauler/rke2-airgap.yaml
 RUN hauler store sync --store rke2-store --platform linux/amd64 --files /opt/hauler/rke2-airgap.yaml
 RUN rm /opt/hauler/rke2-airgap.yaml
-RUN hauler store add --store rke2-store image ghcr.io/super-protocol/tee-pki-curl:v1.5.1 --platform linux/amd64
+RUN hauler store add --store rke2-store image ghcr.io/super-protocol/tee-pki-curl:v1.7.4 --platform linux/amd64
 # TODO: add argo-cd, argo-workflows, cert-manager, gpu-operator, longhorn charts
 RUN hauler store save --store rke2-store --filename rke2-airgap.tar.zst
 ### End hauler ###
@@ -243,7 +243,7 @@ RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
 ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
 
 ADD rootfs/files/scripts/template_configs_post_rke2install.sh /buildroot/files/scripts/template_configs_post_rke2install.sh
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl /buildroot/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd.config.toml.tmpl.tmpl
+ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl /buildroot/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl
 ADD rootfs/files/configs/usr/local/lib/systemd/system/rke2-server.env.append /buildroot/files/configs/usr/local/lib/systemd/system/rke2-server.env.append
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append

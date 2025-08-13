@@ -24,7 +24,7 @@ for FILE in $(find "$BUILD_DIR" -type f -exec basename {} \;); do
         OVMF.fd) KEY="bios" ;;
         OVMF_AMD.fd) KEY="bios_amd" ;;
         *)
-            echo "Don't know how to indentify file: $FILE";
+            echo "Don't know how to identify file: $FILE";
             exit 1;
             ;;
     esac

@@ -14,16 +14,16 @@ BUILDROOT="/buildroot";
 source "$BUILDROOT/files/scripts/log.sh";
 
 function template_rke2_configs_preinstall() {
-    log_info "templating rke2 confings before install";
+    log_info "templating rke2 configs before install";
     mkdir -p "$OUTPUTDIR/etc/rancher/rke2";
     NODENAME="$(cat "$OUTPUTDIR/etc/hostname")" \
         envsubst \
-            '$LOCAL_REGISTRY_HOST,$NODE_NAME' \
+            '$LOCAL_REGISTRY_HOST,$NODENAME' \
         < "$BUILDROOT/files/configs/etc/rancher/rke2/config.yaml.tmpl" \
         > "$OUTPUTDIR/etc/rancher/rke2/config.yaml";
     envsubst \
         '$LOCAL_REGISTRY_HOST' \
-    < "$BUILDROOT/files/configs/etc/rancher/rke2/config.yaml.tmpl" \
+    < "$BUILDROOT/files/configs/etc/rancher/rke2/registries.yaml.tmpl" \
     > "$OUTPUTDIR/etc/rancher/rke2/registries.yaml";
 }
 
