@@ -22,9 +22,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -37,14 +34,14 @@ jobs:
               echo "Builder is already created";
               exit 0;
           fi
-          sudo docker buildx create \
+          docker buildx create \
               --use \
               --name insecure-builder \
               --buildkitd-flags '--allow-insecure-entitlement security.insecure';
 
       - name: Build sp-vm image
         run: |
-          sudo docker buildx build \
+          docker buildx build \
               -t sp-vm \
               --allow security.insecure \
               src \
