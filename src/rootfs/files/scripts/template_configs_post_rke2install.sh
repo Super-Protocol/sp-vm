@@ -39,7 +39,7 @@ function finalize_rke2() {
     log_info "finalizing rke2 install";
     mkdir -p "$OUTPUTDIR/etc/kubernetes";
     mkdir -p "$OUTPUTDIR/etc/super/etc/iscsi";
-    cp -r "$OUTPUTDIR/etc/iscsi/" "$OUTPUTDIR/etc/super/etc/";
+    cp -a "$OUTPUTDIR/etc/iscsi/." "$OUTPUTDIR/etc/super/etc/iscsi/";
 }
 
 template_rke2_configs_postinstall;

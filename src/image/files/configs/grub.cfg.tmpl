@@ -14,10 +14,10 @@ menuentry 'SP Linux Prod' --class ubuntu --class gnu-linux --class gnu --class o
 function boot_sp_debug {
     argo_branch=$1
     argo_sp_env=$2
-    if [[ -z "$argo_branch" ]]; then
+    if [ -z "$argo_branch" ]; then
         argo_branch="main"
     fi
-    if [[ -z "$argo_sp_env" ]]; then
+    if [ -z "$argo_sp_env" ]; then
         argo_sp_env="main"
     fi
     linux ${kernel_path} root=LABEL=rootfs ro console=ttyS0 clearcpuid=mtrr systemd.log_level=trace systemd.log_target=log rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} argo_branch=${argo_branch} sp-debug=true argo_sp_env=${argo_sp_env} build=${build}

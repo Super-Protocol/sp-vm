@@ -33,13 +33,8 @@ function cleanup_rootfs() {
             gcc';
     rm -rf ${OUTPUTDIR}/tmp/*;
     rm -rf ${OUTPUTDIR}/usr/share/{bash-completion,bug,doc,info,lintian,locale,man,menu,misc,pixmaps,terminfo,zsh};
-    # this dirictories will be mounted from state disk
-    find "${OUTPUTDIR}/var" -mindepth 1 -maxdepth 1 -exec rm -rf {} \; || true;
-    find "${OUTPUTDIR}/opt" -mindepth 1 -maxdepth 1 -exec rm -rf {} \; || true;
-    find "${OUTPUTDIR}/etc/iscsi" -mindepth 1 -maxdepth 1 -exec rm -rf {} \; || true;
-    find "${OUTPUTDIR}/etc/kubernetes" -mindepth 1 -maxdepth 1 -exec rm -rf {} \; || true;
-    find "${OUTPUTDIR}/etc/cni" -mindepth 1 -maxdepth 1 -exec rm -rf {} \; || true;
-    # ^ this dirictories will be mounted from state disk
+    find "${OUTPUTDIR}/var/run" -mindepth 1 -maxdepth 1 -exec rm -rf {} \; || true;
+    rm -rf ${OUTPUTDIR}/var/{cache,lib,log,tmp};
     rm -f "${OUTPUTDIR}/etc/systemd/system/sshd.service"
     rm -f "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/ssh.service"
     rm -f "${OUTPUTDIR}/etc/systemd/system/sockets.target.wants/ssh.socket"

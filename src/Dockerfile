@@ -116,7 +116,7 @@ ARG KERNEL_VERSION=6.12.13
 
 WORKDIR /buildroot
 
-ADD kernel/files/scripts/log.sh /buildroot/files/scripts/
+ADD general/files/scripts/log.sh /buildroot/files/scripts/
 
 ADD kernel/files/scripts/download_and_verify_kernel_src.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/download_and_verify_kernel_src.sh
@@ -158,7 +158,7 @@ ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
 
 WORKDIR /buildroot
 
-ADD rootfs/files/scripts/log.sh /buildroot/files/scripts/
+ADD general/files/scripts/log.sh /buildroot/files/scripts/
 
 ADD rootfs/files/scripts/create_base_system.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/create_base_system.sh
@@ -167,7 +167,7 @@ COPY --from=kernel_builder /output/deb ${OUTPUTDIR}/kernel_deb
 ADD rootfs/files/scripts/install_kernel.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/install_kernel.sh
 
-ADD rootfs/files/scripts/chroot.sh /buildroot/files/scripts/
+ADD general/files/scripts/chroot.sh /buildroot/files/scripts/
 ADD rootfs/files/scripts/install_nvidia.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
 ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
@@ -283,7 +283,7 @@ ARG SP_VM_IMAGE_VERSION
 ARG KERNEL_VERSION=6.12.13
 
 WORKDIR /output
-ADD kernel/files/scripts/log.sh /buildroot/files/scripts/
+ADD general/files/scripts/log.sh /buildroot/files/scripts/
 
 ADD image/files/scripts/create_image.sh /buildroot/files/scripts/
 ADD image/files/configs/grub.cfg.tmpl /buildroot/files/configs/
