@@ -293,12 +293,15 @@ RUN --mount=type=bind,target=/output/rootfs,readonly,from=rootfs_builder,source=
 
 ### Start ovmf_builder_base ###
 FROM ubuntu:24.04 AS ovmf_builder_base
-RUN apt update && apt install -y wget gcc make build-essential git uuid-dev python-is-python3 nasm iasl
+RUN apt update && apt install -y wget gcc make build-essential git uuid-dev python-is-python3 nasm iasl dpkg-dev lsb-release quilt
 
 WORKDIR /buildroot
 
 ADD bios/files/configs/gitconfig /root/.gitconfig
+### End ovmf_builder_base ###
 
+### Start ovmf_builder_sev ###
+FROM ovmf_builder_base AS ovmf_builder_sev
 RUN git clone --single-branch --depth 1 --branch edk2-stable202411 https://github.com/tianocore/edk2.git ovmf
 WORKDIR /buildroot/ovmf
 RUN git fetch origin 8b87eb9dfba054331ed16204f36c4885aefc3c94
@@ -307,10 +310,6 @@ RUN git cherry-pick 8b87eb9dfba054331ed16204f36c4885aefc3c94
 RUN git submodule update --init --recursive
 
 RUN make -C BaseTools
-### End ovmf_builder_base ###
-
-### Start ovmf_builder_sev ###
-FROM ovmf_builder_base AS ovmf_builder_sev
 ADD bios/files/configs/target_amd_sev.txt /buildroot/ovmf/Conf/target.txt
 RUN touch OvmfPkg/AmdSev/Grub/grub.efi
 RUN bash -c 'source /buildroot/ovmf/edksetup.sh && build clean'
@@ -320,8 +319,21 @@ RUN test -f Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd
 
 ### Start ovmf_builder_tdx ###
 FROM ovmf_builder_base AS ovmf_builder_tdx
-# TEMP: TODO: replace to build
-ADD bios/files/configs/OVMF.fd /buildroot/OVMF.fd
+ADD https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.debian.tar.xz /buildroot/src/
+ADD https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc /buildroot/src/
+ADD https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05.orig.tar.xz /buildroot/src/
+RUN dpkg-source -x /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc /buildroot/edk2_build
+WORKDIR /buildroot/edk2_build
+RUN apt build-dep -y ./
+RUN make -C BaseTools
+ADD bios/files/configs/0001-SuperProtocol_Rtmr0.patch /buildroot/edk2_build/debian/patches/SuperProtocol/
+RUN quilt import -p0 debian/patches/SuperProtocol/0001-SuperProtocol_Rtmr0.patch
+RUN quilt push
+ADD bios/files/scripts/build_ovmf_tdx.sh /buildroot/files/scripts/
+ADD general/files/scripts/log.sh /buildroot/files/scripts/
+RUN /buildroot/files/scripts/build_ovmf_tdx.sh
+RUN test -f Build/OvmfX64/RELEASE_GCC5/FV/OVMF.fd
+
 ### End ovmf_builder_tdx ###
 
 ### Start vm_json_builder ###
@@ -330,7 +342,7 @@ ARG SP_VM_IMAGE_VERSION
 ARG S3_BUCKET
 COPY --from=image_builder /output /output
 COPY --from=ovmf_builder_sev /buildroot/ovmf/Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd /output/OVMF_AMD.fd
-COPY --from=ovmf_builder_tdx /buildroot/OVMF.fd /output/OVMF.fd
+COPY --from=ovmf_builder_tdx /buildroot/edk2_build/Build/OvmfX64/RELEASE_GCC5/FV/OVMF.fd /output/OVMF.fd
 ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/generate_vm_json.sh
 ### End vm_json_builder ###
