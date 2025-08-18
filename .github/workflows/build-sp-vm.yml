@@ -72,6 +72,8 @@ jobs:
           upload_file "OVMF.fd";
           upload_file "OVMF_AMD.fd";
           upload_file "vm.json";
+          upload_file "vmlinuz";
+          upload_file "rootfs_hash.txt";
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
