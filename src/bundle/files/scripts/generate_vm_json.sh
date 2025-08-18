@@ -23,6 +23,8 @@ for FILE in $(find "$BUILD_DIR" -type f -exec basename {} \;); do
         "sp-vm-${SP_VM_IMAGE_VERSION}.img") KEY="image" ;;
         OVMF.fd) KEY="bios" ;;
         OVMF_AMD.fd) KEY="bios_amd" ;;
+        vmlinuz) KEY="kernel" ;;
+        rootfs_hash.txt) KEY="rootfs_hash" ;;
         *)
             echo "Don't know how to identify file: $FILE";
             exit 1;

@@ -187,6 +187,8 @@ function template_grub_config() {
         '$ROOTFS_HASH,$SP_VM_IMAGE_VERSION,$KERNEL_VERSION' \
         > "/mnt/boot/grub/grub.cfg" \
         < "$BUILDROOT/files/configs/grub.cfg.tmpl";
+    log_info "storing rootfs hash to file";
+    echo "$ROOTFS_HASH" > "$OUTPUTROOT/rootfs_hash.txt";
 }
 
 function cleanup_rootfs_partition() {
