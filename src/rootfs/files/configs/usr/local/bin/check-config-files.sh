@@ -5,6 +5,7 @@ set -euo pipefail;
 # Define source and destination paths
 declare -A files=(
     ["/etc/super/var/lib/rancher/rke2/rke2-pss.yaml"]="/var/lib/rancher/rke2/rke2-pss.yaml"
+    #["/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml"]="/var/lib/rancher/rke2/server/manifests/k8s.yaml"
     #["/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl"]="/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl"
     ["/etc/super/etc/iscsi/iscsid.conf"]="/etc/iscsi/iscsid.conf"
     ["/etc/super/etc/iscsi/initiatorname.iscsi"]="/etc/iscsi/initiatorname.iscsi"
@@ -28,7 +29,7 @@ done
 mkdir -p "/var/lib/rancher/rke2/server/manifests";
 
 # kubernetes main auto-apply manifest
-K8S="/var/lib/rancher/rke2/server/manifests/k8s.yaml"
+K8S_MAIN_MANIFEST="/var/lib/rancher/rke2/server/manifests/k8s.yaml"
 
 # Overriding hauler int IP
 NODE_DEFAULT_IFACE="$({ ip route get 8.8.8.8 2>/dev/null | awk '{print $5}' | grep '.'; } || echo)";
@@ -42,11 +43,22 @@ if [[ -z "$NODE_IP" ]]; then
     exit 1;
 fi
 
-NODE_IP="$NODE_IP" \
-    envsubst \
-    '$NODE_IP' \
-    < "/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml" \
-    > "$K8S";
+if [[ ! -f "$K8S_MAIN_MANIFEST" ]]; then
+    NODE_IP="$NODE_IP" \
+        envsubst \
+        '$NODE_IP' \
+        < "/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml" \
+        > "$K8S_MAIN_MANIFEST";
+fi
+CURRENT_REGISTRY_IP="$(grep -E '\W+([0-9.]+)\W+registry.superprotocol.local' "$K8S_MAIN_MANIFEST" | awk '{print $1}')";
+CURRENT_HAULER_IP="$(grep -E '\W+([0-9.]+)\W+hauler.local' "$K8S_MAIN_MANIFEST" | awk '{print $1}')";
+if [[ "$CURRENT_REGISTRY_IP" != "$NODE_IP" ]] || [[ "$CURRENT_HAULER_IP" != "$NODE_IP" ]]; then
+    echo "Node IP changed! Setting $NODE_IP in $K8S_MAIN_MANIFEST, current: $CURRENT_REGISTRY_IP and $CURRENT_HAULER_IP";
+    sed -E -i \
+        -e "s|^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+[[:space:]]+hauler\.local|          $NODE_IP hauler.local|" \
+        -e "s|^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+[[:space:]]+registry\.superprotocol\.local|          $NODE_IP registry.superprotocol.local|" \
+        "$K8S_MAIN_MANIFEST";
+fi
 
 CMDLINE="$(cat /proc/cmdline)";
 ARGO_BRANCH="main";
@@ -58,10 +70,10 @@ if [[ "$CMDLINE" == *"sp-debug=true"* ]]; then
     fi
 fi
 
-CURRENT_ARGO_BRANCH="$({ grep -E 'targetRevision\W+(\w+)' "$K8S" | awk '{print $2}'; } || echo)";
+CURRENT_ARGO_BRANCH="$({ grep -E 'targetRevision\W+(\w+)' "$K8S_MAIN_MANIFEST" | awk '{print $2}'; } || echo)";
 if [[ "$CURRENT_ARGO_BRANCH" != "$ARGO_BRANCH" ]]; then
-    echo "Setting $ARGO_BRANCH in $K8S, current: $CURRENT_ARGO_BRANCH"
-    sed -ri "s|targetRevision:\W+\w+|targetRevision: $ARGO_BRANCH|" "$K8S";
+    echo "Setting $ARGO_BRANCH in $K8S_MAIN_MANIFEST, current: $CURRENT_ARGO_BRANCH"
+    sed -ri "s|targetRevision:\W+\w+|targetRevision: $ARGO_BRANCH|" "$K8S_MAIN_MANIFEST";
 fi
 
 # detect_cpu_type
