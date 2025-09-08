@@ -7,7 +7,9 @@ set -euo pipefail;
 # OUTPUTROOT
 # OUTPUTDIR
 # IMAGESIZE
-# SP_VM_IMAGE_VERSION
+
+# public, optional
+SP_VM_IMAGE_VERSION="${SP_VM_IMAGE_VERSION:-"build-local"}"
 
 # private const
 BUILDROOT="/buildroot";
