@@ -302,11 +302,10 @@ ADD bios/files/configs/gitconfig /root/.gitconfig
 
 ### Start ovmf_builder_sev ###
 FROM ovmf_builder_base AS ovmf_builder_sev
-RUN git clone --single-branch --depth 1 --branch edk2-stable202411 https://github.com/tianocore/edk2.git ovmf
+RUN git clone --single-branch --depth 1 --branch edk2-stable202508 https://github.com/tianocore/edk2.git ovmf
 WORKDIR /buildroot/ovmf
-RUN git fetch origin 8b87eb9dfba054331ed16204f36c4885aefc3c94
-RUN git checkout -b fix-build edk2-stable202411
-RUN git cherry-pick 8b87eb9dfba054331ed16204f36c4885aefc3c94
+ADD bios/files/configs/AmdSev-support-vm-over-1TB.patch /buildroot/ovmf
+RUN git apply AmdSev-support-vm-over-1TB.patch
 RUN git submodule update --init --recursive
 
 RUN make -C BaseTools
