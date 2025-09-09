@@ -207,7 +207,7 @@ RUN --security=insecure /buildroot/files/scripts/refresh_ca_certs.sh
 RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < ${OUTPUTDIR}/etc/ssl/certs/ca-certificates.crt | grep -i 'super'
 
 # todo: move upper
-RUN apt install -y petname gettext
+RUN apt update && apt install -y petname gettext
 ARG LOCAL_REGISTRY_HOST=hauler.local
 ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
 RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
