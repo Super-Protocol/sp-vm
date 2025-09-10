@@ -45,7 +45,7 @@ TRUSTED_VARS=(
     AS__pki__mode__attestationServiceSource__caBundle
 )
 
-SRC_SUBROOT_ENV="/sp/manifest/subroot.env"
+SRC_SUBROOT_ENV="/sp/subroot.env"
 DST_SUBROOT_ENV="/var/lib/lxc/pki-authority/rootfs/app/subroot.env"
 
 # If source exists, (re)create destination with only trusted variables
