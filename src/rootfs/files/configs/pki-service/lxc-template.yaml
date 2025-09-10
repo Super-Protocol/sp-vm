@@ -6,6 +6,11 @@ pki:
     type: untrusted
   certParams:
     ocspUrl: https://ocsp.certs.superprotocol.com/v1/ocsp
+  keyStorage:
+    type: trusted
+    storage:
+      type: super
+      keysPath: /app/keys
   mode:
     attestationServiceSource:
       baseUrl: https://ca-subroot.certs.superprotocol.com/api/v1/pki
