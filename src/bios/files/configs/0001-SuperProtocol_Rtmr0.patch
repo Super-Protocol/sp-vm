@@ -1,0 +1,40 @@
+Index: OvmfPkg/IntelTdx/TdxHelperLib/SecTdxHelper.c
+===================================================================
+--- OvmfPkg/IntelTdx/TdxHelperLib/SecTdxHelper.c
++++ OvmfPkg/IntelTdx/TdxHelperLib/SecTdxHelper.c
+@@ -886,13 +886,12 @@ TdxHelperMeasureTdHob (
+     Hob.Raw = GET_NEXT_HOB (Hob);
+   }
+ 
+-  Status = HashAndExtendToRtmr (
+-             0,
+-             (UINT8 *)TdHob,
+-             (UINTN)((UINT8 *)Hob.Raw - (UINT8 *)TdHob),
+-             Digest,
+-             SHA384_DIGEST_SIZE
+-             );
++  Status = EFI_SUCCESS;
++  if (!Sha384HashAll ((UINT8 *)TdHob, (UINTN)((UINT8 *)Hob.Raw - (UINT8 *)TdHob), Digest)) {
++    Status = EFI_ABORTED;
++  }
++
++  DEBUG ((DEBUG_INFO, "TdxHelperMeasureTdHob. Ignore measurements.\n"));
+ 
+   if (EFI_ERROR (Status)) {
+     return Status;
+Index: OvmfPkg/Tcg/TdTcg2Dxe/TdTcg2Dxe.c
+===================================================================
+--- OvmfPkg/Tcg/TdTcg2Dxe/TdTcg2Dxe.c
++++ OvmfPkg/Tcg/TdTcg2Dxe/TdTcg2Dxe.c
+@@ -1362,6 +1362,11 @@ TdHashLogExtendEvent (
+     return EFI_INVALID_PARAMETER;
+   }
+ 
++  if (CcEvent->Header.MrIndex == 1 && CcEvent->Header.EventType == EV_PLATFORM_CONFIG_FLAGS) {
++    DEBUG ((DEBUG_INFO, "TdHashLogExtendEvent EventEV_PLATFORM_CONFIG_FLAGS and RTMR0. Ignore measurements.\n"));
++    return EFI_SUCCESS;
++  }
++
+   NewEventHdr.MrIndex   = CcEvent->Header.MrIndex;
+   NewEventHdr.EventType = CcEvent->Header.EventType;
+   NewEventHdr.EventSize = CcEvent->Size - sizeof (UINT32) - CcEvent->Header.HeaderSize;

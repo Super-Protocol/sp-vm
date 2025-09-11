@@ -1,0 +1,10 @@
+kubelet-arg:
+  - max-pods=256
+disable:
+  - rke2-ingress-nginx
+  - rke2-metrics-server
+cni:
+  - cilium
+#system-default-registry: $LOCAL_REGISTRY_HOST
+node-label:
+  - node.tee.superprotocol.com/name=$NODENAME

@@ -1,0 +1,13 @@
+[Unit]
+Description=Serial Getty Mock on %I
+ExecStart=/bin/true
+Restart=no
+RemainAfterExit=yes
+Before=getty.target
+Conflicts=rescue.service
+Before=rescue.service
+After=dev-%i.device systemd-user-sessions.service plymouth-quit-wait.service getty-pre.target
+After=rc-local.service
+
+[Install]
+WantedBy=getty.target

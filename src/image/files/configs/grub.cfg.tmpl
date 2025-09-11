@@ -1,0 +1,37 @@
+set timeout=4
+set default=0
+set root_hash="$ROOTFS_HASH"
+set kernel_path="/vmlinuz-$KERNEL_VERSION-nvidia-gpu-confidential"
+set build="$SP_VM_IMAGE_VERSION"
+
+insmod part_gpt
+search --label bls_boot --set=root
+
+menuentry 'SP Linux Prod' --class ubuntu --class gnu-linux --class gnu --class os {
+    linux ${kernel_path} root=LABEL=rootfs ro clearcpuid=mtrr rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} build=${build}
+}
+
+function boot_sp_debug {
+    argo_branch=$1
+    argo_sp_env=$2
+    if [ -z "$argo_branch" ]; then
+        argo_branch="main"
+    fi
+    if [ -z "$argo_sp_env" ]; then
+        argo_sp_env="main"
+    fi
+    linux ${kernel_path} root=LABEL=rootfs ro console=ttyS0 clearcpuid=mtrr systemd.log_level=trace systemd.log_target=log rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} argo_branch=${argo_branch} sp-debug=true argo_sp_env=${argo_sp_env} build=${build}
+}
+
+menuentry 'SP Linux Debug (argo_branch=main, argo_sp_env=main)' --class ubuntu --class gnu-linux --class gnu --class os {
+    boot_sp_debug "main" "main"
+}
+
+menuentry 'SP Linux Debug (argo_branch=develop, argo_sp_env=develop)' --class ubuntu --class gnu-linux --class gnu --class os {
+    boot_sp_debug "develop" "develop"
+}
+
+menuentry 'SP Linux Debug (argo_branch=staging, argo_sp_env=staging)' --class ubuntu --class gnu-linux --class gnu --class os {
+    boot_sp_debug "staging" "staging"
+}
+

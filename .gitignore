@@ -135,3 +135,9 @@ dist
 kata-containers/
 *.swp
 *.swo
+
+src/rootfs/files/configs/cert/superprotocol-ca.crt
+
+*.img
+*.raw
+*.qcow2

@@ -3,11 +3,6 @@ on:
   workflow_call:
   workflow_dispatch:
     inputs:
-      target-branch:
-        required: true
-        type: string
-        description: sp-kata-containers branch
-        default: "sp-main"
       runs-on:
         required: true
         type: choice
@@ -22,70 +17,70 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     env:
       S3_BUCKET: "builds-vm"
-      UPLOAD_FILES: "rootfs.img OVMF.fd OVMF_AMD.fd root_hash.txt vmlinuz"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Set TAG variable
-        run: echo "TAG=build-${{ github.run_number }}" >> $GITHUB_ENV
+      - name: Set SP_VM_IMAGE_VERSION variable
+        run: echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}" >> $GITHUB_ENV
 
-      - name: Load CA cert
+      - name: Setup builder
         run: |
-          echo "${{ vars.SP_CA_CRT }}" > ca.crt;
+          if docker buildx inspect insecure-builder >/dev/null 2>&1; then
+              echo "Builder is already created";
+              exit 0;
+          fi
+          docker buildx create \
+              --use \
+              --name insecure-builder \
+              --buildkitd-flags '--allow-insecure-entitlement security.insecure';
 
-      - name: Build
+      - name: Build sp-vm image
         run: |
-          sudo apt-get update
-          sudo apt-get -y install curl
-          sudo -E bash \
-              ./build.sh \
-              --checkout-to "${{ inputs.target-branch }}" \
-              --prepare-to-upload-s3-bucket "$S3_BUCKET" \
-              --prepare-to-upload-release-tag "$TAG" \
-              --sp-ca-crt-file "$(realpath ca.crt)" \
-              --prepare-to-upload-files "$UPLOAD_FILES";
+          docker buildx build \
+              -t sp-vm \
+              --allow security.insecure \
+              src \
+              --output type=local,dest=./out \
+              --build-arg "SP_VM_IMAGE_VERSION=$SP_VM_IMAGE_VERSION" \
+              --build-arg "S3_BUCKET=$S3_BUCKET";
 
       - name: Upload files to Storj
-        working-directory: kata-containers/build
+        working-directory: out
         run: |
-         for file in ${UPLOAD_FILES}; do
-           if [ -f "$file" ]; then
-             echo "Uploading $file to ${S3_BUCKET}/${TAG}/"
-             rclone copy \
-               --multi-thread-streams 8 \
-               --s3-provider Storj \
-               --s3-access-key-id=${{ secrets.S3_ACCESS_KEY }} \
-               --s3-secret-access-key=${{ secrets.S3_SECRET_KEY }} \
-               --s3-endpoint=gateway.storjshare.io \
-               "$file" \
-               ":s3:${S3_BUCKET}/${TAG}/"
-           else
-             echo "File ${file} not found"
-             exit 1
-           fi
-         done
+          function upload_file() {
+              local FILE="${1:=""}";
+              if [[ -z "$FILE" ]] || [[ ! -f "$FILE" ]]; then
+                  echo "File $FILE not found";
+                  exit 1;
+              fi
+              echo "Uploading $file to ${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/"
+              rclone copy \
+                  --multi-thread-streams 8 \
+                  --s3-provider Storj \
+                  --s3-endpoint=gateway.storjshare.io \
+                  "--s3-access-key-id=${{ secrets.S3_ACCESS_KEY }}" \
+                  "--s3-secret-access-key=${{ secrets.S3_SECRET_KEY }}" \
+                  "$FILE" \
+                  ":s3:${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/";
+          }
+          upload_file "sp-vm-${SP_VM_IMAGE_VERSION}.img";
+          upload_file "OVMF.fd";
+          upload_file "OVMF_AMD.fd";
+          upload_file "vm.json";
+          upload_file "vmlinuz";
+          upload_file "rootfs_hash.txt";
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.TAG }}
-          release_name: Release ${{ env.TAG }}
+          tag_name: ${{ env.SP_VM_IMAGE_VERSION }}
+          release_name: Release ${{ env.SP_VM_IMAGE_VERSION }}
           draft: false
           prerelease: true
           files: |
-            kata-containers/build/vm.json
-
-      - name: Cleanup
-        if: ${{ always() }}
-        run: |
-          rm -rf ca.crt;
+            out/vm.json
