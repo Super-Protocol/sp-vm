@@ -137,3 +137,7 @@ kata-containers/
 *.swo
 
 src/rootfs/files/configs/cert/superprotocol-ca.crt
+
+*.img
+*.raw
+*.qcow2
