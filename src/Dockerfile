@@ -149,7 +149,7 @@ RUN hauler store save --store rke2-store --filename rke2-airgap.tar.zst
 
 ### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
-RUN apt update && apt install -y wget gcc make build-essential debootstrap
+RUN apt update && apt install -y wget gcc make build-essential debootstrap petname gettext
 
 ARG PROVIDER_CONFIG_DST=/sp
 ARG VERSION_CODENAME=noble
@@ -206,8 +206,6 @@ RUN --security=insecure /buildroot/files/scripts/refresh_ca_certs.sh
 # check for presence of trusted self-signed CA from Super Protocol
 RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < ${OUTPUTDIR}/etc/ssl/certs/ca-certificates.crt | grep -i 'super'
 
-# todo: move upper
-RUN apt install -y petname gettext
 ARG LOCAL_REGISTRY_HOST=hauler.local
 ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
 RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
@@ -264,6 +262,14 @@ ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bi
 RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
+# disabling serial getty
+ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
+RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
+
+# Build info
+ARG SP_VM_IMAGE_VERSION
+RUN bash -c '[[ -n "$SP_VM_IMAGE_VERSION" ]] && echo "$SP_VM_IMAGE_VERSION" > "${OUTPUTDIR}/etc/sp-release"'
+
 # after all!
 ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/cleanup_rootfs.sh
@@ -319,9 +325,10 @@ RUN test -f Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd
 
 ### Start ovmf_builder_tdx ###
 FROM ovmf_builder_base AS ovmf_builder_tdx
-ADD https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.debian.tar.xz /buildroot/src/
-ADD https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc /buildroot/src/
-ADD https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05.orig.tar.xz /buildroot/src/
+WORKDIR /buildroot/src/
+RUN wget -O /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.debian.tar.xz https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.debian.tar.xz
+RUN wget -O /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc
+RUN wget -O /buildroot/src/edk2_2024.05.orig.tar.xz https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05.orig.tar.xz
 RUN dpkg-source -x /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc /buildroot/edk2_build
 WORKDIR /buildroot/edk2_build
 RUN apt build-dep -y ./
