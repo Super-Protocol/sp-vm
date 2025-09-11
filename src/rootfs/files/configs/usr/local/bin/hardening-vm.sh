@@ -29,6 +29,5 @@ if ! grep -q 'sp-debug=true' /proc/cmdline; then
 #if DEBUG, then make vm accesable from SSH, and TTY terminal
 else
     # Start services
-    systemctl start serial-getty@ttyS0.service
     systemctl start ssh
 fi

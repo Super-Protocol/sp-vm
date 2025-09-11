@@ -1,0 +1,7 @@
+{
+  "mrenclave": "00359cf3e2b4e7070720b180bde8fe7dbb2e60f74b02c86d29ea98b99f4072b1",
+  "signature": "tVPbwPWfi7qrcv4qwv+jkVJbQUCMgu+SCMQIz3/Nz+z2V/AsmRn51avig+DhN539/ETnT0zLeXDggP6XMBu43H3C2gEfzZuTpnS1GMfqp17ZymOq9aGDIegcx+e3SRv7S9u7JA4HJ5LtcYyj6jstTYksc6XiS4lKsOVO6Y3XRtDNxtsdb0HtM6y8M7PL5HxY+ux0s8VvNwPgE3BqacFajwOT6E1e4NYone5I573abY4eqj/tQZctmqyX4DhDA1qypXjPRmCnq5FkTgJQZkXSTQ0wxkQAf3iAESfrjzwTrXOzuckpuR84nstwtst8R4v3/jf0K4Yu3EgFTM5CKtFIgqEieo0KHYrsOamF0/JXnU/1qwX/mVpYlxxEjHZh0jwiLRSONNX/CYkEHur6oepoBQk3lGz3TeG4KOyqD8QA+Ts3/rRVseBnXndSzwzYitEAQExoKJAtzBg0Edj+N7GJRvbFiQjgqtQEe3MzpefmeYKaVtCzCllE/YjW0UOqdzHb",
+  "build": "build-152",
+  "description": "google tdx + h100, 26 cpu, 234 ram",
+  "creationDate": "2025-07-01T09:55:46.331Z"
+}
