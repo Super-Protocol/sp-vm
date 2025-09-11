@@ -11,8 +11,13 @@ docker buildx build -t sp-vm --allow security.insecure src --output type=local,d
 ```
 
 You can pass optional build arguments via docker `--build-arg`, list:
-- SP_VM_IMAGE_VERSION - build tag, default `build-local`
+- SP_VM_IMAGE_VERSION - build tag
 - S3_BUCKET - only for `vm.json`, default `local`
+
+Example:
+```bash
+docker buildx build -t sp-vm --allow security.insecure src --output type=local,dest=./out --build-arg SP_VM_IMAGE_VERSION=build-0 --build-arg S3_BUCKET=test
+```
 
 The build artifacts will be located in the $(pwd)/out directory.
 
