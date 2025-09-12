@@ -1,0 +1,12 @@
+diff --git a/OvmfPkg/AmdSev/AmdSevX64.dsc b/OvmfPkg/AmdSev/AmdSevX64.dsc
+index 8e7e69d..0db2d38 100644
+--- a/OvmfPkg/AmdSev/AmdSevX64.dsc
++++ b/OvmfPkg/AmdSev/AmdSevX64.dsc
+@@ -389,6 +389,7 @@
+   gEfiMdeModulePkgTokenSpaceGuid.PcdInstallAcpiSdtProtocol|TRUE
+ 
+ [PcdsFixedAtBuild]
++  gEfiMdeModulePkgTokenSpaceGuid.PcdUse1GPageTable|TRUE
+   gEfiMdeModulePkgTokenSpaceGuid.PcdStatusCodeMemorySize|1
+   gEfiMdeModulePkgTokenSpaceGuid.PcdResetOnMemoryTypeInformationChange|FALSE
+   gEfiMdePkgTokenSpaceGuid.PcdMaximumGuidedExtractHandler|0x10
