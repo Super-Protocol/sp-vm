@@ -10,7 +10,7 @@ set -euo pipefail;
 # private
 BUILDROOT="/buildroot";
 TARGET_ARCH="amd64";
-BASE_PACKAGES="init,openssh-server,netplan.io,curl,htop,open-iscsi,cryptsetup,ca-certificates,gnupg2,kmod,gcc-13,build-essential,chrony,iptables,dbus,cryptsetup-bin,e2fsprogs,gettext"
+BASE_PACKAGES="init,openssh-server,netplan.io,curl,htop,open-iscsi,cryptsetup,ca-certificates,gnupg2,kmod,gcc-13,build-essential,chrony,iptables,dbus,cryptsetup-bin,e2fsprogs,gettext,lxc,lxc-templates"
 
 # init loggggging;
 source "$BUILDROOT/files/scripts/log.sh";

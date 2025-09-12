@@ -240,6 +240,19 @@ ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.s
 RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
 ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
 
+# copy pki-authority service files
+ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
+ADD "rootfs/files/configs/pki-service/pki-authority.service" "${OUTPUTDIR}/etc/systemd/system"
+RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
+ADD "rootfs/files/configs/pki-service/create-and-configure-pki.sh" "${OUTPUTDIR}/usr/local/bin"
+RUN chmod +x "${OUTPUTDIR}/usr/local/bin/create-and-configure-pki.sh"
+RUN mkdir -p "${OUTPUTDIR}/root/containers"
+COPY "rootfs/files/configs/pki-service/pki-authority.tar" "${OUTPUTDIR}/root/containers/pki-authority.tar"
+ADD "rootfs/files/configs/pki-service/lxc-template.yaml" "${OUTPUTDIR}/root/containers/lxc-template.yaml"
+ADD "rootfs/files/configs/pki-service/dnsmasq.conf" "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
+ADD "rootfs/files/configs/pki-service/lxc-net" "${OUTPUTDIR}/etc/default/lxc-net"
+RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
+
 ADD rootfs/files/scripts/template_configs_post_rke2install.sh /buildroot/files/scripts/template_configs_post_rke2install.sh
 ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl /buildroot/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl
 ADD rootfs/files/configs/usr/local/lib/systemd/system/rke2-server.env.append /buildroot/files/configs/usr/local/lib/systemd/system/rke2-server.env.append
@@ -308,11 +321,10 @@ ADD bios/files/configs/gitconfig /root/.gitconfig
 
 ### Start ovmf_builder_sev ###
 FROM ovmf_builder_base AS ovmf_builder_sev
-RUN git clone --single-branch --depth 1 --branch edk2-stable202411 https://github.com/tianocore/edk2.git ovmf
+RUN git clone --single-branch --depth 1 --branch edk2-stable202508 https://github.com/tianocore/edk2.git ovmf
 WORKDIR /buildroot/ovmf
-RUN git fetch origin 8b87eb9dfba054331ed16204f36c4885aefc3c94
-RUN git checkout -b fix-build edk2-stable202411
-RUN git cherry-pick 8b87eb9dfba054331ed16204f36c4885aefc3c94
+ADD bios/files/configs/AmdSev-support-vm-over-1TB.patch /buildroot/ovmf
+RUN git apply AmdSev-support-vm-over-1TB.patch
 RUN git submodule update --init --recursive
 
 RUN make -C BaseTools
