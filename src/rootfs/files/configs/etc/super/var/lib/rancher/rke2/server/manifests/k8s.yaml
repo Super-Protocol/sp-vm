@@ -794,7 +794,6 @@ spec:
 
       - name: pki-config-challenge
         script:
-          # TODO pin tag
           image: bitnamilegacy/kubectl:latest
           command: [bash, -c]
           source: |
@@ -919,7 +918,6 @@ spec:
 
       - name: apply-secrets
         container:
-          # TODO pin tag
           image: bitnamilegacy/kubectl:latest
           command: [sh, -c]
           args:
