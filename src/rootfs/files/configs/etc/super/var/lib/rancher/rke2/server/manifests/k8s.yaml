@@ -795,7 +795,7 @@ spec:
       - name: pki-config-challenge
         script:
           # TODO pin tag
-          image: bitnami/kubectl
+          image: bitnami/kubectl:1.33-debian-12
           command: [bash, -c]
           source: |
             set -e
@@ -920,7 +920,7 @@ spec:
       - name: apply-secrets
         container:
           # TODO pin tag
-          image: bitnami/kubectl
+          image: bitnami/kubectl:1.33-debian-12
           command: [sh, -c]
           args:
             - |
