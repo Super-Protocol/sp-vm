@@ -281,7 +281,7 @@ metadata:
   namespace: gpu-operator
 spec:
   repo: https://helm.ngc.nvidia.com/nvidia
-  version: v25.3.2
+  version: v25.3.4
   chart: gpu-operator
   targetNamespace: gpu-operator
   valuesContent: |-
