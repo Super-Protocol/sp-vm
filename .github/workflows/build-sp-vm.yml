@@ -35,8 +35,8 @@ jobs:
       
       - name: Pull TEE PKI Authority Service image
         run: |
-          docker pull ghcr.io/super-protocol/tee-pki-authority-service-lxc:1.7.13
-          docker save ghcr.io/super-protocol/tee-pki-authority-service-lxc:1.7.13 -o "${GITHUB_WORKSPACE}/${PKI_CONTAINER_SUBPATH}"
+          docker pull ghcr.io/super-protocol/tee-pki-authority-service-lxc:1.7.14
+          docker save ghcr.io/super-protocol/tee-pki-authority-service-lxc:1.7.14 -o "${GITHUB_WORKSPACE}/${PKI_CONTAINER_SUBPATH}"
 
       - name: Set SP_VM_IMAGE_VERSION variable
         run: echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}" >> $GITHUB_ENV

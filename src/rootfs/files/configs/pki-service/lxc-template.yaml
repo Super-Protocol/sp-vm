@@ -1,6 +1,8 @@
 api:
   port: 443
 pki:
+  allowedChallenges:
+  - token
   ownDomain: ca-subroot.super-protocol.svc.cluster.local
   ownChallenge:
     type: untrusted
