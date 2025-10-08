@@ -281,7 +281,7 @@ metadata:
   namespace: gpu-operator
 spec:
   repo: https://helm.ngc.nvidia.com/nvidia
-  version: v25.3.2
+  version: v25.3.4
   chart: gpu-operator
   targetNamespace: gpu-operator
   valuesContent: |-
@@ -818,8 +818,7 @@ spec:
 
       - name: pki-config-challenge
         script:
-          # TODO pin tag
-          image: bitnami/kubectl
+          image: bitnamilegacy/kubectl:latest
           command: [bash, -c]
           source: |
             set -e
@@ -943,8 +942,7 @@ spec:
 
       - name: apply-secrets
         container:
-          # TODO pin tag
-          image: bitnami/kubectl
+          image: bitnamilegacy/kubectl:latest
           command: [sh, -c]
           args:
             - |

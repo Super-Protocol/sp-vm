@@ -1,5 +1,7 @@
 kubelet-arg:
   - max-pods=256
+  - container-log-max-files=20
+  - container-log-max-size=20Mi
 disable:
   - rke2-ingress-nginx
   - rke2-metrics-server
