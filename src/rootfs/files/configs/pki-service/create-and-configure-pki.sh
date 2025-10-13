@@ -83,7 +83,7 @@ else
     fi
 fi
 
-# hardware address for the container
+# This MAC address is used to get a static IP address from DHCP, see /etc/lxc/dnsmasq.conf
 echo "lxc.net.0.hwaddr = 4e:fc:0a:d5:2d:ff" >> "$CONFIG_FILE"
 
 if [ "$CPU_TYPE" = "sev-snp" ]; then

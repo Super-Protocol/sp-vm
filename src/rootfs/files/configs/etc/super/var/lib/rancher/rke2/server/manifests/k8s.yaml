@@ -350,7 +350,7 @@ metadata:
   namespace: super-protocol
 subsets:
   - addresses:
-      - ip: 10.0.3.100
+      - ip: 10.0.3.100 # pki-authority lxc-container static-IP
     ports:
       - port: 443
 
