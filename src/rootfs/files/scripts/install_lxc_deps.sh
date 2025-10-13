@@ -23,7 +23,7 @@ install_deps() {
 
     chroot "$OUTPUTDIR" /bin/bash -c "
         set -euo pipefail
-        apt-get update
+        apt update
         DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends skopeo umoci jq
     "
 }
