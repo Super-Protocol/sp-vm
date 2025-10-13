@@ -21,16 +21,9 @@ docker buildx build -t sp-vm --allow security.insecure src --output type=local,d
 
 The build artifacts will be located in the $(pwd)/out directory.
 
-## Local PKI image for build
+## Local Build - PKI Image Access
 
-For local builds you need the PKI service image (tee-pki). Download the tar image from GitHub Container Registry and place it in the repository at:
-
-```
-src/rootfs/files/configs/pki-service/pki-authority.tar
-```
-
-Use `docker pull ghcr.io/super-protocol/tee-pki-authority-service-lxc:<TAG>` and then
-`docker save -o src/rootfs/files/configs/pki-service/pki-authority.tar ghcr.io/super-protocol/tee-pki-authority-service-lxc:<TAG>`.
+For successful local builds, you need permission to pull the image from the repository https://github.com/Super-Protocol/tee-pki/pkgs/container/tee-pki-authority-service-lxc . This may require running `docker login ghcr.io` and an access token.
 
 ## Test Run
 The `start_superprotocol.sh` script will require changes in the future, but for now, you can test the VM using the following steps:

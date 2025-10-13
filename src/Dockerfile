@@ -155,6 +155,7 @@ ARG PROVIDER_CONFIG_DST=/sp
 ARG VERSION_CODENAME=noble
 ARG OUTPUTROOT=/output
 ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
+ARG PKI_AUTHORITY_IMAGE=ghcr.io/super-protocol/tee-pki-authority-service-lxc:1.7.15
 
 WORKDIR /buildroot
 
@@ -242,15 +243,14 @@ ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDI
 
 # copy pki-authority service files
 ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
-ADD "rootfs/files/configs/pki-service/pki-authority.service" "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/pki-authority.service "${OUTPUTDIR}/etc/systemd/system"
 RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
-ADD "rootfs/files/configs/pki-service/create-and-configure-pki.sh" "${OUTPUTDIR}/usr/local/bin"
-RUN chmod +x "${OUTPUTDIR}/usr/local/bin/create-and-configure-pki.sh"
+ADD rootfs/files/configs/pki-service/create-and-configure-pki.sh "${OUTPUTDIR}/usr/local/bin"
 RUN mkdir -p "${OUTPUTDIR}/root/containers"
-COPY "rootfs/files/configs/pki-service/pki-authority.tar" "${OUTPUTDIR}/root/containers/pki-authority.tar"
-ADD "rootfs/files/configs/pki-service/lxc-template.yaml" "${OUTPUTDIR}/root/containers/lxc-template.yaml"
-ADD "rootfs/files/configs/pki-service/dnsmasq.conf" "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
-ADD "rootfs/files/configs/pki-service/lxc-net" "${OUTPUTDIR}/etc/default/lxc-net"
+COPY --from=${PKI_AUTHORITY_IMAGE} /pki-authority.tar "${OUTPUTDIR}/root/containers/pki-authority.tar"
+ADD rootfs/files/configs/pki-service/lxc-template.yaml "${OUTPUTDIR}/root/containers/lxc-template.yaml"
+ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
+ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
 RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
 
 ADD rootfs/files/scripts/template_configs_post_rke2install.sh /buildroot/files/scripts/template_configs_post_rke2install.sh
