@@ -28,7 +28,6 @@ install_deps() {
     "
 }
 
-
 chroot_init;
 install_deps;
 chroot_deinit;
