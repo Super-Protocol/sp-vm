@@ -17,7 +17,6 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     env:
       S3_BUCKET: "builds-vm"
-      PKI_CONTAINER_SUBPATH: src/rootfs/files/configs/pki-service/pki-authority.tar
 
     steps:
       - name: Checkout repository
@@ -33,11 +32,6 @@ jobs:
           username: ${{ secrets.TEE_PKI_USERNAME }}
           password: ${{ secrets.TEE_PKI_ACCESS_TOKEN }}
       
-      - name: Pull TEE PKI Authority Service image
-        run: |
-          docker pull ghcr.io/super-protocol/tee-pki-authority-service-lxc:1.7.14
-          docker save ghcr.io/super-protocol/tee-pki-authority-service-lxc:1.7.14 -o "${GITHUB_WORKSPACE}/${PKI_CONTAINER_SUBPATH}"
-
       - name: Set SP_VM_IMAGE_VERSION variable
         run: echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}" >> $GITHUB_ENV
 

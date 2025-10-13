@@ -3,6 +3,7 @@ api:
 pki:
   allowedChallenges:
   - token
+  tokenChallengeFilePath: /app/access-token
   ownDomain: ca-subroot.super-protocol.svc.cluster.local
   ownChallenge:
     type: untrusted
