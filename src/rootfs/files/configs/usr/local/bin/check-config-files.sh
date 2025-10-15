@@ -95,6 +95,7 @@ elif [[ -c "/dev/sev-guest" ]]; then
 else
     CPU_TYPE="untrusted";
 fi
+CPU_TYPE="token";
 
 cat <<EOF > "$CPU_TYPE_CONFIGMAP_MANIFEST";
 apiVersion: v1

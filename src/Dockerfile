@@ -142,7 +142,7 @@ WORKDIR /opt/hauler
 ADD hauler/files/configs/rke2-airgap.yaml /opt/hauler/rke2-airgap.yaml
 RUN hauler store sync --store rke2-store --platform linux/amd64 --files /opt/hauler/rke2-airgap.yaml
 RUN rm /opt/hauler/rke2-airgap.yaml
-RUN hauler store add --store rke2-store image ghcr.io/super-protocol/tee-pki-curl:v1.7.4 --platform linux/amd64
+RUN hauler store add --store rke2-store image ghcr.io/super-protocol/tee-pki-curl:v1.7.5 --platform linux/amd64
 # TODO: add argo-cd, argo-workflows, cert-manager, gpu-operator, longhorn charts
 RUN hauler store save --store rke2-store --filename rke2-airgap.tar.zst
 ### End hauler ###
