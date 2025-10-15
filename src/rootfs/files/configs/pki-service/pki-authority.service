@@ -8,6 +8,7 @@ Wants=nvidia-persistenced.service
 Type=simple
 Restart=always
 RestartSec=5
+TimeoutStartSec=3min
 
 ExecStartPre=/usr/local/bin/create-and-configure-pki.sh
 
