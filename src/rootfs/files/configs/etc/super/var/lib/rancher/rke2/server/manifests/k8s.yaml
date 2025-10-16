@@ -778,6 +778,7 @@ data:
       type: pki-ca
       challenge:
         type: token
+      accessTokenFilePath: /access-token
       baseUrl: https://ca-subroot.super-protocol.svc.cluster.local:443/api/v1/pki
       caBundle: |
         -----BEGIN CERTIFICATE-----
