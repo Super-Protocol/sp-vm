@@ -246,7 +246,7 @@ ADD rootfs/files/configs/pki-service/pki-authority.service "${OUTPUTDIR}/etc/sys
 RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
 ADD rootfs/files/configs/pki-service/create-and-configure-pki.sh "${OUTPUTDIR}/usr/local/bin"
 RUN mkdir -p "${OUTPUTDIR}/root/containers"
-COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-18529775956 /pki-authority.tar "${OUTPUTDIR}/root/containers/pki-authority.tar"
+COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-18566492551 /pki-authority.tar "${OUTPUTDIR}/root/containers/pki-authority.tar"
 ADD rootfs/files/configs/pki-service/lxc-template.yaml "${OUTPUTDIR}/root/containers/lxc-template.yaml"
 ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
 ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
