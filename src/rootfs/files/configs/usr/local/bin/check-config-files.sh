@@ -91,9 +91,9 @@ fi
 
 # Check for CPU type override file first
 CPU_TYPE_OVERRIDE_FILE="/sp/cpu_type_override"
-if [[ -f "$CPU_TYPE_OVERRIDE_FILE" ]]; then
-    CPU_TYPE_OVERRIDE="$(cat "$CPU_TYPE_OVERRIDE_FILE" | tr -d '[:space:]')"
-    if [[ "$CPU_TYPE_OVERRIDE" == "token" ]]; then
+if [[ -f "${CPU_TYPE_OVERRIDE_FILE}" ]]; then
+    CPU_TYPE_OVERRIDE="$(cat "${CPU_TYPE_OVERRIDE_FILE}" | tr -d '[:space:]')"
+    if [[ "${CPU_TYPE_OVERRIDE}" == "token" ]]; then
         CPU_TYPE="token"
     fi
 fi
