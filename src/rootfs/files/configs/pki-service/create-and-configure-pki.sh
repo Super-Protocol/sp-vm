@@ -87,11 +87,11 @@ fi
 echo "lxc.net.0.hwaddr = 4e:fc:0a:d5:2d:ff" >> "${CONFIG_FILE}"
 
 if [[ "${CPU_TYPE}" = "sev-snp" ]]; then
-    DEV_ID=$(stat -c '%t:%T' /dev/sev-guest | awk -F: '{printf "%d:%d\n", "0x"$1, "0x"$2}')
+    DEV_ID="$(stat -c '%t:%T' /dev/sev-guest | awk -F: '{printf "%d:%d\n", "0x"$1, "0x"$2}')"
     echo "lxc.cgroup2.devices.allow = c ${DEV_ID} rwm" >> "${CONFIG_FILE}"
     echo "lxc.mount.entry = /dev/sev-guest dev/sev-guest none bind,optional,create=file" >> "${CONFIG_FILE}"
 elif [[ "${CPU_TYPE}" = "tdx" ]]; then
-    DEV_ID=$(stat -c '%t:%T' /dev/tdx_guest | awk -F: '{printf "%d:%d\n", "0x"$1, "0x"$2}')
+    DEV_ID="$(stat -c '%t:%T' /dev/tdx_guest | awk -F: '{printf "%d:%d\n", "0x"$1, "0x"$2}')"
     echo "lxc.cgroup2.devices.allow = c ${DEV_ID} rwm" >> "${CONFIG_FILE}"
     echo "lxc.mount.entry = /dev/tdx_guest dev/tdx_guest none bind,optional,create=file" >> "${CONFIG_FILE}"
     if [[ -f "/etc/tdx-attest.conf" ]]; then
