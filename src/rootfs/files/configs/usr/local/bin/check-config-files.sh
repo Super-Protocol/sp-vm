@@ -88,12 +88,25 @@ fi
 # TODO: activate
 #if [[ "$CMDLINE" == *"sp-debug=true"* ]]; then
 #    CPU_TYPE="untrusted";
-if [[ -c "/dev/tdx_guest" ]]; then
-    CPU_TYPE="tdx";
-elif [[ -c "/dev/sev-guest" ]]; then
-    CPU_TYPE="sev-snp";
-else
-    CPU_TYPE="untrusted";
+
+# Check for CPU type override file first
+CPU_TYPE_OVERRIDE_FILE="/sp/cpu_type_override"
+if [[ -f "${CPU_TYPE_OVERRIDE_FILE}" ]]; then
+    CPU_TYPE_OVERRIDE="$(cat "${CPU_TYPE_OVERRIDE_FILE}" | tr -d '[:space:]')"
+    if [[ "${CPU_TYPE_OVERRIDE}" == "token" ]]; then
+        CPU_TYPE="token"
+    fi
+fi
+
+# If not set by override, use hardware detection
+if [[ -z "${CPU_TYPE:-}" ]]; then
+    if [[ -c "/dev/tdx_guest" ]]; then
+        CPU_TYPE="tdx";
+    elif [[ -c "/dev/sev-guest" ]]; then
+        CPU_TYPE="sev-snp";
+    else
+        CPU_TYPE="untrusted";
+    fi
 fi
 
 cat <<EOF > "$CPU_TYPE_CONFIGMAP_MANIFEST";
