@@ -1,6 +1,6 @@
-/dev/mapper/crypto       /run/state         ext4    defaults,x-systemd.makefs,x-mount.mkdir,x-systemd.requires=state_disk_mount.service,x-systemd.after=state_disk_mount.service,x-systemd.device-timeout=300    0    1
-/run/state/var           /var               none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state,x-systemd.requires=run-state-setup.service,x-systemd.after=run-state-setup.service                0    0
-/run/state/kubernetes    /etc/kubernetes    none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state,x-systemd.requires=run-state-setup.service,x-systemd.after=run-state-setup.service                0    0
-#/run/state/etccni        /etc/cni/          none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state,x-systemd.requires=run-state-setup.service,x-systemd.after=run-state-setup.service                0    0
-/run/state/opt           /opt               none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state,x-systemd.requires=run-state-setup.service,x-systemd.after=run-state-setup.service                0    0
-/run/state/etciscsi      /etc/iscsi         none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state,x-systemd.requires=run-state-setup.service,x-systemd.after=run-state-setup.service                0    0
+# /run/state is mounted by state_disk_mount.service (not via fstab) before local-fs
+/run/state/var           /var               none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state                0    0
+/run/state/kubernetes    /etc/kubernetes    none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state                0    0
+#/run/state/etccni        /etc/cni/          none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state                0    0
+/run/state/opt           /opt               none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state                0    0
+/run/state/etciscsi      /etc/iscsi         none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state                0    0
