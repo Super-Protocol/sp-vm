@@ -131,22 +131,6 @@ ADD kernel/files/scripts/build-kernel.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/build-kernel.sh
 ### End kernel ###
 
-### Start hauler ###
-FROM ubuntu:24.04 AS hauler_builder
-RUN apt update && apt -y install curl
-ARG HAULER_VERSION="1.1.0"
-RUN mkdir -p "/opt/hauler/.hauler"
-RUN ln -s "/opt/hauler/.hauler" "/root/.hauler"
-RUN curl -sfL https://get.hauler.dev | bash
-WORKDIR /opt/hauler
-ADD hauler/files/configs/rke2-airgap.yaml /opt/hauler/rke2-airgap.yaml
-RUN hauler store sync --store rke2-store --platform linux/amd64 --files /opt/hauler/rke2-airgap.yaml
-RUN rm /opt/hauler/rke2-airgap.yaml
-RUN hauler store add --store rke2-store image ghcr.io/super-protocol/tee-pki-curl:v1.7.4 --platform linux/amd64
-# TODO: add argo-cd, argo-workflows, cert-manager, gpu-operator, longhorn charts
-RUN hauler store save --store rke2-store --filename rke2-airgap.tar.zst
-### End hauler ###
-
 ### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
 RUN apt update && apt install -y wget gcc make build-essential debootstrap petname gettext
@@ -206,7 +190,6 @@ RUN --security=insecure /buildroot/files/scripts/refresh_ca_certs.sh
 # check for presence of trusted self-signed CA from Super Protocol
 RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < ${OUTPUTDIR}/etc/ssl/certs/ca-certificates.crt | grep -i 'super'
 
-ARG LOCAL_REGISTRY_HOST=hauler.local
 ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
 RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
@@ -214,7 +197,6 @@ RUN mkdir -p "${OUTPUTDIR}/etc/rancher/node"
 RUN LC_ALL=C tr -dc '[:alpha:][:digit:]' < /dev/urandom | head -c 32 > "${OUTPUTDIR}/etc/rancher/node/password"
 ADD rootfs/files/configs/etc/cni/net.d/05-cilium.conflist ${OUTPUTDIR}/etc/cni/net.d/05-cilium.conflist
 ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/etc/sysctl.d/99-zzz-override_cilium.conf
-ADD rootfs/files/configs/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/var/lib/rancher/rke2/rke2-pss.yaml
 ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
 
 # copy iscsi configs, cause this partition will be remounted with empty dir
@@ -222,23 +204,7 @@ RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
 ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
 RUN /buildroot/files/scripts/setup_sshd_config.sh
 
-RUN mkdir -p "$OUTPUTDIR/etc/super/opt/hauler";
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
-RUN ln -sf "/opt/hauler/.hauler" "${OUTPUTDIR}/root/.hauler";
-COPY --from=hauler_builder /opt/hauler/rke2-airgap.tar.zst ${OUTPUTDIR}/etc/super/opt/hauler/
-COPY --from=hauler_builder /usr/local/bin/hauler ${OUTPUTDIR}/usr/local/bin/
-
-# TODO: move hauler and rke2? to anuther independent layers..
-
-ADD rootfs/files/configs/etc/rancher/rke2/config.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/config.yaml.tmpl
-ADD rootfs/files/configs/etc/rancher/rke2/registries.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/registries.yaml.tmpl
-ADD rootfs/files/scripts/template_rke2_configs_preinstall.sh /buildroot/files/scripts/template_rke2_configs_preinstall.sh
-RUN /buildroot/files/scripts/template_rke2_configs_preinstall.sh
-ADD rootfs/files/scripts/download_rke2.sh /buildroot/files/scripts/download_rke2.sh
-RUN /buildroot/files/scripts/download_rke2.sh
-ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
-RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
 
 # copy pki-authority service files
 ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
@@ -252,15 +218,10 @@ ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.
 ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
 RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
 
-ADD rootfs/files/scripts/template_configs_post_rke2install.sh /buildroot/files/scripts/template_configs_post_rke2install.sh
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl /buildroot/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl
-ADD rootfs/files/configs/usr/local/lib/systemd/system/rke2-server.env.append /buildroot/files/configs/usr/local/lib/systemd/system/rke2-server.env.append
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
-RUN /buildroot/files/scripts/template_configs_post_rke2install.sh
 
 RUN mkdir -p "${OUTPUTDIR}/sp"
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml
 ADD rootfs/files/configs/etc/systemd/system/check-config-files.service ${OUTPUTDIR}/etc/systemd/system/check-config-files.service
 ADD rootfs/files/configs/etc/systemd/system/check-config-files.timer ${OUTPUTDIR}/etc/systemd/system/check-config-files.timer
 ADD rootfs/files/configs/usr/local/bin/check-config-files.sh ${OUTPUTDIR}/usr/local/bin/check-config-files.sh
@@ -272,6 +233,13 @@ RUN ln -sf /etc/systemd/system/local-registry.service "${OUTPUTDIR}/etc/systemd/
 ADD rootfs/files/configs/etc/systemd/system/hardening-vm.service ${OUTPUTDIR}/etc/systemd/system/hardening-vm.service
 ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bin/hardening-vm.sh
 RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
+
+# swarm services
+ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
+RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
+ADD rootfs/files/configs/etc/systemd/system/swarm-cloud.service ${OUTPUTDIR}/etc/systemd/system/swarm-cloud.service
+ADD rootfs/files/configs/usr/local/bin/swarm-cloud.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud.sh
+RUN ln -sf /etc/systemd/system/swarm-cloud.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-cloud.service"
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
 # disabling serial getty
@@ -366,6 +334,14 @@ ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/generate_vm_json.sh
 ### End vm_json_builder ###
 
+### Swarm DB start
+FROM golang:1.25.3 AS swarm-db-build
+COPY repos/swarm-db /app/swarm/swarm-db
+WORKDIR /app/swarm/swarm-db
+RUN make
+RUN make build-linux-amd64
+### Swarm DB finish
+
 ### Swarm start
 FROM ubuntu:24.04 AS swarm-build
 
@@ -400,11 +376,7 @@ RUN corepack enable
 
 WORKDIR /app/swarm
 
-COPY ../repos/swarm-db ./swarm-db
-COPY ../repos/swarm-cloud ./swarm-cloud
-
-WORKDIR /app/swarm/swarm-db
-RUN make && make build-linux-amd64
+COPY repos/swarm-cloud /app/swarm/swarm-cloud
 
 WORKDIR /app/swarm/swarm-cloud
 RUN pnpm install --frozen-lockfile
@@ -418,7 +390,7 @@ FROM scratch AS sp_vm
 COPY --from=vm_json_builder /output /
 
 #### swarm
-COPY --from=swarm-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
+COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
 ### End sp_vm ###
 
