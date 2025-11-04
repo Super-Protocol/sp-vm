@@ -21,5 +21,3 @@ fi
 
 echo "swarm-cloud: no runnable entrypoint found (binary or NodeJS dist)" >&2
 exit 1
-
-
