@@ -366,7 +366,63 @@ ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/generate_vm_json.sh
 ### End vm_json_builder ###
 
+### Swarm start
+FROM ubuntu:24.04 AS swarm-build
+
+USER root
+
+ARG NODE_VERSION=22.18.0
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CFG_DIR=/configs
+ENV NVM_DIR=/root/.nvm
+ENV PATH=$PATH:/root/.nvm/versions/node/v$NODE_VERSION/bin/
+ENV NX_DAEMON=false
+ENV NX_ADD_PLUGINS=false
+ENV NX_NO_CLOUD=true
+ENV NODE_OPTIONS=--max_old_space_size=2048
+
+RUN apt-get update
+RUN apt-get install -y \
+    curl \
+    python3 \
+    iproute2 \
+    iptables \
+    wireguard-tools \
+    sqlite3 \
+    mysql-client \
+    jq
+
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+RUN . $NVM_DIR/nvm.sh && nvm install $NODE_VERSION && nvm use $NODE_VERSION
+RUN npm i -g nx@21.5.2 corepack@latest webpack-cli
+RUN curl -fsSL https://get.pnpm.io/install.sh | bash -
+RUN corepack enable
+
+WORKDIR /app/swarm
+
+COPY ../repos/swarm-db ./swarm-db
+COPY ../repos/swarm-cloud ./swarm-cloud
+
+WORKDIR /app/swarm/swarm-db
+RUN make && make build-linux-amd64
+
+WORKDIR /app/swarm/swarm-cloud
+RUN pnpm install --frozen-lockfile
+RUN pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbose
+RUN pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose
+
+### Swarm finish
+
 ### Start sp_vm ###
 FROM scratch AS sp_vm
 COPY --from=vm_json_builder /output /
+
+#### swarm
+COPY --from=swarm-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
+COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
 ### End sp_vm ###
+
+EXPOSE 8001
+EXPOSE 7946
+EXPOSE 3000
+EXPOSE 32768-60999
