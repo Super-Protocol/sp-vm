@@ -1,5 +1,5 @@
 [Unit]
-Description=Swarm Cloud service
+Description=Swarm Node service
 After=network-online.target swarm-db.service
 Wants=network-online.target
 Requires=swarm-db.service
@@ -7,10 +7,12 @@ Requires=swarm-db.service
 [Service]
 Type=simple
 WorkingDirectory=/etc/swarm-cloud
-ExecStart=/usr/local/bin/swarm-cloud.sh
+ExecStart=/usr/local/bin/swarm-node.sh
 Restart=always
 RestartSec=5
 Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target
+
+

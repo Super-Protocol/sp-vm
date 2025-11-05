@@ -237,10 +237,13 @@ RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/sy
 # swarm services
 ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
 RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
-ADD rootfs/files/configs/etc/systemd/system/swarm-cloud.service ${OUTPUTDIR}/etc/systemd/system/swarm-cloud.service
-ADD rootfs/files/configs/usr/local/bin/swarm-cloud.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud.sh
-RUN ln -sf /etc/systemd/system/swarm-cloud.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-cloud.service"
-RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud.sh
+ADD rootfs/files/configs/etc/systemd/system/swarm-cloud-api.service ${OUTPUTDIR}/etc/systemd/system/swarm-cloud-api.service
+ADD rootfs/files/configs/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
+RUN ln -sf /etc/systemd/system/swarm-cloud-api.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-cloud-api.service"
+ADD rootfs/files/configs/etc/systemd/system/swarm-node.service ${OUTPUTDIR}/etc/systemd/system/swarm-node.service
+ADD rootfs/files/configs/usr/local/bin/swarm-node.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
+RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-node.service"
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
 # run-state setup used by fstab bind mounts
 ADD rootfs/files/configs/etc/systemd/system/run-state-setup.service ${OUTPUTDIR}/etc/systemd/system/run-state-setup.service
 ADD rootfs/files/configs/usr/local/bin/run-state-setup.sh ${OUTPUTDIR}/usr/local/bin/run-state-setup.sh
