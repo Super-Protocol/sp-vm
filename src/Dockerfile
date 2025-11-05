@@ -131,6 +131,20 @@ ADD kernel/files/scripts/build-kernel.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/build-kernel.sh
 ### End kernel ###
 
+### Start schema builder ###
+FROM python:3.12-slim AS schema_builder
+WORKDIR /schema
+COPY schema.yaml /schema/schema.yaml
+RUN pip install --no-cache-dir pyyaml && \
+    python - <<'PY'
+import yaml, json
+with open('schema.yaml', 'r') as f:
+    data = yaml.safe_load(f)
+with open('schema.json', 'w') as f:
+    json.dump(data, f)
+PY
+### End schema builder ###
+
 ### Swarm DB start
 FROM golang:1.25.3 AS swarm-db-build
 COPY repos/swarm-db /app/swarm/swarm-db
@@ -307,6 +321,7 @@ RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-cloud"
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
+COPY --from=schema_builder /schema/schema.json ${OUTPUTDIR}/etc/swarm-db/schema.json
 
 # Build info
 ARG SP_VM_IMAGE_VERSION
