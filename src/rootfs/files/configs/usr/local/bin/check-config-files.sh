@@ -19,7 +19,12 @@ for src in "${!files[@]}"; do
     if [ ! -d "$dest_dir" ]; then
         mkdir -p "$dest_dir"
     fi
-    # Copy file if it does not exist
+    # Skip if source template is absent (optional config)
+    if [ ! -f "$src" ]; then
+        echo "skip: source not found: $src"
+        continue
+    fi
+    # Copy file if it does not exist at destination
     if [ ! -f "$dest" ]; then
         cp -v "$src" "$dest"
     fi
