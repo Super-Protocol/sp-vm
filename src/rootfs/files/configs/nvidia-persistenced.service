@@ -3,6 +3,8 @@ Description=NVIDIA Persistence Daemon
 Wants=syslog.target
 StopWhenUnneeded=true
 Before=systemd-backlight@backlight:nvidia_0.service
+ConditionPathExists=/usr/bin/nvidia-smi
+ConditionPathExists=/proc/driver/nvidia/version
 
 [Service]
 Type=forking

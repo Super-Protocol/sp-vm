@@ -225,7 +225,7 @@ RUN mkdir -p "${OUTPUTDIR}/sp"
 ADD rootfs/files/configs/etc/systemd/system/check-config-files.service ${OUTPUTDIR}/etc/systemd/system/check-config-files.service
 ADD rootfs/files/configs/etc/systemd/system/check-config-files.timer ${OUTPUTDIR}/etc/systemd/system/check-config-files.timer
 ADD rootfs/files/configs/usr/local/bin/check-config-files.sh ${OUTPUTDIR}/usr/local/bin/check-config-files.sh
-RUN ln -sf /etc/systemd/system/check-config-files.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/check-config-files.service"
+# Enable only the timer; service will be triggered by it
 RUN ln -sf /etc/systemd/system/check-config-files.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/check-config-files.timer"
 ADD rootfs/files/configs/etc/systemd/system/local-registry.service ${OUTPUTDIR}/etc/systemd/system/local-registry.service
 ADD rootfs/files/configs/usr/local/bin/local-registry.sh ${OUTPUTDIR}/usr/local/bin/local-registry.sh

@@ -1,6 +1,6 @@
 [Unit]
 Description=Check and Copy Config Files Service
-After=network.target state_disk_mount.service
+After=local-fs.target network.target state_disk_mount.service
 Requires=state_disk_mount.service
 
 [Service]
