@@ -70,6 +70,17 @@ echo "\$RANDOM_KEY" | cryptsetup luksFormat "$STATE_BLOCK_DEVICE_PATH" --batch-m
 echo "\$RANDOM_KEY" | cryptsetup luksOpen "$STATE_BLOCK_DEVICE_PATH" crypto;
 mkfs.ext4 "/dev/mapper/crypto";
 
+# Ensure /run/state exists and create source directories for bind mounts
+mkdir -p /run/state
+for d in \
+  /run/state/var \
+  /run/state/kubernetes \
+  /run/state/opt \
+  /run/state/etciscsi
+do
+  mkdir -p "$d"
+done
+
 # Mounting read-only provider config
 mount -t ext4 -o ro "$PROVIDER_CONFIG_DEVICE_PATH" /sp || { echo "failed to mount $PROVIDER_CONFIG_DEVICE_PATH to /sp"; exit 1; };
 
