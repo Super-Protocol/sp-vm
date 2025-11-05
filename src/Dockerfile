@@ -245,6 +245,10 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud.sh
 ADD rootfs/files/configs/etc/systemd/system/run-state-setup.service ${OUTPUTDIR}/etc/systemd/system/run-state-setup.service
 ADD rootfs/files/configs/usr/local/bin/run-state-setup.sh ${OUTPUTDIR}/usr/local/bin/run-state-setup.sh
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/run-state-setup.sh
+ADD rootfs/files/configs/etc/systemd/system/var.mount.d/10-run-state-setup.conf ${OUTPUTDIR}/etc/systemd/system/var.mount.d/10-run-state-setup.conf
+ADD rootfs/files/configs/etc/systemd/system/etc-kubernetes.mount.d/10-run-state-setup.conf ${OUTPUTDIR}/etc/systemd/system/etc-kubernetes.mount.d/10-run-state-setup.conf
+ADD rootfs/files/configs/etc/systemd/system/opt.mount.d/10-run-state-setup.conf ${OUTPUTDIR}/etc/systemd/system/opt.mount.d/10-run-state-setup.conf
+ADD rootfs/files/configs/etc/systemd/system/etc-iscsi.mount.d/10-run-state-setup.conf ${OUTPUTDIR}/etc/systemd/system/etc-iscsi.mount.d/10-run-state-setup.conf
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
 # disabling serial getty (mask instance)
