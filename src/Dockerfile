@@ -241,6 +241,10 @@ ADD rootfs/files/configs/etc/systemd/system/swarm-cloud.service ${OUTPUTDIR}/etc
 ADD rootfs/files/configs/usr/local/bin/swarm-cloud.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud.sh
 RUN ln -sf /etc/systemd/system/swarm-cloud.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-cloud.service"
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud.sh
+# run-state setup used by fstab bind mounts
+ADD rootfs/files/configs/etc/systemd/system/run-state-setup.service ${OUTPUTDIR}/etc/systemd/system/run-state-setup.service
+ADD rootfs/files/configs/usr/local/bin/run-state-setup.sh ${OUTPUTDIR}/usr/local/bin/run-state-setup.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/run-state-setup.sh
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
 # disabling serial getty (mask instance)

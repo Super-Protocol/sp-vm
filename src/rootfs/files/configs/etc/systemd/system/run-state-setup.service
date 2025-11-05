@@ -1,0 +1,12 @@
+[Unit]
+Description=Prepare /run/state subdirectories for bind mounts
+After=run-state.mount
+Requires=run-state.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/run-state-setup.sh
+RemainAfterExit=yes
+
+[Install]
+# No default target; started via fstab requires
