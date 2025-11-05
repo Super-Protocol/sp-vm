@@ -252,6 +252,12 @@ RUN mkdir -p "${OUTPUTDIR}/etc/kubernetes"
 # disabling serial getty (mask instance)
 RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
 
+# swarm binaries into VM rootfs
+RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-cloud"
+COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
+COPY --from=swarm-build /app/swarm/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
+
 # Build info
 ARG SP_VM_IMAGE_VERSION
 RUN bash -c '[[ -n "$SP_VM_IMAGE_VERSION" ]] && echo "$SP_VM_IMAGE_VERSION" > "${OUTPUTDIR}/etc/sp-release"'
