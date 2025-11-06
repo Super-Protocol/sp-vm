@@ -10,9 +10,7 @@ WorkingDirectory=/etc/swarm-cloud
 ExecStart=/usr/local/bin/swarm-node.sh
 Restart=always
 RestartSec=5
-Environment=NODE_ENV=production
+Environment=NODE_ENV=production,SWC_NODE_CONFIG_PATH=/sp/swarm/node-api.yaml
 
 [Install]
 WantedBy=multi-user.target
-
-

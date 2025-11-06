@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/etc/swarm-db
 ExecStartPre=mkdir -p /var/lib/swarm-db/data
-ExecStart=/etc/swarm-db/swarm-db-linux-amd64 -config /sp/swarm/node.yaml
+ExecStart=/etc/swarm-db/swarm-db-linux-amd64 -config /sp/swarm/node-db.yaml
 Restart=always
 RestartSec=5
 
