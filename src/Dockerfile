@@ -309,6 +309,8 @@ COPY --from=swarm-build /app/swarm/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
 ARG NODE_VERSION=22.18.0
 COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
+# ensure built JS bundles are present
+COPY --from=swarm-build /app/swarm/swarm-cloud/dist ${OUTPUTDIR}/etc/swarm-cloud/dist
 
 # Build info
 ARG SP_VM_IMAGE_VERSION
