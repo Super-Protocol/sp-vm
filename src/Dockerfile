@@ -179,6 +179,9 @@ WORKDIR /app/swarm/swarm-cloud
 RUN pnpm install --frozen-lockfile
 RUN pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbose
 RUN pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose
+# build provision-plugin-sdk wheel for reuse
+RUN python3 -m pip install --no-cache-dir --upgrade pip wheel
+RUN python3 -m pip wheel -w /tmp/provision-wheels /app/swarm/swarm-cloud/services/provision-plugin-sdk
 ### Swarm finish
 
 ### Start rootfs ###
@@ -315,9 +318,13 @@ RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/wireguard/main.py || true
 
 # tools needed at runtime
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
- && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client \
+ && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get clean \
  && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
+
+# install provision-plugin-sdk into VM python environment (from prebuilt wheel)
+COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
+RUN chroot ${OUTPUTDIR} /usr/bin/python3 -m pip install /opt/provision-wheels/*.whl
 
 # Build info
 ARG SP_VM_IMAGE_VERSION
@@ -414,6 +421,7 @@ COPY --from=vm_json_builder /output /
 #### swarm
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
+COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
 ### End sp_vm ###
 
 EXPOSE 8001
