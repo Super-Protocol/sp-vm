@@ -432,6 +432,8 @@ COPY --from=vm_json_builder /output /
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
 COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
+
+RUN rmdir /etc/wireguard && ln -s /var/lib/etc-wireguard /etc/wireguard
 ### End sp_vm ###
 
 EXPOSE 8001
