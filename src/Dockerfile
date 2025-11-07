@@ -310,6 +310,9 @@ RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
 ARG NODE_VERSION=22.18.0
 COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
 
+# ensure service scripts are executable in VM rootfs
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/wireguard/main.py || true
+
 # tools needed at runtime
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client \
@@ -411,9 +414,6 @@ COPY --from=vm_json_builder /output /
 #### swarm
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
-
-#### services
-RUN chmod +x /etc/swarm-cloud/services/wireguard/main.py
 ### End sp_vm ###
 
 EXPOSE 8001
