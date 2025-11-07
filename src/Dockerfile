@@ -159,6 +159,7 @@ RUN apt-get install -y \
     curl \
     python3 \
     python3-pip \
+    python3-venv \
     iproute2 \
     iptables \
     wireguard-tools \
@@ -180,9 +181,10 @@ WORKDIR /app/swarm/swarm-cloud
 RUN pnpm install --frozen-lockfile
 RUN pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbose
 RUN pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose
-# build provision-plugin-sdk wheel for reuse
-RUN python3 -m pip install --no-cache-dir --upgrade pip wheel
-RUN python3 -m pip wheel -w /tmp/provision-wheels /app/swarm/swarm-cloud/services/provision-plugin-sdk
+# build provision-plugin-sdk wheel for reuse (use venv to avoid PEP 668 restrictions)
+RUN python3 -m venv /tmp/pvenv \
+ && /tmp/pvenv/bin/pip install --no-cache-dir wheel \
+ && /tmp/pvenv/bin/pip wheel -w /tmp/provision-wheels /app/swarm/swarm-cloud/services/provision-plugin-sdk
 ### Swarm finish
 
 ### Start rootfs ###
