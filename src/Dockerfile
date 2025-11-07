@@ -310,6 +310,12 @@ RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
 ARG NODE_VERSION=22.18.0
 COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
 
+# tools needed at runtime
+RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
+ && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client \
+ && chroot ${OUTPUTDIR} /usr/bin/apt-get clean \
+ && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
+
 # Build info
 ARG SP_VM_IMAGE_VERSION
 RUN bash -c '[[ -n "$SP_VM_IMAGE_VERSION" ]] && echo "$SP_VM_IMAGE_VERSION" > "${OUTPUTDIR}/etc/sp-release"'
