@@ -183,8 +183,9 @@ RUN pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbos
 RUN pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose
 # build provision-plugin-sdk wheel for reuse (use venv to avoid PEP 668 restrictions)
 RUN python3 -m venv /tmp/pvenv \
- && /tmp/pvenv/bin/pip install --no-cache-dir wheel \
- && /tmp/pvenv/bin/pip wheel -w /tmp/provision-wheels /app/swarm/swarm-cloud/services/provision-plugin-sdk
+ && /tmp/pvenv/bin/pip install --no-cache-dir build wheel \
+ && bash -lc 'cd /app/swarm/swarm-cloud/services/provision-plugin-sdk && /tmp/pvenv/bin/python -m build --wheel --outdir /tmp/provision-wheels' \
+ && ls -l /tmp/provision-wheels
 ### Swarm finish
 
 ### Start rootfs ###
