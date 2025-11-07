@@ -158,6 +158,7 @@ RUN apt-get update
 RUN apt-get install -y \
     curl \
     python3 \
+    python3-pip \
     iproute2 \
     iptables \
     wireguard-tools \
