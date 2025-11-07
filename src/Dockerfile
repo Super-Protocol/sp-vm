@@ -327,7 +327,7 @@ RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
 
 # install provision-plugin-sdk into VM python environment (from prebuilt wheel)
 COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
-RUN chroot ${OUTPUTDIR} /usr/bin/python3 -m pip install /opt/provision-wheels/*.whl
+RUN chroot ${OUTPUTDIR} /usr/bin/python3 -m pip install --break-system-packages /opt/provision-wheels/*.whl
 
 # Build info
 ARG SP_VM_IMAGE_VERSION
