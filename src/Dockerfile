@@ -411,6 +411,9 @@ COPY --from=vm_json_builder /output /
 #### swarm
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
+
+#### services
+RUN chmod +x /etc/swarm-cloud/services/wireguard/main.py
 ### End sp_vm ###
 
 EXPOSE 8001
