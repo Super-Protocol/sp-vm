@@ -328,12 +328,12 @@ RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
 
 # install provision-plugin-sdk into VM python environment (from prebuilt wheel)
 COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
-RUN bash -lc 'shopt -s nullglob; set -e; WHEELS=("${OUTPUTDIR}/opt/provision-wheels"/*.whl); \
-  if (( ${#WHEELS[@]} > 0 )); then \
-    chroot ${OUTPUTDIR} /usr/bin/python3 -m pip install --break-system-packages /opt/provision-wheels/*.whl; \
+RUN chroot ${OUTPUTDIR} /bin/bash -lc 'shopt -s nullglob; set -e; files=(/opt/provision-wheels/*.whl); \
+  if (( ${#files[@]} )); then \
+    python3 -m pip install --break-system-packages "${files[@]}"; \
   else \
     echo "No wheels found, installing from source"; \
-    chroot ${OUTPUTDIR} /usr/bin/python3 -m pip install --break-system-packages /etc/swarm-cloud/services/provision-plugin-sdk; \
+    python3 -m pip install --break-system-packages /etc/swarm-cloud/services/provision-plugin-sdk; \
   fi'
 
 # Build info
