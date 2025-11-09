@@ -320,7 +320,8 @@ COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUT
 # ensure service scripts are executable in VM rootfs
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/wireguard/main.py || true
 RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-wireguard" \
- && ln -s /var/lib/etc-wireguard "${OUTPUTDIR}/etc/wireguard" || true
+ && rm -rf "${OUTPUTDIR}/etc/wireguard" \
+ && ln -s /var/lib/etc-wireguard "${OUTPUTDIR}/etc/wireguard"
 
 # tools needed at runtime
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
