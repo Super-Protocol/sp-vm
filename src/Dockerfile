@@ -319,6 +319,8 @@ COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUT
 
 # ensure service scripts are executable in VM rootfs
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/wireguard/main.py || true
+RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-wireguard" \
+ && ln -s /var/lib/etc-wireguard "${OUTPUTDIR}/etc/wireguard" || true
 
 # tools needed at runtime
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
@@ -432,8 +434,6 @@ COPY --from=vm_json_builder /output /
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
 COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
-
-RUN mkdir -p /var/lib/etc-wireguard && ln -s /var/lib/etc-wireguard /etc/wireguard
 ### End sp_vm ###
 
 EXPOSE 8001
