@@ -433,7 +433,7 @@ COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-d
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
 COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
 
-RUN ln -s /var/lib/etc-wireguard /etc/wireguard
+RUN mkdir -p /var/lib/etc-wireguard && ln -s /var/lib/etc-wireguard /etc/wireguard
 ### End sp_vm ###
 
 EXPOSE 8001
