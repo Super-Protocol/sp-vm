@@ -318,10 +318,15 @@ ARG NODE_VERSION=22.18.0
 COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
 
 # ensure service scripts are executable in VM rootfs
-RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/wireguard/main.py || true
 RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-wireguard" \
  && rm -rf "${OUTPUTDIR}/etc/wireguard" \
  && ln -s /var/lib/etc-wireguard "${OUTPUTDIR}/etc/wireguard"
+
+# move RKE2 configs under /var and symlink /etc/rancher -> /var/lib/etc-rancher
+RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
+ && if [ -d "${OUTPUTDIR}/etc/rancher" ]; then cp -a "${OUTPUTDIR}/etc/rancher/." "${OUTPUTDIR}/var/lib/etc-rancher/"; fi \
+ && rm -rf "${OUTPUTDIR}/etc/rancher" \
+ && ln -s /var/lib/etc-rancher "${OUTPUTDIR}/etc/rancher"
 
 # tools needed at runtime
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
