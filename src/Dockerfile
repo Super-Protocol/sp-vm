@@ -324,6 +324,7 @@ RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-wireguard" \
 
 # move RKE2 configs under /var and symlink /etc/rancher -> /var/lib/etc-rancher
 RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
+ && touch "${OUTPUTDIR}/var/lib/etc-rancher/.keep" \
  && if [ -d "${OUTPUTDIR}/etc/rancher" ]; then cp -a "${OUTPUTDIR}/etc/rancher/." "${OUTPUTDIR}/var/lib/etc-rancher/"; fi \
  && rm -rf "${OUTPUTDIR}/etc/rancher" \
  && ln -s /var/lib/etc-rancher "${OUTPUTDIR}/etc/rancher"
