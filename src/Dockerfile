@@ -216,12 +216,7 @@ RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
 # RKE2: clean default installation inside rootfs (no legacy scripts)
 RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
- && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service rke2-agent.service || true' \
- && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl mask rke2-server.service rke2-agent.service || true' \
- && mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
- && if [ -d "${OUTPUTDIR}/etc/rancher" ]; then cp -a "${OUTPUTDIR}/etc/rancher/." "${OUTPUTDIR}/var/lib/etc-rancher/"; fi \
- && rm -rf "${OUTPUTDIR}/etc/rancher" \
- && ln -s /var/lib/etc-rancher "${OUTPUTDIR}/etc/rancher"
+ && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service rke2-agent.service || true'
 
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
