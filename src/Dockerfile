@@ -214,6 +214,14 @@ RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
 ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
 RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
+# RKE2: clean default installation inside rootfs (no legacy scripts)
+RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
+ && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl enable rke2-server.service' \
+ && mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
+ && if [ -d "${OUTPUTDIR}/etc/rancher" ]; then cp -a "${OUTPUTDIR}/etc/rancher/." "${OUTPUTDIR}/var/lib/etc-rancher/"; fi \
+ && rm -rf "${OUTPUTDIR}/etc/rancher" \
+ && ln -s /var/lib/etc-rancher "${OUTPUTDIR}/etc/rancher"
+
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
 
@@ -321,13 +329,6 @@ COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUT
 RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-wireguard" \
  && rm -rf "${OUTPUTDIR}/etc/wireguard" \
  && ln -s /var/lib/etc-wireguard "${OUTPUTDIR}/etc/wireguard"
-
-# move RKE2 configs under /var and symlink /etc/rancher -> /var/lib/etc-rancher
-RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
- && touch "${OUTPUTDIR}/var/lib/etc-rancher/.keep" \
- && if [ -d "${OUTPUTDIR}/etc/rancher" ]; then cp -a "${OUTPUTDIR}/etc/rancher/." "${OUTPUTDIR}/var/lib/etc-rancher/"; fi \
- && rm -rf "${OUTPUTDIR}/etc/rancher" \
- && ln -s /var/lib/etc-rancher "${OUTPUTDIR}/etc/rancher"
 
 # tools needed at runtime
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
