@@ -76,6 +76,7 @@ for d in \
   /run/state/var \
   /run/state/kubernetes \
   /run/state/opt \
+  /run/state/rancher \
   /run/state/etciscsi
 do
   mkdir -p "$d"

@@ -9,6 +9,8 @@ declare -A files=(
     #["/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl"]="/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl"
     ["/etc/super/etc/iscsi/iscsid.conf"]="/etc/iscsi/iscsid.conf"
     ["/etc/super/etc/iscsi/initiatorname.iscsi"]="/etc/iscsi/initiatorname.iscsi"
+    ["/etc/super/etc/rancher/rke2/config.yaml"]="/etc/rancher/rke2/config.yaml"
+    ["/etc/super/etc/rancher/rke2/registries.yaml"]="/etc/rancher/rke2/registries.yaml"
 )
 
 # Check and copy files if they do not exist
