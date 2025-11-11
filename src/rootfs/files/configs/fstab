@@ -3,5 +3,5 @@
 /run/state/kubernetes    /etc/kubernetes    none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state                0    0
 #/run/state/etccni        /etc/cni/          none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state                0    0
 /run/state/opt           /opt               none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state                0    0
-/run/state/rancher       /etc/rancher       none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state,x-systemd.after=state_disk_mount.service  0    0
+/run/state/rancher       /etc/rancher       none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state,x-systemd.requires-mounts-for=/run/state/rancher  0    0
 /run/state/etciscsi      /etc/iscsi         none    defaults,bind,x-mount.mkdir,x-systemd.requires-mounts-for=/run/state                0    0
