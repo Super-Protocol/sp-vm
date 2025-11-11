@@ -70,15 +70,15 @@ echo "\$RANDOM_KEY" | cryptsetup luksFormat "$STATE_BLOCK_DEVICE_PATH" --batch-m
 echo "\$RANDOM_KEY" | cryptsetup luksOpen "$STATE_BLOCK_DEVICE_PATH" crypto;
 mkfs.ext4 "/dev/mapper/crypto";
 
-# Ensure /run/state exists and create source directories for bind mounts
+# Ensure /run/state mountpoint exists and mount the state filesystem now,
+# so that subdirectories are created inside the mounted FS (not on the parent)
 mkdir -p /run/state
-for d in \
-  /run/state/var \
-  /run/state/kubernetes \
-  /run/state/opt \
-  /run/state/rancher \
-  /run/state/etciscsi
-do
+if ! mountpoint -q /run/state; then
+  mount -t ext4 -o defaults /dev/mapper/crypto /run/state
+fi
+
+# Create source directories for bind mounts inside the mounted state FS
+for d in /run/state/var /run/state/kubernetes /run/state/opt /run/state/rancher /run/state/etciscsi; do
   mkdir -p "$d"
 done
 
