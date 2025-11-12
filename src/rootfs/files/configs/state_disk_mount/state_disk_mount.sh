@@ -80,3 +80,4 @@ mkdir -p /run/state/opt
 mkdir -p /run/state/etciscsi
 mkdir -p /run/state/kubernetes
 mkdir -p /run/state/var
+mkdir -p /run/state/var/lib/etc-rancher
