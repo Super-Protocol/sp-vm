@@ -70,19 +70,5 @@ echo "\$RANDOM_KEY" | cryptsetup luksFormat "$STATE_BLOCK_DEVICE_PATH" --batch-m
 echo "\$RANDOM_KEY" | cryptsetup luksOpen "$STATE_BLOCK_DEVICE_PATH" crypto;
 mkfs.ext4 "/dev/mapper/crypto";
 
-# Ensure /run/state mountpoint exists and mount the state filesystem now,
-# so that subdirectories are created inside the mounted FS (not on the parent)
-mkdir -p /run/state
-if ! mountpoint -q /run/state; then
-  mount -t ext4 -o defaults /dev/mapper/crypto /run/state
-fi
-
-# Create source directories for bind mounts inside the mounted state FS
-for d in /run/state/var /run/state/kubernetes /run/state/opt /run/state/rancher /run/state/etciscsi; do
-  mkdir -p "$d"
-done
-
 # Mounting read-only provider config
 mount -t ext4 -o ro "$PROVIDER_CONFIG_DEVICE_PATH" /sp || { echo "failed to mount $PROVIDER_CONFIG_DEVICE_PATH to /sp"; exit 1; };
-
-# Bind mounts and /run/state mounting are handled by fstab/systemd

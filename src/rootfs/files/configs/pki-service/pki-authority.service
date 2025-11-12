@@ -1,8 +1,8 @@
 [Unit]
 Description=PKI authority lxc-container
-After=network-online.target lxc.service lxc-net.service nvidia-persistenced.service 
+After=lxc.service lxc-net.service lxc-monitord nvidia-persistenced.service 
+Requires=lxc.service lxc-net.service lxc-monitord
 Wants=nvidia-persistenced.service
-Requires=lxc.service lxc-net.service
 
 [Service]
 Type=simple
