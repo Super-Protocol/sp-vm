@@ -40,31 +40,28 @@ K8S_MAIN_MANIFEST="/var/lib/rancher/rke2/server/manifests/k8s.yaml"
 
 # Overriding hauler int IP
 NODE_DEFAULT_IFACE="$({ ip route get 8.8.8.8 2>/dev/null | awk '{print $5}' | grep '.'; } || echo)";
-if [[ -z "$NODE_DEFAULT_IFACE" ]]; then
-    echo "Failed to get default network interface, please ensure your VM has an internet access";
-    exit 1;
-fi
-NODE_IP="$({ ip a show "$NODE_DEFAULT_IFACE" 2>/dev/null | grep 'inet ' | awk '{print $2}' | awk -F '/' '{print $1}'; } || echo)";
-if [[ -z "$NODE_IP" ]]; then
-    echo "Failed to get ip of the default network interface $NODE_DEFAULT_IFACE, please ensure your VM has an internet access";
-    exit 1;
+NODE_IP=""
+if [[ -n "$NODE_DEFAULT_IFACE" ]]; then
+    NODE_IP="$({ ip a show "$NODE_DEFAULT_IFACE" 2>/dev/null | grep 'inet ' | awk '{print $2}' | awk -F '/' '{print $1}'; } || echo)";
 fi
 
-if [[ ! -f "$K8S_MAIN_MANIFEST" ]]; then
+if [[ ! -f "$K8S_MAIN_MANIFEST" ]] && [[ -n "$NODE_IP" ]]; then
     NODE_IP="$NODE_IP" \
         envsubst \
         '$NODE_IP' \
         < "/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml" \
         > "$K8S_MAIN_MANIFEST";
 fi
-CURRENT_REGISTRY_IP="$(grep -E '\W+([0-9.]+)\W+registry.superprotocol.local' "$K8S_MAIN_MANIFEST" | awk '{print $1}')";
-CURRENT_HAULER_IP="$(grep -E '\W+([0-9.]+)\W+hauler.local' "$K8S_MAIN_MANIFEST" | awk '{print $1}')";
-if [[ "$CURRENT_REGISTRY_IP" != "$NODE_IP" ]] || [[ "$CURRENT_HAULER_IP" != "$NODE_IP" ]]; then
-    echo "Node IP changed! Setting $NODE_IP in $K8S_MAIN_MANIFEST, current: $CURRENT_REGISTRY_IP and $CURRENT_HAULER_IP";
-    sed -E -i \
-        -e "s|^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+[[:space:]]+hauler\.local|          $NODE_IP hauler.local|" \
-        -e "s|^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+[[:space:]]+registry\.superprotocol\.local|          $NODE_IP registry.superprotocol.local|" \
-        "$K8S_MAIN_MANIFEST";
+if [[ -n "$NODE_IP" ]] && [[ -f "$K8S_MAIN_MANIFEST" ]]; then
+    CURRENT_REGISTRY_IP="$(grep -E '\W+([0-9.]+)\W+registry.superprotocol.local' "$K8S_MAIN_MANIFEST" | awk '{print $1}')";
+    CURRENT_HAULER_IP="$(grep -E '\W+([0-9.]+)\W+hauler.local' "$K8S_MAIN_MANIFEST" | awk '{print $1}')";
+    if [[ "$CURRENT_REGISTRY_IP" != "$NODE_IP" ]] || [[ "$CURRENT_HAULER_IP" != "$NODE_IP" ]]; then
+        echo "Node IP changed! Setting $NODE_IP in $K8S_MAIN_MANIFEST, current: $CURRENT_REGISTRY_IP and $CURRENT_HAULER_IP";
+        sed -E -i \
+            -e "s|^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+[[:space:]]+hauler\.local|          $NODE_IP hauler.local|" \
+            -e "s|^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+[[:space:]]+registry\.superprotocol\.local|          $NODE_IP registry.superprotocol.local|" \
+            "$K8S_MAIN_MANIFEST";
+    fi
 fi
 
 CMDLINE="$(cat /proc/cmdline)";
