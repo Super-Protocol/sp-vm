@@ -72,3 +72,11 @@ mkfs.ext4 "/dev/mapper/crypto";
 
 # Mounting read-only provider config
 mount -t ext4 -o ro "$PROVIDER_CONFIG_DEVICE_PATH" /sp || { echo "failed to mount $PROVIDER_CONFIG_DEVICE_PATH to /sp"; exit 1; };
+
+# Mounting encrypted state volume and preparing directories used for bind mounts
+mkdir -p /run/state
+mount "/dev/mapper/crypto" /run/state || { echo "failed to mount /dev/mapper/crypto to /run/state"; exit 1; };
+mkdir -p /run/state/opt
+mkdir -p /run/state/etciscsi
+mkdir -p /run/state/kubernetes
+mkdir -p /run/state/var
