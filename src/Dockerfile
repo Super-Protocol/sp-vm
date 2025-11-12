@@ -330,7 +330,7 @@ RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-wireguard" \
  && rm -rf "${OUTPUTDIR}/etc/wireguard" \
  && ln -s /var/lib/etc-wireguard "${OUTPUTDIR}/etc/wireguard"
 
- RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
+RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
  && rm -rf "${OUTPUTDIR}/etc/rancher" \
  && ln -s /var/lib/etc-rancher "${OUTPUTDIR}/etc/rancher"
 
