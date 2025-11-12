@@ -218,8 +218,9 @@ RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 ARG RKE2_VERSION=v1.32.8+rke2r1
 ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
 RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
- && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service rke2-agent.service || true'
-RUN chroot ${OUTPUTDIR} /bin/sh -c 'systemctl mask rke2-server.service rke2-agent.service || true'
+ && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
+ && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
+# RUN chroot ${OUTPUTDIR} /bin/sh -c 'systemctl mask rke2-server.service rke2-agent.service || true'
 
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
