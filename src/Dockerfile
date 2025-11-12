@@ -330,6 +330,10 @@ RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-wireguard" \
  && rm -rf "${OUTPUTDIR}/etc/wireguard" \
  && ln -s /var/lib/etc-wireguard "${OUTPUTDIR}/etc/wireguard"
 
+ RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
+ && rm -rf "${OUTPUTDIR}/etc/rancher" \
+ && ln -s /var/lib/etc-rancher "${OUTPUTDIR}/etc/rancher"
+
 # tools needed at runtime
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip \
