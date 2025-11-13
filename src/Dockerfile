@@ -300,13 +300,13 @@ RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/sy
 
 # swarm services
 ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
-RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
+# RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
 ADD rootfs/files/configs/etc/systemd/system/swarm-cloud-api.service ${OUTPUTDIR}/etc/systemd/system/swarm-cloud-api.service
 ADD rootfs/files/configs/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
-RUN ln -sf /etc/systemd/system/swarm-cloud-api.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-cloud-api.service"
+# RUN ln -sf /etc/systemd/system/swarm-cloud-api.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-cloud-api.service"
 ADD rootfs/files/configs/etc/systemd/system/swarm-node.service ${OUTPUTDIR}/etc/systemd/system/swarm-node.service
 ADD rootfs/files/configs/usr/local/bin/swarm-node.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
-RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-node.service"
+# RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-node.service"
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
 # run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
@@ -325,13 +325,13 @@ ARG NODE_VERSION=22.18.0
 COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
 
 # ensure service scripts are executable in VM rootfs
-RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-wireguard" \
- && rm -rf "${OUTPUTDIR}/etc/wireguard" \
- && ln -s /var/lib/etc-wireguard "${OUTPUTDIR}/etc/wireguard"
+# RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-wireguard" \
+#  && rm -rf "${OUTPUTDIR}/etc/wireguard" \
+#  && ln -s /var/lib/etc-wireguard "${OUTPUTDIR}/etc/wireguard"
 
-RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
- && rm -rf "${OUTPUTDIR}/etc/rancher" \
- && mkdir -p "${OUTPUTDIR}/etc/rancher"
+# RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
+#  && rm -rf "${OUTPUTDIR}/etc/rancher" \
+#  && mkdir -p "${OUTPUTDIR}/etc/rancher"
 
 # tools needed at runtime
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
