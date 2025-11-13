@@ -66,8 +66,8 @@ fi
 STATE_BLOCK_DEVICE_PATH="/dev/$STATE_BLOCK_DEVICE_NAME";
 RANDOM_KEY="$(dd if=/dev/urandom bs=1 count=32 2>/dev/null | base64)";
 wipefs -a "$STATE_BLOCK_DEVICE_PATH" || true;
-echo "\$RANDOM_KEY" | cryptsetup luksFormat "$STATE_BLOCK_DEVICE_PATH" --batch-mode;
-echo "\$RANDOM_KEY" | cryptsetup luksOpen "$STATE_BLOCK_DEVICE_PATH" crypto;
+echo -n "$RANDOM_KEY" | cryptsetup luksFormat "$STATE_BLOCK_DEVICE_PATH" --batch-mode --key-file -;
+echo -n "$RANDOM_KEY" | cryptsetup luksOpen "$STATE_BLOCK_DEVICE_PATH" crypto --key-file -;
 mkfs.ext4 "/dev/mapper/crypto";
 
 # Mounting read-only provider config
