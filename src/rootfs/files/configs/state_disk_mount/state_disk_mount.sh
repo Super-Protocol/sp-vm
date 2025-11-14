@@ -13,16 +13,23 @@ set -euo pipefail;
 # 4.2. If their count < 1 - fail, this is abnormal, no state disk is present
 # 4.3. If only one - this block dev will be used as the state disk
 
+# Try to detect the main system block device:
+# 1) Prefer dm-verity info when available (untrusted mode with dm-verity)
+# 2) Fallback to the current root's source device (works for writable root)
 DATA_PART_DEVICE_PATH="$({ veritysetup status root | grep 'data device' | awk -F ': ' '{print $2}'; } || echo)";
-if [[ -z "$DATA_PART_DEVICE_PATH" ]]; then
-    echo "Failed to get data partition device path from 'veritysetup status'..";
-    exit 1;
+if [[ -n "$DATA_PART_DEVICE_PATH" ]]; then
+	MAIN_BLOCK_DEVICE_NAME="$(lsblk -no PKNAME "$DATA_PART_DEVICE_PATH" || echo)";
+else
+	ROOT_SRC="$(findmnt -n -o SOURCE / || echo)";
+	if [[ -z "$ROOT_SRC" ]]; then
+		echo "Failed to determine root mount source";
+		exit 1;
+	fi
+	MAIN_BLOCK_DEVICE_NAME="$(lsblk -no PKNAME "$ROOT_SRC" || echo)";
 fi
-
-MAIN_BLOCK_DEVICE_NAME="$(lsblk -no PKNAME "$DATA_PART_DEVICE_PATH" || echo)";
 if [[ -z "$MAIN_BLOCK_DEVICE_NAME" ]]; then
-    echo "Failed to get main block device name from data part device path '$DATA_PART_DEVICE_PATH'..";
-    exit 1;
+	echo "Failed to determine main block device name";
+	exit 1;
 fi
 
 PROVIDER_CONFIG_DEVICE_COUNT="$({ blkid -L provider_config --output device || true; } | wc -l)";
