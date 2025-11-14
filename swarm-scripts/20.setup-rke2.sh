@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Note:
 # - The rke2 manifest and main.py should be available inside the container at:
-#     /var/lib/swarm-svc/rke2/manifest.yaml and /var/lib/swarm-svc/rke2/main.py
+#     /app/swarm/swarm-cloud/services/rke2/manifest.yaml and /app/swarm/swarm-cloud/services/rke2/main.py
 #   (mount or copy them similarly to the wireguard service)
 #
 # - rke2 depends on a WireGuard cluster existing and sharing nodes with it.
@@ -24,8 +24,8 @@ CLUSTER_POLICY=${CLUSTER_POLICY:-kubernetes}
 CLUSTER_ID=${CLUSTER_ID:-k8s}
 
 # Path to manifest file INSIDE the container (configs are mounted to /configs)
-MANIFEST_PATH=${MANIFEST_PATH:-/var/lib/swarm-svc/${SERVICE_NAME}/manifest.yaml}
-LOCATION_PATH=${LOCATION_PATH:-/var/lib/swarm-svc/${SERVICE_NAME}}
+MANIFEST_PATH=${MANIFEST_PATH:-/app/swarm/swarm-cloud/services/${SERVICE_NAME}/manifest.yaml}
+LOCATION_PATH=${LOCATION_PATH:-/app/swarm/swarm-cloud/services/${SERVICE_NAME}}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
 if [ ! -f "$MANIFEST_PATH" ]; then

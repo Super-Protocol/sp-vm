@@ -445,7 +445,6 @@ COPY --from=vm_json_builder /output /
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
 COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
-COPY --from=swarm-build /app/swarm/swarm-cloud/services /var/lib/swarm-svc
 ### End sp_vm ###
 
 EXPOSE 8001
