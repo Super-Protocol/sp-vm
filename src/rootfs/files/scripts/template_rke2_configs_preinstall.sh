@@ -26,15 +26,18 @@ function check_args() {
 function template_rke2_configs_preinstall() {
     log_info "templating rke2 configs before install";
     mkdir -p "$OUTPUTDIR/etc/rancher/rke2";
+    mkdir -p "$OUTPUTDIR/etc/super/etc/rancher/rke2";
     NODENAME="$(cat "$OUTPUTDIR/etc/hostname")" \
         envsubst \
             '$LOCAL_REGISTRY_HOST,$NODENAME' \
         < "$BUILDROOT/files/configs/etc/rancher/rke2/config.yaml.tmpl" \
         > "$OUTPUTDIR/etc/rancher/rke2/config.yaml";
+    cp -a "$OUTPUTDIR/etc/rancher/rke2/config.yaml" "$OUTPUTDIR/etc/super/etc/rancher/rke2/config.yaml";
     envsubst \
         '$SUPER_REGISTRY_HOST,$LOCAL_REGISTRY_HOST' \
     < "$BUILDROOT/files/configs/etc/rancher/rke2/registries.yaml.tmpl" \
     > "$OUTPUTDIR/etc/rancher/rke2/registries.yaml";
+    cp -a "$OUTPUTDIR/etc/rancher/rke2/registries.yaml" "$OUTPUTDIR/etc/super/etc/rancher/rke2/registries.yaml";
 }
 
 check_args;

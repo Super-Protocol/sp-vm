@@ -131,21 +131,62 @@ ADD kernel/files/scripts/build-kernel.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/build-kernel.sh
 ### End kernel ###
 
-### Start hauler ###
-FROM ubuntu:24.04 AS hauler_builder
-RUN apt update && apt -y install curl
-ARG HAULER_VERSION="1.1.0"
-RUN mkdir -p "/opt/hauler/.hauler"
-RUN ln -s "/opt/hauler/.hauler" "/root/.hauler"
-RUN curl -sfL https://get.hauler.dev | bash
-WORKDIR /opt/hauler
-ADD hauler/files/configs/rke2-airgap.yaml /opt/hauler/rke2-airgap.yaml
-RUN hauler store sync --store rke2-store --platform linux/amd64 --files /opt/hauler/rke2-airgap.yaml
-RUN rm /opt/hauler/rke2-airgap.yaml
-RUN hauler store add --store rke2-store image ghcr.io/super-protocol/tee-pki-curl:v1.7.4 --platform linux/amd64
-# TODO: add argo-cd, argo-workflows, cert-manager, gpu-operator, longhorn charts
-RUN hauler store save --store rke2-store --filename rke2-airgap.tar.zst
-### End hauler ###
+### Swarm DB start
+FROM golang:1.25.3 AS swarm-db-build
+COPY repos/swarm-db /app/swarm/swarm-db
+WORKDIR /app/swarm/swarm-db
+RUN make
+RUN make build-linux-amd64
+### Swarm DB finish
+
+### Swarm start
+FROM ubuntu:24.04 AS swarm-build
+
+USER root
+
+ARG NODE_VERSION=22.18.0
+ENV DEBIAN_FRONTEND=noninteractive
+ENV CFG_DIR=/configs
+ENV NVM_DIR=/root/.nvm
+ENV PATH=$PATH:/root/.nvm/versions/node/v$NODE_VERSION/bin/
+ENV NX_DAEMON=false
+ENV NX_ADD_PLUGINS=false
+ENV NX_NO_CLOUD=true
+ENV NODE_OPTIONS=--max_old_space_size=2048
+
+RUN apt-get update
+RUN apt-get install -y \
+    curl \
+    python3 \
+    python3-pip \
+    python3-venv \
+    iproute2 \
+    iptables \
+    wireguard-tools \
+    sqlite3 \
+    mysql-client \
+    jq
+
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+RUN . $NVM_DIR/nvm.sh && nvm install $NODE_VERSION && nvm use $NODE_VERSION
+RUN npm i -g nx@21.5.2 corepack@latest webpack-cli
+RUN curl -fsSL https://get.pnpm.io/install.sh | bash -
+RUN corepack enable
+
+WORKDIR /app/swarm
+
+COPY repos/swarm-cloud /app/swarm/swarm-cloud
+
+WORKDIR /app/swarm/swarm-cloud
+RUN pnpm install --frozen-lockfile
+RUN pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbose
+RUN pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose
+# build provision-plugin-sdk wheel for reuse (use venv to avoid PEP 668 restrictions)
+RUN python3 -m venv /tmp/pvenv \
+ && /tmp/pvenv/bin/pip install --no-cache-dir build wheel \
+ && bash -lc 'cd /app/swarm/swarm-cloud/services/provision-plugin-sdk && /tmp/pvenv/bin/python -m build --wheel --outdir /tmp/provision-wheels' \
+ && ls -l /tmp/provision-wheels
+### Swarm finish
 
 ### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
@@ -173,6 +214,13 @@ RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
 ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
 RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
+# RKE2: clean default installation inside rootfs (no legacy scripts)
+ARG RKE2_VERSION=v1.32.8+rke2r1
+ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
+RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
+ && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
+ && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
+
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
 
@@ -197,24 +245,22 @@ COPY --from=certs_builder /buildroot/registry.superprotocol.local.ca.crt ${OUTPU
 COPY --from=certs_builder /buildroot/registry.superprotocol.local.ca.crt ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.ca.crt
 COPY --from=certs_builder /buildroot/registry.superprotocol.local.key ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.key
 COPY --from=certs_builder /buildroot/registry.superprotocol.local.crt ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.crt
-ADD rootfs/files/configs/cert/superprotocol-certs.sh ${OUTPUTDIR}/usr/local/bin/
-ADD rootfs/files/configs/cert/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system
-RUN ln -s /etc/systemd/system/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/superprotocol-certs.service
+# ADD rootfs/files/configs/cert/superprotocol-certs.sh ${OUTPUTDIR}/usr/local/bin/
+# ADD rootfs/files/configs/cert/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system
+# RUN ln -s /etc/systemd/system/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/superprotocol-certs.service
 ADD rootfs/files/scripts/refresh_ca_certs.sh /buildroot/files/scripts/refresh_ca_certs.sh
 RUN --security=insecure /buildroot/files/scripts/refresh_ca_certs.sh
 
 # check for presence of trusted self-signed CA from Super Protocol
 RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < ${OUTPUTDIR}/etc/ssl/certs/ca-certificates.crt | grep -i 'super'
 
-ARG LOCAL_REGISTRY_HOST=hauler.local
 ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
 RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
-RUN mkdir -p "${OUTPUTDIR}/etc/rancher/node"
-RUN LC_ALL=C tr -dc '[:alpha:][:digit:]' < /dev/urandom | head -c 32 > "${OUTPUTDIR}/etc/rancher/node/password"
+RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher/node"
+RUN LC_ALL=C tr -dc '[:alpha:][:digit:]' < /dev/urandom | head -c 32 > "${OUTPUTDIR}/var/lib/etc-rancher/node/password"
 ADD rootfs/files/configs/etc/cni/net.d/05-cilium.conflist ${OUTPUTDIR}/etc/cni/net.d/05-cilium.conflist
 ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/etc/sysctl.d/99-zzz-override_cilium.conf
-ADD rootfs/files/configs/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/var/lib/rancher/rke2/rke2-pss.yaml
 ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
 
 # copy iscsi configs, cause this partition will be remounted with empty dir
@@ -222,23 +268,7 @@ RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
 ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
 RUN /buildroot/files/scripts/setup_sshd_config.sh
 
-RUN mkdir -p "$OUTPUTDIR/etc/super/opt/hauler";
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
-RUN ln -sf "/opt/hauler/.hauler" "${OUTPUTDIR}/root/.hauler";
-COPY --from=hauler_builder /opt/hauler/rke2-airgap.tar.zst ${OUTPUTDIR}/etc/super/opt/hauler/
-COPY --from=hauler_builder /usr/local/bin/hauler ${OUTPUTDIR}/usr/local/bin/
-
-# TODO: move hauler and rke2? to anuther independent layers..
-
-ADD rootfs/files/configs/etc/rancher/rke2/config.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/config.yaml.tmpl
-ADD rootfs/files/configs/etc/rancher/rke2/registries.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/registries.yaml.tmpl
-ADD rootfs/files/scripts/template_rke2_configs_preinstall.sh /buildroot/files/scripts/template_rke2_configs_preinstall.sh
-RUN /buildroot/files/scripts/template_rke2_configs_preinstall.sh
-ADD rootfs/files/scripts/download_rke2.sh /buildroot/files/scripts/download_rke2.sh
-RUN /buildroot/files/scripts/download_rke2.sh
-ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
-RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
 
 # copy pki-authority service files
 ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
@@ -252,19 +282,14 @@ ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.
 ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
 RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
 
-ADD rootfs/files/scripts/template_configs_post_rke2install.sh /buildroot/files/scripts/template_configs_post_rke2install.sh
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl /buildroot/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl
-ADD rootfs/files/configs/usr/local/lib/systemd/system/rke2-server.env.append /buildroot/files/configs/usr/local/lib/systemd/system/rke2-server.env.append
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
-RUN /buildroot/files/scripts/template_configs_post_rke2install.sh
 
 RUN mkdir -p "${OUTPUTDIR}/sp"
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml
 ADD rootfs/files/configs/etc/systemd/system/check-config-files.service ${OUTPUTDIR}/etc/systemd/system/check-config-files.service
 ADD rootfs/files/configs/etc/systemd/system/check-config-files.timer ${OUTPUTDIR}/etc/systemd/system/check-config-files.timer
 ADD rootfs/files/configs/usr/local/bin/check-config-files.sh ${OUTPUTDIR}/usr/local/bin/check-config-files.sh
-RUN ln -sf /etc/systemd/system/check-config-files.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/check-config-files.service"
+# Enable only the timer; service will be triggered by it
 RUN ln -sf /etc/systemd/system/check-config-files.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/check-config-files.timer"
 ADD rootfs/files/configs/etc/systemd/system/local-registry.service ${OUTPUTDIR}/etc/systemd/system/local-registry.service
 ADD rootfs/files/configs/usr/local/bin/local-registry.sh ${OUTPUTDIR}/usr/local/bin/local-registry.sh
@@ -272,11 +297,57 @@ RUN ln -sf /etc/systemd/system/local-registry.service "${OUTPUTDIR}/etc/systemd/
 ADD rootfs/files/configs/etc/systemd/system/hardening-vm.service ${OUTPUTDIR}/etc/systemd/system/hardening-vm.service
 ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bin/hardening-vm.sh
 RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
-ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
-# disabling serial getty
-ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
+# swarm services
+ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
+RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
+ADD rootfs/files/configs/etc/systemd/system/swarm-cloud-api.service ${OUTPUTDIR}/etc/systemd/system/swarm-cloud-api.service
+ADD rootfs/files/configs/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
+# RUN ln -sf /etc/systemd/system/swarm-cloud-api.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-cloud-api.service"
+ADD rootfs/files/configs/etc/systemd/system/swarm-node.service ${OUTPUTDIR}/etc/systemd/system/swarm-node.service
+ADD rootfs/files/configs/usr/local/bin/swarm-node.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
+RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-node.service"
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
+# run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
+ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
+# ensure bind mount targets exist on read-only rootfs
+RUN mkdir -p "${OUTPUTDIR}/etc/kubernetes"
+
+# disabling serial getty (mask instance)
 RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
+
+# swarm binaries into VM rootfs
+RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-cloud"
+COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
+COPY --from=swarm-build /app/swarm/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
+ARG NODE_VERSION=22.18.0
+COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
+
+# ensure service scripts are executable in VM rootfs
+RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-wireguard" \
+ && rm -rf "${OUTPUTDIR}/etc/wireguard" \
+ && ln -s /var/lib/etc-wireguard "${OUTPUTDIR}/etc/wireguard"
+
+RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
+ && rm -rf "${OUTPUTDIR}/etc/rancher" \
+ && mkdir -p "${OUTPUTDIR}/etc/rancher"
+
+# tools needed at runtime
+RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
+ && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip \
+ && chroot ${OUTPUTDIR} /usr/bin/apt-get clean \
+ && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
+
+# install provision-plugin-sdk into VM python environment (from prebuilt wheel)
+COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
+RUN chroot ${OUTPUTDIR} /bin/bash -lc 'shopt -s nullglob; set -e; files=(/opt/provision-wheels/*.whl); \
+  if (( ${#files[@]} )); then \
+    python3 -m pip install --break-system-packages "${files[@]}"; \
+  else \
+    echo "No wheels found, installing from source"; \
+    python3 -m pip install --break-system-packages /etc/swarm-cloud/services/provision-plugin-sdk; \
+  fi'
 
 # Build info
 ARG SP_VM_IMAGE_VERSION
@@ -342,7 +413,7 @@ RUN wget -O /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc https://code.
 RUN wget -O /buildroot/src/edk2_2024.05.orig.tar.xz https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05.orig.tar.xz
 RUN dpkg-source -x /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc /buildroot/edk2_build
 WORKDIR /buildroot/edk2_build
-RUN apt build-dep -y ./
+RUN apt-get update && apt-get -y -o Acquire::Retries=3 build-dep ./
 RUN make -C BaseTools
 ADD bios/files/configs/0001-SuperProtocol_Rtmr0.patch /buildroot/edk2_build/debian/patches/SuperProtocol/
 RUN quilt import -p0 debian/patches/SuperProtocol/0001-SuperProtocol_Rtmr0.patch
@@ -369,4 +440,14 @@ RUN /buildroot/files/scripts/generate_vm_json.sh
 ### Start sp_vm ###
 FROM scratch AS sp_vm
 COPY --from=vm_json_builder /output /
+
+#### swarm
+COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
+COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
+COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
 ### End sp_vm ###
+
+EXPOSE 8001
+EXPOSE 7946
+EXPOSE 3000
+EXPOSE 32768-60999

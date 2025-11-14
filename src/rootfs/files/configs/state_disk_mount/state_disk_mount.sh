@@ -13,16 +13,23 @@ set -euo pipefail;
 # 4.2. If their count < 1 - fail, this is abnormal, no state disk is present
 # 4.3. If only one - this block dev will be used as the state disk
 
+# Try to detect the main system block device:
+# 1) Prefer dm-verity info when available (untrusted mode with dm-verity)
+# 2) Fallback to the current root's source device (works for writable root)
 DATA_PART_DEVICE_PATH="$({ veritysetup status root | grep 'data device' | awk -F ': ' '{print $2}'; } || echo)";
-if [[ -z "$DATA_PART_DEVICE_PATH" ]]; then
-    echo "Failed to get data partition device path from 'veritysetup status'..";
-    exit 1;
+if [[ -n "$DATA_PART_DEVICE_PATH" ]]; then
+	MAIN_BLOCK_DEVICE_NAME="$(lsblk -no PKNAME "$DATA_PART_DEVICE_PATH" || echo)";
+else
+	ROOT_SRC="$(findmnt -n -o SOURCE / || echo)";
+	if [[ -z "$ROOT_SRC" ]]; then
+		echo "Failed to determine root mount source";
+		exit 1;
+	fi
+	MAIN_BLOCK_DEVICE_NAME="$(lsblk -no PKNAME "$ROOT_SRC" || echo)";
 fi
-
-MAIN_BLOCK_DEVICE_NAME="$(lsblk -no PKNAME "$DATA_PART_DEVICE_PATH" || echo)";
 if [[ -z "$MAIN_BLOCK_DEVICE_NAME" ]]; then
-    echo "Failed to get main block device name from data part device path '$DATA_PART_DEVICE_PATH'..";
-    exit 1;
+	echo "Failed to determine main block device name";
+	exit 1;
 fi
 
 PROVIDER_CONFIG_DEVICE_COUNT="$({ blkid -L provider_config --output device || true; } | wc -l)";
@@ -66,9 +73,18 @@ fi
 STATE_BLOCK_DEVICE_PATH="/dev/$STATE_BLOCK_DEVICE_NAME";
 RANDOM_KEY="$(dd if=/dev/urandom bs=1 count=32 2>/dev/null | base64)";
 wipefs -a "$STATE_BLOCK_DEVICE_PATH" || true;
-echo "\$RANDOM_KEY" | cryptsetup luksFormat "$STATE_BLOCK_DEVICE_PATH" --batch-mode;
-echo "\$RANDOM_KEY" | cryptsetup luksOpen "$STATE_BLOCK_DEVICE_PATH" crypto;
+echo -n "$RANDOM_KEY" | cryptsetup luksFormat "$STATE_BLOCK_DEVICE_PATH" --batch-mode --key-file -;
+echo -n "$RANDOM_KEY" | cryptsetup luksOpen "$STATE_BLOCK_DEVICE_PATH" crypto --key-file -;
 mkfs.ext4 "/dev/mapper/crypto";
 
 # Mounting read-only provider config
 mount -t ext4 -o ro "$PROVIDER_CONFIG_DEVICE_PATH" /sp || { echo "failed to mount $PROVIDER_CONFIG_DEVICE_PATH to /sp"; exit 1; };
+
+# Mounting encrypted state volume and preparing directories used for bind mounts
+mkdir -p /run/state
+mount "/dev/mapper/crypto" /run/state || { echo "failed to mount /dev/mapper/crypto to /run/state"; exit 1; };
+mkdir -p /run/state/opt
+mkdir -p /run/state/etciscsi
+mkdir -p /run/state/kubernetes
+mkdir -p /run/state/var
+mkdir -p /run/state/var/lib/etc-rancher
