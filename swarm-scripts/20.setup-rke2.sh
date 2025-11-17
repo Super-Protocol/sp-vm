@@ -20,8 +20,8 @@ DB_NAME=${DB_NAME:-swarmdb}
 # Service descriptors
 SERVICE_NAME=${SERVICE_NAME:-rke2}
 SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
-CLUSTER_POLICY=${CLUSTER_POLICY:-kubernetes}
-CLUSTER_ID=${CLUSTER_ID:-k8s}
+CLUSTER_POLICY=${CLUSTER_POLICY:-rke2}
+CLUSTER_ID=${CLUSTER_ID:-rke2}
 
 # Path to manifest file INSIDE the container (configs are mounted to /configs)
 MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}/manifest.yaml}

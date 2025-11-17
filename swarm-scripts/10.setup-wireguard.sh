@@ -12,8 +12,8 @@ DB_NAME=${DB_NAME:-swarmdb}
 # Service descriptors
 SERVICE_NAME=${SERVICE_NAME:-wireguard}
 SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
-CLUSTER_POLICY=${CLUSTER_POLICY:-network}
-CLUSTER_ID=${CLUSTER_ID:-wg}
+CLUSTER_POLICY=${CLUSTER_POLICY:-wireguard}
+CLUSTER_ID=${CLUSTER_ID:-wireguard}
 
 # Path to manifest file INSIDE the container (configs are mounted to /configs)
 MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}/manifest.yaml}
