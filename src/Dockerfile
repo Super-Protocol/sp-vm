@@ -335,9 +335,7 @@ RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip redis-server redis-tools \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get clean
 # ensure redis-server is not enabled or autostarted, and prepare data dir
-RUN ln -sf /dev/null ${OUTPUTDIR}/etc/systemd/system/redis-server.service \
- && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
- && chroot ${OUTPUTDIR} /bin/bash -lc 'mkdir -p /var/lib/redis && chown redis:redis /var/lib/redis && chmod 0750 /var/lib/redis'
+RUN chroot ${OUTPUTDIR} /bin/bash -lc 'mkdir -p /var/lib/redis && chown redis:redis /var/lib/redis && chmod 0750 /var/lib/redis'
 # cleanup apt lists and policy-rc.d
 RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
  && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
