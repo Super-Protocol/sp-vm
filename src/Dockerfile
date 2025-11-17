@@ -222,7 +222,8 @@ RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
  && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
 
 # Redis
-RUN apt-get install -y redis-server redis-tools && systemctl disable redis-server.service
+RUN apt-get install -y redis-server redis-tools \
+ && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable redis-server.service'
 
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
