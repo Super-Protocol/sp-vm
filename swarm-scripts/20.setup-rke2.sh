@@ -52,12 +52,7 @@ mysql -h "$DB_HOST" -P "$DB_PORT" -u"$DB_USER" --protocol=tcp "$DB_NAME" <<SQL
 INSERT INTO ClusterPolicies (id) VALUES ('$CLUSTER_POLICY')
 ON DUPLICATE KEY UPDATE id = VALUES(id);
 
--- 2) Ensure cluster exists (under policy)
-INSERT INTO Clusters (id, cluster_policy, created_ts)
-VALUES ('$CLUSTER_ID', '$CLUSTER_POLICY', UNIX_TIMESTAMP()*1000)
-ON DUPLICATE KEY UPDATE cluster_policy = VALUES(cluster_policy), deleted_ts = NULL, updated_ts = UNIX_TIMESTAMP()*1000;
-
--- 3) Insert/Update service with manifest
+-- 2) Insert/Update service with manifest
 SET @manifest = FROM_BASE64('$MANIFEST_B64');
 INSERT INTO ClusterServices (id, cluster_policy, name, version, location, hash, manifest, updated_ts)
 VALUES (
@@ -71,16 +66,6 @@ VALUES (
   UNIX_TIMESTAMP()*1000
 )
 ON DUPLICATE KEY UPDATE version=VALUES(version), location=VALUES(location), manifest=VALUES(manifest), updated_ts=VALUES(updated_ts);
-
--- 4) Add local node to cluster to trigger provisioning immediately
-INSERT INTO ClusterNodes (id, cluster, node, created_ts)
-VALUES (
-  CONCAT('$CLUSTER_ID:', '$LOCAL_NODE_ID'),
-  '$CLUSTER_ID',
-  '$LOCAL_NODE_ID',
-  UNIX_TIMESTAMP()*1000
-)
-ON DUPLICATE KEY UPDATE deleted_ts = NULL;
 SQL
 
 echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."
