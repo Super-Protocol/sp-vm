@@ -221,10 +221,6 @@ RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
  && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
  && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
 
-# Redis
-RUN apt-get install -y redis-server redis-tools
-# RUN chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable redis-server.service'
-
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
 
@@ -333,10 +329,14 @@ RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
  && rm -rf "${OUTPUTDIR}/etc/rancher" \
  && mkdir -p "${OUTPUTDIR}/etc/rancher"
 
-# tools needed at runtime
+# tools needed at runtime (prevent daemons from starting in chroot)
+RUN bash -lc 'set -e; echo -e "#!/bin/sh\nexit 101" > "${OUTPUTDIR}/usr/sbin/policy-rc.d"; chmod +x "${OUTPUTDIR}/usr/sbin/policy-rc.d"'
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
- && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip \
- && chroot ${OUTPUTDIR} /usr/bin/apt-get clean \
+ && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip redis-server redis-tools \
+ && chroot ${OUTPUTDIR} /usr/bin/apt-get clean
+# ensure redis-server is not enabled by default and cleanup apt lists and policy-rc.d
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
+ && rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
  && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
 
 # install provision-plugin-sdk into VM python environment (from prebuilt wheel)
