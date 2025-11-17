@@ -342,11 +342,11 @@ RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
 
 # tools needed at runtime
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
- && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip redis-server redis-tools \
+ && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get clean \
  && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
 
-RUN systemctl disable redis-server.service
+RUN apt-get install redis-server redis-tools && systemctl disable redis-server.service
 
 # install provision-plugin-sdk into VM python environment (from prebuilt wheel)
 COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
