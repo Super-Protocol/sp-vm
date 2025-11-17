@@ -88,3 +88,7 @@ mkdir -p /run/state/etciscsi
 mkdir -p /run/state/kubernetes
 mkdir -p /run/state/var
 mkdir -p /run/state/var/lib/etc-rancher
+# Prepare redis data dir on state disk so redis can start later if needed
+mkdir -p /run/state/var/lib/redis
+chown redis:redis /run/state/var/lib/redis || true
+chmod 0750 /run/state/var/lib/redis || true
