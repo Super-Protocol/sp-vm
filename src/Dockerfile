@@ -334,8 +334,11 @@ RUN bash -lc 'set -e; echo -e "#!/bin/sh\nexit 101" > "${OUTPUTDIR}/usr/sbin/pol
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip redis-server redis-tools \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get clean
-# ensure redis-server is not enabled or autostarted, and prepare data dir
-RUN chroot ${OUTPUTDIR} /bin/bash -lc 'mkdir -p /var/lib/redis && chown redis:redis /var/lib/redis && chmod 0750 /var/lib/redis'
+# ensure redis data/log dirs exist
+RUN chroot ${OUTPUTDIR} /bin/bash -lc 'mkdir -p /var/lib/redis /var/log/redis && chown -R redis:redis /var/lib/redis /var/log/redis && chmod 0750 /var/lib/redis'
+# disable autostart without requiring systemd during build (remove enable symlinks)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
+ && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service
 # cleanup apt lists and policy-rc.d
 RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
  && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
