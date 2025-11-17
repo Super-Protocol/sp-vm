@@ -220,17 +220,9 @@ ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
 RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
  && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
  && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
-# Ensure kubectl exists in VM rootfs where we expect it
-# RUN mkdir -p "${OUTPUTDIR}/var/lib/rancher/rke2/bin" \
-#  && bash -lc 'set -e; \
-#    if [ -x "${OUTPUTDIR}/var/lib/rancher/rke2/bin/kubectl" ]; then \
-#      echo "kubectl already present in rke2 bin"; \
-#    elif [ -x "${OUTPUTDIR}/usr/local/bin/kubectl" ]; then \
-#      cp "${OUTPUTDIR}/usr/local/bin/kubectl" "${OUTPUTDIR}/var/lib/rancher/rke2/bin/kubectl"; \
-#      chmod +x "${OUTPUTDIR}/var/lib/rancher/rke2/bin/kubectl"; \
-#    else \
-#      echo "kubectl not found at expected locations; continuing"; \
-#    fi'
+
+# Redis
+RUN apt-get install -y redis-server redis-tools && systemctl disable redis-server.service
 
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
@@ -345,8 +337,6 @@ RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get clean \
  && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
-
-RUN apt-get install -y redis-server redis-tools && systemctl disable redis-server.service
 
 # install provision-plugin-sdk into VM python environment (from prebuilt wheel)
 COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
