@@ -346,6 +346,8 @@ RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
  && chroot ${OUTPUTDIR} /usr/bin/apt-get clean \
  && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
 
+RUN systemctl disable redis-server.service
+
 # install provision-plugin-sdk into VM python environment (from prebuilt wheel)
 COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
 RUN chroot ${OUTPUTDIR} /bin/bash -lc 'shopt -s nullglob; set -e; files=(/opt/provision-wheels/*.whl); \
