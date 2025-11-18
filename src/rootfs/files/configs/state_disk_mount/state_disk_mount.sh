@@ -92,3 +92,7 @@ mkdir -p /run/state/var/lib/etc-rancher
 mkdir -p /run/state/var/lib/redis
 chown redis:redis /run/state/var/lib/redis || true
 chmod 0750 /run/state/var/lib/redis || true
+# Prepare redis log dir on state disk for writable logs
+mkdir -p /run/state/var/log/redis
+chown redis:redis /run/state/var/log/redis || true
+chmod 0755 /run/state/var/log/redis || true
