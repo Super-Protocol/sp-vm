@@ -24,7 +24,7 @@ usage() {
   cat <<EOF
 Usage:
   $0 create ClusterPolicies <id> [--minSize=N] [--maxSize=N] [--maxClusters=N]
-  $0 create ClusterServices [<id>] --name=NAME --cluster_policy=POLICY [--version=1.0.0] [--location=/etc/swarm-cloud/services/NAME]
+  $0 create ClusterServices [<id>] --name=NAME --cluster_policy=POLICY [--version=1.0.0] [--location=/etc/swarm-cloud/services/NAME] [--omit-command-init]
 
 Environment:
   DB_HOST (default: 127.0.0.1)
@@ -113,11 +113,15 @@ create_cluster_services() {
   local MANIFEST_SET="SET @manifest = NULL;"
   local manifest_path="${LOCATION%/}/manifest.yaml"
   if [[ -f "$manifest_path" ]]; then
-    local filtered
-    filtered="$(filter_manifest_remove_init "$manifest_path")"
+    local content
+    if [[ "${ARGS[omit-command-init]:-}" == "true" ]]; then
+      content="$(filter_manifest_remove_init "$manifest_path")"
+    else
+      content="$(cat "$manifest_path")"
+    fi
     # Encode to base64 and decode inside SQL to store plain YAML
     local b64
-    b64="$(printf "%s" "$filtered" | base64_encode_nnl)"
+    b64="$(printf "%s" "$content" | base64_encode_nnl)"
     MANIFEST_SET="SET @manifest = FROM_BASE64('${b64}');"
   fi
 
@@ -164,6 +168,10 @@ main() {
         key="${1%%=*}"; key="${key#--}"
         val="${1#*=}"
         ARGS["$key"]="$val"
+        ;;
+      --*)
+        key="${1#--}"
+        ARGS["$key"]="true"
         ;;
       *=*)
         key="${1%%=*}"
