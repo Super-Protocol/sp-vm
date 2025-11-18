@@ -24,32 +24,14 @@ if [ ! -f "$MANIFEST_PATH" ]; then
   exit 1
 fi
 
-echo "Encoding manifest from: $MANIFEST_PATH"
-# Strip 'init' from commands before storing manifest
-FILTERED_MANIFEST="$(sed '/^commands:/,/^[^[:space:]]/ { /^[[:space:]]*-[[:space:]]*init[[:space:]]*$/d }' "$MANIFEST_PATH")"
-MANIFEST_B64=$(printf "%s" "$FILTERED_MANIFEST" | base64 -w 0 2>/dev/null || printf "%s" "$FILTERED_MANIFEST" | base64)
+CLI="$(dirname "$0")/swarm-cli.sh"
+echo "Creating/Updating ClusterPolicies '$CLUSTER_POLICY'..."
+DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  "$CLI" create ClusterPolicies "$CLUSTER_POLICY"
 
-echo "Applying SQL to bootstrap service '$SERVICE_NAME' in cluster '$CLUSTER_ID' (policy '$CLUSTER_POLICY')"
-
-mysql -h "$DB_HOST" -P "$DB_PORT" -u"$DB_USER" --protocol=tcp "$DB_NAME" <<SQL
--- 1) Ensure cluster policy exists
-INSERT INTO ClusterPolicies (id) VALUES ('$CLUSTER_POLICY')
-ON DUPLICATE KEY UPDATE id = VALUES(id);
-
--- 2) Insert/Update service with manifest
-SET @manifest = FROM_BASE64('$MANIFEST_B64');
-INSERT INTO ClusterServices (id, cluster_policy, name, version, location, hash, manifest, updated_ts)
-VALUES (
-  '$SERVICE_NAME',
-  '$CLUSTER_POLICY',
-  '$SERVICE_NAME',
-  '$SERVICE_VERSION',
-  CONCAT('dir://', '$LOCATION_PATH'),
-  NULL,
-  @manifest,
-  UNIX_TIMESTAMP()*1000
-)
-ON DUPLICATE KEY UPDATE version=VALUES(version), location=VALUES(location), manifest=VALUES(manifest), updated_ts=VALUES(updated_ts);
-SQL
+echo "Creating/Updating ClusterServices '$SERVICE_NAME'..."
+# Keep legacy service id = SERVICE_NAME for wireguard
+DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  "$CLI" create ClusterServices "$SERVICE_NAME" --name="$SERVICE_NAME" --cluster_policy="$CLUSTER_POLICY" --version="$SERVICE_VERSION" --location="$LOCATION_PATH"
 
 echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."
