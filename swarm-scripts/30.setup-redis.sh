@@ -51,7 +51,7 @@ fi
 
 mysql -h "$DB_HOST" -P "$DB_PORT" -u"$DB_USER" --protocol=tcp "$DB_NAME" <<SQL
 -- 1) Ensure cluster policy exists
-INSERT INTO ClusterPolicies (id) VALUES ('$CLUSTER_POLICY')
+INSERT INTO ClusterPolicies (id, minSize, maxSize, maxClusters) VALUES ('$CLUSTER_POLICY', 1, 3, 1)
 ON DUPLICATE KEY UPDATE id = VALUES(id);
 
 -- 2) Insert/Update service with manifest
