@@ -110,15 +110,19 @@ create_cluster_services() {
     ID="${CLUSTER_POLICY}:${NAME}"
   fi
 
-  local MANIFEST_B64="NULL"
+  local MANIFEST_SET="SET @manifest = NULL;"
   local manifest_path="${LOCATION%/}/manifest.yaml"
   if [[ -f "$manifest_path" ]]; then
     local filtered
     filtered="$(filter_manifest_remove_init "$manifest_path")"
-    MANIFEST_B64="'$(printf "%s" "$filtered" | base64_encode_nnl)'"
+    # Encode to base64 and decode inside SQL to store plain YAML
+    local b64
+    b64="$(printf "%s" "$filtered" | base64_encode_nnl)"
+    MANIFEST_SET="SET @manifest = FROM_BASE64('${b64}');"
   fi
 
   mysql -h "$DB_HOST" -P "$DB_PORT" -u"$DB_USER" --protocol=tcp "$DB_NAME" <<SQL
+${MANIFEST_SET}
 INSERT INTO ClusterServices (id, cluster_policy, name, version, location, hash, manifest, updated_ts)
 VALUES (
   '$ID',
@@ -127,7 +131,7 @@ VALUES (
   '$VERSION',
   CONCAT('dir://', '$LOCATION'),
   NULL,
-  ${MANIFEST_B64},
+  @manifest,
   UNIX_TIMESTAMP()*1000
 )
 ON DUPLICATE KEY UPDATE
