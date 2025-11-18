@@ -25,7 +25,9 @@ if [ ! -f "$MANIFEST_PATH" ]; then
 fi
 
 echo "Encoding manifest from: $MANIFEST_PATH"
-MANIFEST_B64=$(base64 -w 0 "$MANIFEST_PATH" 2>/dev/null || base64 "$MANIFEST_PATH")
+# Strip 'init' from commands before storing manifest
+FILTERED_MANIFEST="$(sed '/^commands:/,/^[^[:space:]]/ { /^[[:space:]]*-[[:space:]]*init[[:space:]]*$/d }' "$MANIFEST_PATH")"
+MANIFEST_B64=$(printf "%s" "$FILTERED_MANIFEST" | base64 -w 0 2>/dev/null || printf "%s" "$FILTERED_MANIFEST" | base64)
 
 echo "Applying SQL to bootstrap service '$SERVICE_NAME' in cluster '$CLUSTER_ID' (policy '$CLUSTER_POLICY')"
 
