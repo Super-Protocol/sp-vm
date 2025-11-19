@@ -450,8 +450,3 @@ COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-d
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
 COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
 ### End sp_vm ###
-
-EXPOSE 8001
-EXPOSE 7946
-EXPOSE 3000
-EXPOSE 32768-60999
