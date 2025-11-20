@@ -217,6 +217,7 @@ RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 # RKE2: clean default installation inside rootfs (no legacy scripts)
 ARG RKE2_VERSION=v1.32.8+rke2r1
 ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
+ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
 RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
  && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
  && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
@@ -321,6 +322,7 @@ COPY --from=swarm-build /app/swarm/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
 ARG NODE_VERSION=22.18.0
 COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
+RUN ln -sf /var/lib/rancher/rke2/bin/kubectl "${OUTPUTDIR}/usr/local/bin/kubectl"
 
 # tools needed at runtime (prevent daemons from starting in chroot)
 RUN bash -lc 'set -e; echo -e "#!/bin/sh\nexit 101" > "${OUTPUTDIR}/usr/sbin/policy-rc.d"; chmod +x "${OUTPUTDIR}/usr/sbin/policy-rc.d"'
