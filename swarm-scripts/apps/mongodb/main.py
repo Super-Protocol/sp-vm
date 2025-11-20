@@ -100,6 +100,47 @@ processManagement:
 """
     MONGO_CONFIG_FILE.write_text(cfg)
 
+def ensure_runtime_dirs():
+    try:
+        # Ensure data, log and runtime dirs exist and owned by mongodb
+        MONGO_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        MONGO_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        run_dir = Path("/run/mongodb")
+        run_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.chown(str(MONGO_DATA_DIR), user="mongodb", group="mongodb")
+            shutil.chown(str(MONGO_LOG_DIR), user="mongodb", group="mongodb")
+            shutil.chown(str(run_dir), user="mongodb", group="mongodb")
+        except Exception:
+            # If user/group not present or chown fails, ignore; systemd tmpfiles may fix it
+            pass
+    except Exception:
+        pass
+
+def capture_mongo_diagnostics(svc: str) -> str:
+    parts: List[str] = []
+    try:
+        res = subprocess.run(["systemctl", "status", svc, "--no-pager"], capture_output=True, text=True, timeout=10)
+        parts.append(f"systemctl status {svc}:\n{(res.stdout or '')}\n{(res.stderr or '')}")
+    except Exception as e:
+        parts.append(f"systemctl status {svc} error: {e}")
+    try:
+        res = subprocess.run(["journalctl", "-u", svc, "-n", "200", "--no-pager"], capture_output=True, text=True, timeout=10)
+        parts.append(f"journalctl -u {svc} -n 200:\n{(res.stdout or '')}\n{(res.stderr or '')}")
+    except Exception as e:
+        parts.append(f"journalctl fetch error: {e}")
+    try:
+        log_path = MONGO_LOG_DIR / "mongod.log"
+        if log_path.exists():
+            with open(log_path, "r") as f:
+                lines = f.readlines()[-200:]
+            parts.append("tail -n 200 /var/log/mongodb/mongod.log:\n" + "".join(lines))
+        else:
+            parts.append("mongod.log not found at /var/log/mongodb/mongod.log")
+    except Exception as e:
+        parts.append(f"read mongod.log error: {e}")
+    return "\n\n".join(parts)
+
 def mongo_shell_binary() -> Optional[str]:
     for b in ("mongosh", "mongo"):
         if shutil.which(b):
@@ -221,6 +262,7 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
         return PluginOutput(status="error", error_message=f"Failed to write mongod config: {e}", local_state=local_state)
 
     # Ensure service is running on correct IP
+    ensure_runtime_dirs()
     needs_restart = False
     running, _ = is_mongo_running()
     if not running:
@@ -233,16 +275,22 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
     if needs_restart:
         try:
             svc = get_mongo_service_name()
+            subprocess.run(["systemctl", "daemon-reload"], capture_output=True, text=True)
             subprocess.run(["systemctl", "enable", svc], capture_output=True, text=True)
-            res = subprocess.run(["systemctl", "restart", svc], capture_output=True, text=True)
+            res = subprocess.run(["systemctl", "restart", svc], capture_output=True, text=True, timeout=30)
             if res.returncode != 0:
-                return PluginOutput(status="error", error_message=f"Failed to start {svc}: {res.stderr}", local_state=local_state)
+                diag = capture_mongo_diagnostics(svc)
+                return PluginOutput(status="error", error_message=f"Failed to start {svc}: {res.stderr}\n\n{diag}", local_state=local_state)
         except Exception as e:
-            return PluginOutput(status="error", error_message=f"Failed to start mongod: {e}", local_state=local_state)
+            svc = "mongod"
+            diag = capture_mongo_diagnostics(svc)
+            return PluginOutput(status="error", error_message=f"Failed to start mongod: {e}\n\n{diag}", local_state=local_state)
 
         if not wait_for_mongo_ready(local_tunnel_ip, timeout_sec=60):
             node_props = {"mongodb_node_ready": "false"}
-            return PluginOutput(status="postponed", error_message="mongod not ready yet", node_properties=node_props, local_state=local_state)
+            svc = get_mongo_service_name()
+            diag = capture_mongo_diagnostics(svc)
+            return PluginOutput(status="postponed", error_message=f"mongod not ready yet\n\n{diag}", node_properties=node_props, local_state=local_state)
 
     # At this point local mongod is up
     node_ready_props = {"mongodb_node_ready": "true"}
