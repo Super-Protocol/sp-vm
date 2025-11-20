@@ -152,7 +152,6 @@ ENV PATH=$PATH:/root/.nvm/versions/node/v$NODE_VERSION/bin/
 ENV NX_DAEMON=false
 ENV NX_ADD_PLUGINS=false
 ENV NX_NO_CLOUD=true
-ENV NODE_OPTIONS=--max_old_space_size=2048
 
 RUN apt-get update
 RUN apt-get install -y \
