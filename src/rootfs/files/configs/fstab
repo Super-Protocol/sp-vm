@@ -3,4 +3,3 @@
 /run/state/opt           /opt               none    defaults,bind,x-mount.mkdir,x-systemd.requires=state_disk_mount.service,x-systemd.after=state_disk_mount.service                0    0
 /run/state/etciscsi      /etc/iscsi         none    defaults,bind,x-mount.mkdir,x-systemd.requires=state_disk_mount.service,x-systemd.after=state_disk_mount.service                0    0
 /run/state/var           /var               none    defaults,bind,x-mount.mkdir,x-systemd.requires=state_disk_mount.service,x-systemd.after=state_disk_mount.service                0    0
-/run/state/var/lib/etc-rancher   /etc/rancher      none    defaults,bind,x-mount.mkdir,x-systemd.requires=state_disk_mount.service,x-systemd.after=state_disk_mount.service        0    0

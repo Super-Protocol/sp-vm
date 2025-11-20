@@ -257,8 +257,6 @@ RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}
 ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
 RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
-RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher/node"
-RUN LC_ALL=C tr -dc '[:alpha:][:digit:]' < /dev/urandom | head -c 32 > "${OUTPUTDIR}/var/lib/etc-rancher/node/password"
 ADD rootfs/files/configs/etc/cni/net.d/05-cilium.conflist ${OUTPUTDIR}/etc/cni/net.d/05-cilium.conflist
 ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/etc/sysctl.d/99-zzz-override_cilium.conf
 ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
@@ -323,11 +321,6 @@ COPY --from=swarm-build /app/swarm/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
 ARG NODE_VERSION=22.18.0
 COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
-
-# ensure service scripts are executable in VM rootfs
-RUN mkdir -p "${OUTPUTDIR}/var/lib/etc-rancher" \
- && rm -rf "${OUTPUTDIR}/etc/rancher" \
- && mkdir -p "${OUTPUTDIR}/etc/rancher"
 
 # tools needed at runtime (prevent daemons from starting in chroot)
 RUN bash -lc 'set -e; echo -e "#!/bin/sh\nexit 101" > "${OUTPUTDIR}/usr/sbin/policy-rc.d"; chmod +x "${OUTPUTDIR}/usr/sbin/policy-rc.d"'
