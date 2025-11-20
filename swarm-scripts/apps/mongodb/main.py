@@ -20,7 +20,6 @@ REPLICA_SET_NAME = os.environ.get("MONGO_RS", "rs0")
 
 plugin = ProvisionPlugin()
 
-
 # Helpers
 def get_node_tunnel_ip(node_id: str, wg_props: List[dict]) -> Optional[str]:
     for prop in wg_props:
@@ -28,20 +27,17 @@ def get_node_tunnel_ip(node_id: str, wg_props: List[dict]) -> Optional[str]:
             return prop.get("value")
     return None
 
-
 def check_all_nodes_have_wg(cluster_nodes: List[dict], wg_props: List[dict]) -> bool:
     for node in cluster_nodes:
         if not get_node_tunnel_ip(node.get("node_id"), wg_props):
             return False
     return True
 
-
 def is_rs_initialized(mongo_props: List[dict]) -> bool:
     for prop in mongo_props:
         if prop.get("name") == "mongodb_rs_initialized" and prop.get("value") == "true":
             return True
     return False
-
 
 def get_mongo_service_name() -> str:
     # Prefer "mongod", fallback to "mongodb"
@@ -59,10 +55,8 @@ def get_mongo_service_name() -> str:
         pass
     return "mongod"
 
-
 def is_mongo_available() -> bool:
     return shutil.which("mongod") is not None
-
 
 def install_mongodb():
     # Try installing via apt (best effort, Ubuntu expected)
@@ -85,7 +79,6 @@ def install_mongodb():
             return
     raise Exception("Failed to install MongoDB via apt (mongodb, mongodb-org)")
 
-
 def write_mongod_config(bind_ip: str):
     MONGO_DATA_DIR.mkdir(parents=True, exist_ok=True)
     MONGO_LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -107,13 +100,11 @@ processManagement:
 """
     MONGO_CONFIG_FILE.write_text(cfg)
 
-
 def mongo_shell_binary() -> Optional[str]:
     for b in ("mongosh", "mongo"):
         if shutil.which(b):
             return b
     return None
-
 
 def mongo_eval_json(host: str, js: str, timeout: int = 10) -> Tuple[bool, Optional[dict], Optional[str]]:
     """
@@ -142,7 +133,6 @@ def mongo_eval_json(host: str, js: str, timeout: int = 10) -> Tuple[bool, Option
     except Exception as e:
         return False, None, str(e)
 
-
 def wait_for_mongo_ready(host: str, timeout_sec: int = 60) -> bool:
     start = time.time()
     while time.time() - start < timeout_sec:
@@ -151,7 +141,6 @@ def wait_for_mongo_ready(host: str, timeout_sec: int = 60) -> bool:
             return True
         time.sleep(2)
     return False
-
 
 def is_mongo_running() -> Tuple[bool, Optional[str]]:
     try:
@@ -162,20 +151,17 @@ def is_mongo_running() -> Tuple[bool, Optional[str]]:
     except Exception as e:
         return False, f"Failed to check service status: {str(e)}"
 
-
 def rs_status(host: str) -> Tuple[Optional[dict], Optional[str]]:
     ok, obj, err = mongo_eval_json(host, "rs.status()", timeout=10)
     if ok and obj:
         return obj, None
     return None, err
 
-
 def rs_initiate(host: str, members_hosts: List[str]) -> bool:
     members = [{"_id": i, "host": h} for i, h in enumerate(members_hosts)]
     js = f'rs.initiate({{ _id: "{REPLICA_SET_NAME}", members: {json.dumps(members)} }})'
     ok, obj, _ = mongo_eval_json(host, js, timeout=20)
     return bool(ok and obj and obj.get("ok") == 1)
-
 
 def rs_add_missing(host: str, desired_hosts: List[str]) -> None:
     ok, current, _ = mongo_eval_json(host, "rs.conf()", timeout=10)
@@ -191,7 +177,6 @@ def rs_add_missing(host: str, desired_hosts: List[str]) -> None:
         if h not in existing_hosts:
             mongo_eval_json(host, f'rs.add("{h}")', timeout=15)
 
-
 # Commands
 @plugin.command("init")
 def handle_init(input_data: PluginInput) -> PluginOutput:
@@ -202,7 +187,6 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
         return PluginOutput(status="completed", local_state=input_data.local_state)
     except Exception as e:
         return PluginOutput(status="error", error_message=str(e), local_state=input_data.local_state)
-
 
 @plugin.command("apply")
 def handle_apply(input_data: PluginInput) -> PluginOutput:
@@ -320,7 +304,6 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
                         node_properties=node_ready_props,
                         local_state=local_state)
 
-
 @plugin.command("health")
 def handle_health(input_data: PluginInput) -> PluginOutput:
     state_json = input_data.state or {}
@@ -348,12 +331,10 @@ def handle_health(input_data: PluginInput) -> PluginOutput:
     # If not initialized yet, still healthy if process is running
     return PluginOutput(status="postponed", error_message="Replica set not healthy/initialized yet", local_state=local_state)
 
-
 @plugin.command("finalize")
 def handle_finalize(input_data: PluginInput) -> PluginOutput:
     # No-op for now; graceful removal could be implemented (step down, remove member, etc.)
     return PluginOutput(status="completed", local_state=input_data.local_state or {})
-
 
 @plugin.command("destroy")
 def handle_destroy(input_data: PluginInput) -> PluginOutput:
@@ -380,8 +361,5 @@ def handle_destroy(input_data: PluginInput) -> PluginOutput:
     except Exception as e:
         return PluginOutput(status="error", error_message=f"Failed to destroy MongoDB: {e}", local_state={})
 
-
 if __name__ == "__main__":
     plugin.run()
-
-

@@ -5,9 +5,10 @@ set -euo pipefail
 # Run it INSIDE the container. Assumes mysql client is available.
 #
 # Note:
-# - The mongodb manifest and main.py should be available inside the container at:
-#     /sp/swarm/services/apps/mongodb/manifest.yaml and /sp/swarm/services/apps/mongodb/main.py
-#   (mount or copy them similarly to the wireguard/redis services)
+# - Source service files should be available at:
+#     /sp/swarm/services/apps/mongodb/{manifest.yaml, main.py}
+# - Files will be copied to a writable destination before registering the service:
+#     /var/lib/swarm/services/apps/mongodb
 #
 # - mongodb depends on a WireGuard cluster existing and sharing nodes with it.
 #   When bootstrapping WireGuard, prefer ClusterPolicy id 'wireguard' to match mongodb's stateExpr.
@@ -24,14 +25,26 @@ SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
 CLUSTER_POLICY=${CLUSTER_POLICY:-mongodb}
 CLUSTER_ID=${CLUSTER_ID:-mongodb}
 
-# Path to manifest file INSIDE the container (configs are mounted to /configs)
-MANIFEST_PATH=${MANIFEST_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}/manifest.yaml}
-LOCATION_PATH=${LOCATION_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}}
+# Paths inside the container
+SRC_PATH=${SRC_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}}
+DEST_PATH=${DEST_PATH:-/var/lib/swarm/services/apps/${SERVICE_NAME}}
+# Manifest path used only for sanity check
+MANIFEST_PATH=${MANIFEST_PATH:-${SRC_PATH}/manifest.yaml}
+# Location stored in ClusterServices; should be WRITABLE for runtime (chmod, etc.)
+LOCATION_PATH=${LOCATION_PATH:-${DEST_PATH}}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
 if [ ! -f "$MANIFEST_PATH" ]; then
   echo "Manifest not found at: $MANIFEST_PATH" >&2
   exit 1
+fi
+
+echo "Syncing '${SERVICE_NAME}' service files to writable location: $DEST_PATH"
+mkdir -p "$DEST_PATH"
+cp -a "${SRC_PATH}/." "$DEST_PATH/"
+# Ensure entrypoint is executable (swarm may still attempt chmod, but pre-marking helps)
+if [ -f "${DEST_PATH}/main.py" ]; then
+  chmod +x "${DEST_PATH}/main.py" || true
 fi
 
 CLI="$(dirname "$0")/swarm-cli.sh"
