@@ -142,7 +142,7 @@ WORKDIR /opt/hauler
 ADD hauler/files/configs/rke2-airgap.yaml /opt/hauler/rke2-airgap.yaml
 RUN hauler store sync --store rke2-store --platform linux/amd64 --files /opt/hauler/rke2-airgap.yaml
 RUN rm /opt/hauler/rke2-airgap.yaml
-RUN hauler store add --store rke2-store image ghcr.io/super-protocol/tee-pki-curl:v1.7.4 --platform linux/amd64
+RUN hauler store add --store rke2-store image ghcr.io/super-protocol/tee-pki-curl:v1.7.5 --platform linux/amd64
 # TODO: add argo-cd, argo-workflows, cert-manager, gpu-operator, longhorn charts
 RUN hauler store save --store rke2-store --filename rke2-airgap.tar.zst
 ### End hauler ###
@@ -246,7 +246,7 @@ ADD rootfs/files/configs/pki-service/pki-authority.service "${OUTPUTDIR}/etc/sys
 RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
 ADD rootfs/files/configs/pki-service/create-and-configure-pki.sh "${OUTPUTDIR}/usr/local/bin"
 RUN mkdir -p "${OUTPUTDIR}/root/containers"
-COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-18472436269 /pki-authority.tar "${OUTPUTDIR}/root/containers/pki-authority.tar"
+COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-18725490828 /pki-authority.tar "${OUTPUTDIR}/root/containers/pki-authority.tar"
 ADD rootfs/files/configs/pki-service/lxc-template.yaml "${OUTPUTDIR}/root/containers/lxc-template.yaml"
 ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
 ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
