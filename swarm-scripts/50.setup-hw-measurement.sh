@@ -24,8 +24,8 @@ CLUSTER_POLICY=${CLUSTER_POLICY:-hw-measurement}
 CLUSTER_ID=${CLUSTER_ID:-hw-measurement}
 
 # Path to manifest file INSIDE the container (configs are mounted to /configs)
-MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}/manifest.yaml}
-LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
+MANIFEST_PATH=${MANIFEST_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}/manifest.yaml}
+LOCATION_PATH=${LOCATION_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
 if [ ! -f "$MANIFEST_PATH" ]; then
