@@ -23,24 +23,10 @@ SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
 CLUSTER_POLICY=${CLUSTER_POLICY:-redis}
 CLUSTER_ID=${CLUSTER_ID:-redis}
 
-# Source location (if mounted) and writable destination inside the container
-SRC_PATH=${SRC_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}}
-DEST_PATH=${DEST_PATH:-/var/lib/swarm/services/apps/${SERVICE_NAME}}
-# Location stored in ClusterServices; should be WRITABLE for runtime (chmod, etc.)
-LOCATION_PATH=${LOCATION_PATH:-${DEST_PATH}}
+# Location stored in ClusterServices; must exist on all nodes (baked into image)
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
 MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
-
-# If source exists under /sp/swarm, copy it into writable /etc/swarm-cloud/services
-if [ -d "$SRC_PATH" ]; then
-  echo "Preparing service files in writable location: $DEST_PATH"
-  mkdir -p "$DEST_PATH"
-  cp -a "$SRC_PATH/." "$DEST_PATH/"
-  # Best-effort ensure entrypoint is executable
-  if [ -f "${DEST_PATH}/main.py" ]; then
-    chmod +x "${DEST_PATH}/main.py" || true
-  fi
-fi
 
 if [ ! -f "$MANIFEST_PATH" ]; then
   echo "Manifest not found at: $MANIFEST_PATH" >&2

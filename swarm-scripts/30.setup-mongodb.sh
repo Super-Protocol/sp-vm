@@ -25,26 +25,16 @@ SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
 CLUSTER_POLICY=${CLUSTER_POLICY:-mongodb}
 CLUSTER_ID=${CLUSTER_ID:-mongodb}
 
-# Paths inside the container
-SRC_PATH=${SRC_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}}
-DEST_PATH=${DEST_PATH:-/var/lib/swarm/services/apps/${SERVICE_NAME}}
-# Manifest path used only for sanity check
-MANIFEST_PATH=${MANIFEST_PATH:-${SRC_PATH}/manifest.yaml}
-# Location stored in ClusterServices; should be WRITABLE for runtime (chmod, etc.)
-LOCATION_PATH=${LOCATION_PATH:-${DEST_PATH}}
+# Location and manifest inside the container.
+# IMPORTANT: This script runs only on one node. All nodes must have the same location available already
+# (baked into the image), so we point to /etc/swarm-cloud/services/${SERVICE_NAME}.
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
+MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
 if [ ! -f "$MANIFEST_PATH" ]; then
   echo "Manifest not found at: $MANIFEST_PATH" >&2
   exit 1
-fi
-
-echo "Syncing '${SERVICE_NAME}' service files to writable location: $DEST_PATH"
-mkdir -p "$DEST_PATH"
-cp -a "${SRC_PATH}/." "$DEST_PATH/"
-# Ensure entrypoint is executable (swarm may still attempt chmod, but pre-marking helps)
-if [ -f "${DEST_PATH}/main.py" ]; then
-  chmod +x "${DEST_PATH}/main.py" || true
 fi
 
 CLI="$(dirname "$0")/swarm-cli.sh"
