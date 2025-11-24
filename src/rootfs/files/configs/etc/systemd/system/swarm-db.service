@@ -11,7 +11,7 @@ WorkingDirectory=/etc/swarm-db
 ExecStartPre=mkdir -p /var/lib/swarm-db/data
 ExecStart=/etc/swarm-db/swarm-db-linux-amd64 -config /sp/swarm/node-db.yaml
 StandardOutput=append:/var/log/swarm-db.log
-StandardError=append:/var/log/swarm-db.log
+StandardError=append:/var/log/swarm-db-err.log
 Restart=always
 RestartSec=5
 
