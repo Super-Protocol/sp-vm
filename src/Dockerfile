@@ -167,7 +167,7 @@ RUN apt install -y \
     jq
 
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-RUN source $NVM_DIR/nvm.sh && nvm install $NODE_VERSION && nvm use $NODE_VERSION
+RUN bash -c "source $NVM_DIR/nvm.sh && nvm install $NODE_VERSION && nvm use $NODE_VERSION"
 RUN npm i -g nx@21.5.2 corepack@latest webpack-cli
 RUN curl -fsSL https://get.pnpm.io/install.sh | bash -
 RUN corepack enable
