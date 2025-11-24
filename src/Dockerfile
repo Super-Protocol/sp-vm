@@ -153,8 +153,8 @@ ENV NX_DAEMON=false
 ENV NX_ADD_PLUGINS=false
 ENV NX_NO_CLOUD=true
 
-RUN apt-get update
-RUN apt-get install -y \
+RUN apt update
+RUN apt install -y \
     curl \
     python3 \
     python3-pip \
@@ -182,9 +182,9 @@ RUN pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbos
 RUN pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose
 # build provision-plugin-sdk wheel for reuse (use venv to avoid PEP 668 restrictions)
 RUN python3 -m venv /tmp/pvenv \
- && /tmp/pvenv/bin/pip install --no-cache-dir build wheel \
- && bash -lc 'cd /app/swarm/swarm-cloud/services/provision-plugin-sdk && /tmp/pvenv/bin/python -m build --wheel --outdir /tmp/provision-wheels' \
- && ls -l /tmp/provision-wheels
+    && /tmp/pvenv/bin/pip install --no-cache-dir build wheel \
+    && bash -lc 'cd /app/swarm/swarm-cloud/services/provision-plugin-sdk && /tmp/pvenv/bin/python -m build --wheel --outdir /tmp/provision-wheels' \
+    && ls -l /tmp/provision-wheels
 ### Swarm finish
 
 ### Start rootfs ###
@@ -218,8 +218,8 @@ ARG RKE2_VERSION=v1.32.8+rke2r1
 ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
 ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
 RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
- && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
- && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
+    && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
+    && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
 
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
@@ -326,16 +326,16 @@ RUN ln -sf /var/lib/rancher/rke2/bin/kubectl "${OUTPUTDIR}/usr/local/bin/kubectl
 # tools needed at runtime (prevent daemons from starting in chroot)
 RUN bash -lc 'set -e; echo -e "#!/bin/sh\nexit 101" > "${OUTPUTDIR}/usr/sbin/policy-rc.d"; chmod +x "${OUTPUTDIR}/usr/sbin/policy-rc.d"'
 RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
- && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip redis-server redis-tools \
- && chroot ${OUTPUTDIR} /usr/bin/apt-get clean
+    && chroot ${OUTPUTDIR} /usr/bin/apt-get install -y --no-install-recommends mysql-client python3 python3-pip redis-server redis-tools \
+    && chroot ${OUTPUTDIR} /usr/bin/apt-get clean
 # ensure redis data/log dirs exist
 RUN chroot ${OUTPUTDIR} /bin/bash -lc 'mkdir -p /var/lib/redis /var/log/redis && chown -R redis:redis /var/lib/redis /var/log/redis && chmod 0750 /var/lib/redis'
 # disable autostart without requiring systemd during build (remove enable symlinks)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
- && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service
+    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service
 # cleanup apt lists and policy-rc.d
 RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
- && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
+    && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
 
 # install provision-plugin-sdk into VM python environment (from prebuilt wheel)
 COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
