@@ -5,11 +5,9 @@ set -euo pipefail
 # Run it INSIDE the container. Assumes mysql client is available.
 #
 # Note:
-# - Source service files should be available at:
-#     /sp/swarm/services/apps/mongodb/{manifest.yaml, main.py}
-# - Files will be copied to a writable destination before registering the service:
-#     /var/lib/swarm/services/apps/mongodb
-#
+# - The mongodb manifest and main.py are provided by the image at:
+#     /etc/swarm-cloud/services/mongodb/{manifest.yaml, main.py}
+#   This script only registers service records in SwarmDB.
 # - mongodb depends on a WireGuard cluster existing and sharing nodes with it.
 #   When bootstrapping WireGuard, prefer ClusterPolicy id 'wireguard' to match mongodb's stateExpr.
 #

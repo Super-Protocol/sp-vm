@@ -5,10 +5,9 @@ set -euo pipefail
 # Run it INSIDE the container. Assumes mysql client is available.
 #
 # Note:
-# - The redis manifest and main.py will be copied into a writable location:
+# - The redis manifest and main.py are provided by the image at:
 #     /etc/swarm-cloud/services/redis/{manifest.yaml, main.py}
-#   If files exist at /sp/swarm/services/apps/redis they will be copied over.
-#
+#   This script only registers service records in SwarmDB.
 # - redis depends on a WireGuard cluster existing and sharing nodes with it.
 #   When bootstrapping WireGuard, prefer ClusterPolicy id 'wireguard' to match redis's stateExpr.
 
