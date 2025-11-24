@@ -311,8 +311,8 @@ ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 # ensure bind mount targets exist on read-only rootfs
 RUN mkdir -p "${OUTPUTDIR}/etc/kubernetes"
 
-# disabling serial getty (mask instance)
-RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
+# disabling serial getty
+ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
 
 # swarm binaries into VM rootfs
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-cloud"
