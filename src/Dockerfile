@@ -324,14 +324,14 @@ RUN ln -sf /var/lib/rancher/rke2/bin/kubectl "${OUTPUTDIR}/usr/local/bin/kubectl
 #
 # Ensure MongoDB service files are present on every node in a consistent location
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb
-ADD swarm-scripts/apps/mongodb/manifest.yaml ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/manifest.yaml
-ADD swarm-scripts/apps/mongodb/main.py ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/main.py
+ADD services/apps/mongodb/manifest.yaml ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/manifest.yaml
+ADD services/apps/mongodb/main.py ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/main.py
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/main.py
 #
 # Ensure Redis service files are present on every node in a consistent location
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud/services/redis
-ADD swarm-scripts/apps/redis/manifest.yaml ${OUTPUTDIR}/etc/swarm-cloud/services/redis/manifest.yaml
-ADD swarm-scripts/apps/redis/main.py ${OUTPUTDIR}/etc/swarm-cloud/services/redis/main.py
+ADD services/apps/redis/manifest.yaml ${OUTPUTDIR}/etc/swarm-cloud/services/redis/manifest.yaml
+ADD services/apps/redis/main.py ${OUTPUTDIR}/etc/swarm-cloud/services/redis/main.py
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/redis/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot)
