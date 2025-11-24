@@ -91,7 +91,7 @@ systemLog:
   logAppend: true
   path: {str(MONGO_LOG_DIR)}/mongod.log
 net:
-  bindIp: {bind_ip}
+  bindIp: 127.0.0.1,{bind_ip}
   port: {MONGO_PORT}
 replication:
   replSetName: {REPLICA_SET_NAME}
@@ -176,6 +176,16 @@ def mongo_eval_json(host: str, js: str, timeout: int = 10) -> Tuple[bool, Option
 
 def wait_for_mongo_ready(host: str, timeout_sec: int = 60) -> bool:
     start = time.time()
+    # If mongo shell not available, fallback to checking TCP port open
+    if not mongo_shell_binary():
+        import socket
+        while time.time() - start < timeout_sec:
+            try:
+                with socket.create_connection((host, MONGO_PORT), timeout=2):
+                    return True
+            except Exception:
+                time.sleep(2)
+        return False
     while time.time() - start < timeout_sec:
         ok, obj, _ = mongo_eval_json(host, "db.runCommand({ping:1})", timeout=5)
         if ok and obj and obj.get("ok") == 1:
