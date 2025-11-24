@@ -216,7 +216,6 @@ RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 # RKE2: clean default installation inside rootfs (no legacy scripts)
 ARG RKE2_VERSION=v1.32.8+rke2r1
 ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
-ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
 RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
     && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
     && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
@@ -459,4 +458,6 @@ COPY --from=vm_json_builder /output /
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
 COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
+
+ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
 ### End sp_vm ###
