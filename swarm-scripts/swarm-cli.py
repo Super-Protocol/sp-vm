@@ -12,11 +12,38 @@ from sqlalchemy.engine import Engine
 from re import search as re_search
 import json
 import traceback
+import pymysql
 
 def require_cmd(cmd_name: str) -> None:
   if shutil.which(cmd_name) is None:
     print(f"Missing required command: {cmd_name}", file=sys.stderr)
     sys.exit(1)
+
+def patch_pymysql_dev_server_version() -> None:
+  """
+  Some dev/test MySQL-compatible servers report a server_version starting with
+  a non-numeric string like 'dev...', which causes PyMySQL to fail when it tries
+  to parse the major version as int. Patch the authentication routine to coerce
+  such versions to a sane default (e.g., '5.7.0') before the check.
+  """
+  try:
+    original = pymysql.connections.Connection._request_authentication
+  except Exception:
+    return
+
+  def _patched_request_authentication(self, *args, **kwargs):  # type: ignore[no-redef]
+    try:
+      raw = getattr(self, "server_version", "")
+      head = str(raw).split(".", 1)[0]
+      if not head.isdigit():
+        setattr(self, "server_version", "5.7.0")
+        if os.environ.get("SWARM_CLI_DEBUG", "0").lower() in ("1", "true", "yes"):
+          print(f"[DEBUG] Patched PyMySQL server_version '{raw}' -> '5.7.0'")
+    except Exception:
+      pass
+    return original(self, *args, **kwargs)
+
+  pymysql.connections.Connection._request_authentication = _patched_request_authentication  # type: ignore[assignment]
 
 def sql_quote(value: str) -> str:
   # Escape single quotes for SQL and wrap with quotes
@@ -225,6 +252,8 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
 
 def main(argv: List[str]) -> None:
   debug_enabled = os.environ.get("SWARM_CLI_DEBUG", "0").lower() in ("1", "true", "yes")
+  # Apply PyMySQL compatibility patch for non-numeric server versions
+  patch_pymysql_dev_server_version()
   # Be resilient to environments where DB_PORT is set to non-numeric values (e.g. 'dev')
   port_env_raw = os.environ.get("DB_PORT", "3306")
   if not str(port_env_raw).isdigit():
