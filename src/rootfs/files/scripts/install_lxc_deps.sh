@@ -23,8 +23,13 @@ install_deps() {
 
     chroot "${OUTPUTDIR}" /bin/bash -c "
         set -euo pipefail
-        apt update
-        DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends skopeo umoci jq
+        for i in {1..5}; do
+            apt -o Acquire::Retries=5 update && break;
+            echo 'apt update failed, retrying...'; sleep 5;
+        done
+        DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends --fix-missing \
+            -o Acquire::Retries=5 -o Acquire::http::Timeout=30 \
+            install skopeo umoci jq
     "
 }
 
