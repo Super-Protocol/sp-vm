@@ -27,11 +27,11 @@ fi
 CLI="$(dirname "$0")/swarm-cli.sh"
 echo "Creating/Updating ClusterPolicies '$CLUSTER_POLICY'..."
 DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-  bash "$CLI" create ClusterPolicies "$CLUSTER_POLICY"
+  python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY"
 
 echo "Creating/Updating ClusterServices '$SERVICE_NAME'..."
 # Keep legacy service id = SERVICE_NAME for wireguard
 DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-  bash "$CLI" create ClusterServices "$SERVICE_NAME" --name="$SERVICE_NAME" --cluster_policy="$CLUSTER_POLICY" --version="$SERVICE_VERSION" --location="$LOCATION_PATH"
+  python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SERVICE_NAME" --name="$SERVICE_NAME" --cluster_policy="$CLUSTER_POLICY" --version="$SERVICE_VERSION" --location="$LOCATION_PATH"
 
 echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."

@@ -182,7 +182,7 @@ RUN pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbos
 RUN pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose
 # build provision-plugin-sdk wheel for reuse (use venv to avoid PEP 668 restrictions)
 RUN python3 -m venv /tmp/pvenv \
-    && /tmp/pvenv/bin/pip install --no-cache-dir build wheel \
+    && /tmp/pvenv/bin/pip install --no-cache-dir build wheel sqlalchemy pymysql \
     && bash -lc 'cd /app/swarm/swarm-cloud/services/provision-plugin-sdk && /tmp/pvenv/bin/python -m build --wheel --outdir /tmp/provision-wheels' \
     && ls -l /tmp/provision-wheels
 ### Swarm finish
@@ -339,6 +339,8 @@ RUN bash -lc 'set -e; echo -e "#!/bin/sh\nexit 101" > "${OUTPUTDIR}/usr/sbin/pol
 RUN chroot ${OUTPUTDIR} /usr/bin/apt update \
     && chroot ${OUTPUTDIR} /usr/bin/apt install -y --no-install-recommends mysql-client python3 python3-pip redis-server redis-tools \
     && chroot ${OUTPUTDIR} /usr/bin/apt clean
+# Python runtime deps for swarm CLI and services
+RUN chroot ${OUTPUTDIR} /bin/bash -lc 'python3 -m pip install --break-system-packages SQLAlchemy PyMySQL'
 # ensure redis data/log dirs exist
 RUN chroot ${OUTPUTDIR} /bin/bash -lc 'mkdir -p /var/lib/redis /var/log/redis && chown -R redis:redis /var/lib/redis /var/log/redis && chmod 0750 /var/lib/redis'
 # MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
