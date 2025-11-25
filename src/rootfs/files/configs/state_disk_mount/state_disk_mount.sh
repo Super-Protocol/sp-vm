@@ -83,10 +83,7 @@ mount -t ext4 -o ro "$PROVIDER_CONFIG_DEVICE_PATH" /sp || { echo "failed to moun
 # Mounting encrypted state volume and preparing directories used for bind mounts
 mkdir -p /run/state
 mount "/dev/mapper/crypto" /run/state || { echo "failed to mount /dev/mapper/crypto to /run/state"; exit 1; };
-mkdir -p /run/state/opt
-mkdir -p /run/state/etciscsi
-mkdir -p /run/state/kubernetes
-mkdir -p /run/state/var
+mkdir -p /run/state/{opt,etciscsi,kubernetes,var}
 # Prepare redis data dir on state disk so redis can start later if needed
 mkdir -p /run/state/var/lib/redis
 chown redis:redis /run/state/var/lib/redis || true
