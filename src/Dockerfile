@@ -320,18 +320,10 @@ RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
 ARG NODE_VERSION=22.18.0
 COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
 RUN ln -sf /var/lib/rancher/rke2/bin/kubectl "${OUTPUTDIR}/usr/local/bin/kubectl"
-#
-# Ensure MongoDB service files are present on every node in a consistent location
-RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb
-ADD services/apps/mongodb/manifest.yaml ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/manifest.yaml
-ADD services/apps/mongodb/main.py ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/main.py
-RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/main.py
-#
-# Ensure Redis service files are present on every node in a consistent location
-RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud/services/redis
-ADD services/apps/redis/manifest.yaml ${OUTPUTDIR}/etc/swarm-cloud/services/redis/manifest.yaml
-ADD services/apps/redis/main.py ${OUTPUTDIR}/etc/swarm-cloud/services/redis/main.py
-RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/redis/main.py
+
+# Custom swarm services
+COPY services/apps/ ${OUTPUTDIR}/etc/swarm-cloud/services/
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot)
 RUN bash -lc 'set -e; echo -e "#!/bin/sh\nexit 101" > "${OUTPUTDIR}/usr/sbin/policy-rc.d"; chmod +x "${OUTPUTDIR}/usr/sbin/policy-rc.d"'
