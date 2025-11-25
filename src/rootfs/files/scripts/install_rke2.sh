@@ -25,7 +25,7 @@ function install_rke2() {
     echo "${RKE2_INSTALL_SHA256}  $OUTPUTDIR/root/rke2/rke2-install.sh" | sha256sum -c -;
 
     log_info "installing rke2"
-    chroot "$OUTPUTDIR" /bin/bash -c 'INSTALL_RKE2_ARTIFACT_PATH=/root/rke2 bash /root/rke2/rke2-install.sh';
+    chroot "$OUTPUTDIR" /bin/bash -c 'bash /root/rke2/rke2-install.sh';
     rm -rf "$OUTPUTDIR/root/rke2";
 }
 
