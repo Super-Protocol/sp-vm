@@ -3,9 +3,9 @@
 	url = https://github.com/super-protocol/sp-vm-tools
 [submodule "swarm-cloud"]
 	path = src/repos/swarm-cloud
-	url = https://github.com/super-protocol/swarm-cloud
+	url = git@github.com:Super-Protocol/swarm-cloud.git
 	branch = dd9d5c7a5f4bb835e3ac0dafa2404cc800f6a656
 [submodule "swarm-db"]
 	path = src/repos/swarm-db
-	url = https://github.com/super-protocol/swarm-db
+	url = git@github.com:Super-Protocol/swarm-db.git
 	branch = bc8d0afbb78ac2153443677e7fdf4969ae29f119
