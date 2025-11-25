@@ -20,7 +20,6 @@ def sql_quote(value: str) -> str:
   return "'" + value.replace("'", "''") + "'"
 
 def filter_manifest_remove_init(manifest_text: str) -> str:
-  # Emulate: sed '/^commands:/,/^[^[:space:]]/ { /^[[:space:]]*-[[:space:]]*init[[:space:]]*$/d }'
   lines = manifest_text.splitlines()
   result: List[str] = []
   inside_commands = False
@@ -58,6 +57,14 @@ def run_sql_statements(engine: Engine, statements: List[str]) -> None:
     print(f"MySQL execution failed: {exc}", file=sys.stderr)
     sys.exit(1)
 
+def run_sql(engine: Engine, sql: str, params: dict | None = None) -> None:
+  try:
+    with engine.begin() as conn:
+      conn.execute(text(sql), params or {})
+  except Exception as exc:
+    print(f"MySQL execution failed: {exc}", file=sys.stderr)
+    sys.exit(1)
+
 def create_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) -> None:
   id_value = args.id or ""
   if not id_value:
@@ -81,16 +88,17 @@ def create_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) 
     values.append(str(args.maxClusters))
     updates.append("maxClusters=VALUES(maxClusters)")
 
+  # Build parameterized SQL
   fields_csv = ",".join(fields)
-  quoted_vals = [sql_quote(v) for v in values]
-  values_csv = ",".join(quoted_vals)
+  placeholders = ",".join([f":{f}" for f in fields])
+  params = {fields[i]: (int(values[i]) if str(values[i]).isdigit() else values[i]) for i in range(len(fields))}
   updates_csv = ",".join(updates)
 
   sql = (
-    f"INSERT INTO ClusterPolicies ({fields_csv}) VALUES ({values_csv})\n"
+    f"INSERT INTO ClusterPolicies ({fields_csv}) VALUES ({placeholders})\n"
     f"ON DUPLICATE KEY UPDATE {updates_csv};\n"
   )
-  run_sql_statements(engine, [sql])
+  run_sql(engine, sql, params)
   print(f"ClusterPolicies '{id_value}' upserted.")
 
 def create_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) -> None:
@@ -109,26 +117,26 @@ def create_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) 
   if not id_value:
     id_value = f"{cluster_policy}:{name}"
 
-  manifest_set = "SET @manifest = NULL;"
+  manifest_content = None
   manifest_path = os.path.join(location.rstrip("/"), "manifest.yaml")
   if os.path.isfile(manifest_path):
     with open(manifest_path, "r", encoding="utf-8") as f:
       content = f.read()
     if args.omit_command_init:
       content = filter_manifest_remove_init(content)
-    b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
-    manifest_set = f"SET @manifest = FROM_BASE64({sql_quote(b64)});"
+    manifest_content = content
 
+  # Parameterize everything; store plain YAML in 'manifest'
   insert_sql = (
     "INSERT INTO ClusterServices (id, cluster_policy, name, version, location, hash, manifest, updated_ts)\n"
     "VALUES (\n"
-    f"  {sql_quote(id_value)},\n"
-    f"  {sql_quote(cluster_policy)},\n"
-    f"  {sql_quote(name)},\n"
-    f"  {sql_quote(version)},\n"
-    f"  CONCAT('dir://', {sql_quote(location)}),\n"
+    "  :id,\n"
+    "  :cluster_policy,\n"
+    "  :name,\n"
+    "  :version,\n"
+    "  :location,\n"
     "  NULL,\n"
-    "  @manifest,\n"
+    "  :manifest,\n"
     "  UNIX_TIMESTAMP()*1000\n"
     ")\n"
     "ON DUPLICATE KEY UPDATE\n"
@@ -137,9 +145,15 @@ def create_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) 
     "  manifest=VALUES(manifest),\n"
     "  updated_ts=VALUES(updated_ts);\n"
   )
-  # Ensure SET and INSERT run within the same session/transaction
-  stmts = [manifest_set, insert_sql] if manifest_set.strip() else [insert_sql]
-  run_sql_statements(engine, stmts)
+  params = {
+    "id": id_value,
+    "cluster_policy": cluster_policy,
+    "name": name,
+    "version": version,
+    "location": f"dir://{location}",
+    "manifest": manifest_content,
+  }
+  run_sql(engine, insert_sql, params)
   print(f"ClusterServices '{id_value}' upserted.")
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
