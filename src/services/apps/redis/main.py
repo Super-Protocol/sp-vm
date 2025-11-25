@@ -227,7 +227,7 @@ def create_redis_cluster(cluster_nodes: list, wg_props: list) -> bool:
             return True
 
         if len(node_endpoints) < 3:
-            print(f"[!] Need at least 3 nodes for multi-node Redis cluster, got {len(node_endpoints)}", file=sys.stderr)
+            print(f"[*] Less than 3 nodes ({len(node_endpoints)}) — defer multi-node cluster creation", file=sys.stderr)
             return False
 
         # Create cluster with replicas
@@ -265,6 +265,28 @@ def create_redis_cluster(cluster_nodes: list, wg_props: list) -> bool:
         print(f"[!] Failed to create Redis cluster: {e}", file=sys.stderr)
         import traceback
         print(f"[!] Traceback: {traceback.format_exc()}", file=sys.stderr)
+        return False
+
+def initialize_single_node_cluster_local(local_tunnel_ip: str) -> bool:
+    """Initialize a single-node cluster on the local node by assigning all hash slots."""
+    try:
+        total_slots = 16384
+        batch_size = 1024
+        for i in range(0, total_slots, batch_size):
+            batch = list(range(i, min(i + batch_size, total_slots)))
+            cmd = [REDIS_CLI, "-h", local_tunnel_ip, "-p", str(REDIS_PORT), "cluster", "addslots", *[str(s) for s in batch]]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0 and "already busy" not in (result.stderr or "").lower():
+                print(f"[!] Failed to add slots batch {i}-{i+len(batch)-1}: {result.stderr or result.stdout}", file=sys.stderr)
+                return False
+        ok, err = check_node_in_cluster(local_tunnel_ip)
+        if not ok:
+            print(f"[!] Single-node cluster state is not ok: {err}", file=sys.stderr)
+            return False
+        print(f"[*] Local single-node Redis cluster initialized at {local_tunnel_ip}", file=sys.stderr)
+        return True
+    except Exception as e:
+        print(f"[!] Exception during single-node init: {e}", file=sys.stderr)
         return False
 
 
@@ -497,11 +519,30 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
 
     # If this is the leader node and cluster is not initialized, initialize it
     if is_leader and not cluster_initialized:
-        # If we have exactly one node, bootstrap single-node cluster immediately
-        if len(cluster_nodes) != 1:
+        # For small clusters (<3), bootstrap as single-master locally, then attach replicas later
+        if len(cluster_nodes) < 3:
+            if initialize_single_node_cluster_local(local_tunnel_ip):
+                node_properties = {
+                    "redis_cluster_initialized": "true",
+                    "redis_node_ready": "true"
+                }
+                return PluginOutput(
+                    status='completed',
+                    node_properties=node_properties,
+                    local_state=local_state
+                )
+            else:
+                node_properties = {"redis_node_ready": "true"}
+                return PluginOutput(
+                    status='postponed',
+                    error_message='Failed to initialize single-node cluster; will retry',
+                    node_properties=node_properties,
+                    local_state=local_state
+                )
+        # For >=3 nodes, create multi-node cluster
+        else:
             # Check if all nodes are ready before creating multi-node cluster
             if not check_all_nodes_redis_ready(cluster_nodes, redis_props):
-                # Mark this node as ready and wait for others
                 node_properties = {"redis_node_ready": "true"}
                 return PluginOutput(
                     status='postponed',
@@ -509,25 +550,22 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
                     node_properties=node_properties,
                     local_state=local_state
                 )
-
-        # Create cluster (single-node or multi-node path inside)
-        if create_redis_cluster(cluster_nodes, wg_props):
-            # Mark cluster as initialized
-            node_properties = {
-                "redis_cluster_initialized": "true",
-                "redis_node_ready": "true"
-            }
-            return PluginOutput(
-                status='completed',
-                node_properties=node_properties,
-                local_state=local_state
-            )
-        else:
-            return PluginOutput(
-                status='postponed',
-                error_message='Failed to create Redis cluster',
-                local_state=local_state
-            )
+            if create_redis_cluster(cluster_nodes, wg_props):
+                node_properties = {
+                    "redis_cluster_initialized": "true",
+                    "redis_node_ready": "true"
+                }
+                return PluginOutput(
+                    status='completed',
+                    node_properties=node_properties,
+                    local_state=local_state
+                )
+            else:
+                return PluginOutput(
+                    status='postponed',
+                    error_message='Failed to create Redis cluster',
+                    local_state=local_state
+                )
 
     # For already initialized cluster
     if cluster_initialized:

@@ -216,7 +216,6 @@ RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 # RKE2: clean default installation inside rootfs (no legacy scripts)
 ARG RKE2_VERSION=v1.32.8+rke2r1
 ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
-ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
 RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
     && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
     && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
@@ -322,6 +321,18 @@ RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
 ARG NODE_VERSION=22.18.0
 COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
 RUN ln -sf /var/lib/rancher/rke2/bin/kubectl "${OUTPUTDIR}/usr/local/bin/kubectl"
+#
+# Ensure MongoDB service files are present on every node in a consistent location
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb
+ADD services/apps/mongodb/manifest.yaml ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/manifest.yaml
+ADD services/apps/mongodb/main.py ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/main.py
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/mongodb/main.py
+#
+# Ensure Redis service files are present on every node in a consistent location
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud/services/redis
+ADD services/apps/redis/manifest.yaml ${OUTPUTDIR}/etc/swarm-cloud/services/redis/manifest.yaml
+ADD services/apps/redis/main.py ${OUTPUTDIR}/etc/swarm-cloud/services/redis/main.py
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/redis/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot)
 RUN bash -lc 'set -e; echo -e "#!/bin/sh\nexit 101" > "${OUTPUTDIR}/usr/sbin/policy-rc.d"; chmod +x "${OUTPUTDIR}/usr/sbin/policy-rc.d"'
@@ -330,6 +341,22 @@ RUN chroot ${OUTPUTDIR} /usr/bin/apt-get update \
     && chroot ${OUTPUTDIR} /usr/bin/apt-get clean
 # ensure redis data/log dirs exist
 RUN chroot ${OUTPUTDIR} /bin/bash -lc 'mkdir -p /var/lib/redis /var/log/redis && chown -R redis:redis /var/lib/redis /var/log/redis && chmod 0750 /var/lib/redis'
+# MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
+RUN chroot ${OUTPUTDIR} /bin/bash -lc 'set -e; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends gnupg curl; \
+  curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg; \
+  echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-7.0.list; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends mongodb-org mongodb-mongosh || (echo \"mongodb-org install failed\" >&2; exit 1); \
+  apt-get clean; \
+  mkdir -p /var/lib/mongodb /var/log/mongodb; \
+  chown -R mongodb:mongodb /var/lib/mongodb /var/log/mongodb || true'
+# disable autostart without requiring systemd during build (remove enable symlinks for MongoDB)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongod.service \
+ && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongod.service \
+ && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongodb.service \
+ && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongodb.service
 # disable autostart without requiring systemd during build (remove enable symlinks)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
     &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service
@@ -443,4 +470,6 @@ COPY --from=vm_json_builder /output /
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
 COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
+
+ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
 ### End sp_vm ###
