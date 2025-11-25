@@ -187,9 +187,16 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
   return ns
 
 def main(argv: List[str]) -> None:
+  # Be resilient to environments where DB_PORT is set to non-numeric values (e.g. 'dev')
+  port_env = os.environ.get("DB_PORT", "3306")
+  if not str(port_env).isdigit():
+    # Try common alternates, else default
+    alt_port = os.environ.get("SWARM_DB_PORT") or os.environ.get("MYSQL_PORT") or "3306"
+    port_env = alt_port if str(alt_port).isdigit() else "3306"
+
   db = {
     "host": os.environ.get("DB_HOST", "127.0.0.1"),
-    "port": int(os.environ.get("DB_PORT", "3306")),
+    "port": int(port_env),
     "user": os.environ.get("DB_USER", "root"),
     "name": os.environ.get("DB_NAME", "swarmdb"),
     "password": os.environ.get("DB_PASSWORD", ""),
