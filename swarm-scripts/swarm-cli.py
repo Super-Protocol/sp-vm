@@ -10,8 +10,6 @@ from typing import List
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from re import search as re_search
-import json
-import traceback
 import pymysql
 
 def require_cmd(cmd_name: str) -> None:
@@ -90,24 +88,8 @@ def run_sql_statements(engine: Engine, statements: List[str]) -> None:
 def run_sql(engine: Engine, sql: str, params: dict | None = None) -> None:
   try:
     with engine.begin() as conn:
-      debug_enabled = os.environ.get("SWARM_CLI_DEBUG", "0").lower() in ("1", "true", "yes")
-      if debug_enabled:
-        safe_params = dict(params or {})
-        if "manifest" in safe_params and safe_params["manifest"] is not None:
-          # Avoid dumping entire manifest; show size instead
-          safe_params["manifest"] = f"<manifest {len(str(safe_params['manifest']))} chars>"
-        print("[DEBUG] Executing SQL:")
-        print(sql.strip())
-        print(f"[DEBUG] Params: {json.dumps(safe_params, ensure_ascii=False)}")
       conn.execute(text(sql), params or {})
   except Exception as exc:
-    print("[TRACE] SQL execution failed. Statement and params follow:", file=sys.stderr)
-    try:
-      print(sql.strip(), file=sys.stderr)
-      print(f"PARAMS={params}", file=sys.stderr)
-    except Exception:
-      pass
-    print(traceback.format_exc(), file=sys.stderr)
     print(f"MySQL execution failed: {exc}", file=sys.stderr)
     sys.exit(1)
 
@@ -140,13 +122,7 @@ def create_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) 
   params = {fields[i]: (int(values[i]) if str(values[i]).isdigit() else values[i]) for i in range(len(fields))}
   updates_csv = ",".join(updates)
 
-  if os.environ.get("SWARM_CLI_DEBUG", "0").lower() in ("1", "true", "yes"):
-    print(f"[DEBUG] ClusterPolicies upsert id={id_value} minSize={args.minSize} maxSize={args.maxSize} maxClusters={args.maxClusters}")
-    print(f"[DEBUG] Fields: {fields_csv}")
-    print(f"[DEBUG] Params(raw): {params}")
-  else:
-    # Minimal trace to stderr to locate failures even without debug flag
-    print(f"[TRACE] ClusterPolicies upsert id={id_value}", file=sys.stderr)
+  # No debug output; keep script quiet by default
 
   sql = (
     f"INSERT INTO ClusterPolicies ({fields_csv}) VALUES ({placeholders})\n"
@@ -186,10 +162,7 @@ def create_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) 
   # - Fallback to 0 if nothing numeric is present
   version_match = re_search(r"\d+", str(version_raw))
   version_normalized = int(version_match.group(0)) if version_match else 0
-  if os.environ.get("SWARM_CLI_DEBUG", "0").lower() in ("1", "true", "yes"):
-    print(f"[DEBUG] ClusterServices id={id_value} name={name} policy={cluster_policy} version_raw='{version_raw}' -> version={version_normalized} location='{location}'")
-  else:
-    print(f"[TRACE] ClusterServices id={id_value} version={version_normalized}", file=sys.stderr)
+  # No debug output; keep script quiet by default
 
   insert_sql = (
     "INSERT INTO ClusterServices (id, cluster_policy, name, version, location, hash, manifest, updated_ts)\n"
@@ -251,7 +224,6 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
   return ns
 
 def main(argv: List[str]) -> None:
-  debug_enabled = os.environ.get("SWARM_CLI_DEBUG", "0").lower() in ("1", "true", "yes")
   # Apply PyMySQL compatibility patch for non-numeric server versions
   patch_pymysql_dev_server_version()
   # Be resilient to environments where DB_PORT is set to non-numeric values (e.g. 'dev')
@@ -269,25 +241,11 @@ def main(argv: List[str]) -> None:
     "name": os.environ.get("DB_NAME", "swarmdb"),
     "password": os.environ.get("DB_PASSWORD", ""),
   }
-  # Always emit a minimal trace for DB config (without password)
-  try:
-    print(f"[TRACE] DB config host={db['host']} port={db['port']} user={db['user']} name={db['name']}", file=sys.stderr)
-  except Exception:
-    pass
-  if debug_enabled:
-    print(f"[DEBUG] Env DB_HOST={os.environ.get('DB_HOST')}")
-    print(f"[DEBUG] Env DB_PORT(raw)={port_env_raw} -> parsed={port_env}")
-    print(f"[DEBUG] Env DB_USER={os.environ.get('DB_USER')}")
-    print(f"[DEBUG] Env DB_NAME={os.environ.get('DB_NAME')}")
 
   engine = create_engine_from_env(db)
 
   args = parse_args(argv)
   key = f"{args.action}:{args.entity}"
-  if debug_enabled:
-    print(f"[DEBUG] Command key={key} args={args}")
-  else:
-    print(f"[TRACE] Command {key}", file=sys.stderr)
 
   if key == "create:ClusterPolicies":
     create_cluster_policies(args, db, engine)
