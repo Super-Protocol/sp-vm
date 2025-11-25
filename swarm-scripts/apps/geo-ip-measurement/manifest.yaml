@@ -1,0 +1,16 @@
+name: geo-ip-measurement
+version: 1.0.0
+commands:
+  - apply
+  - health
+  - destroy
+healthcheckIntervalSecs: 3600
+entrypoint: main.py
+stateExpr:
+  engine: jq
+  query: |
+    {
+      localNode: {
+        id: "{{ nodeId }}"
+      }
+    }
