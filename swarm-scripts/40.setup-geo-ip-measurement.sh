@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Note:
 # - The geo-ip-measurement manifest and main.py should be available inside the container at:
-#     /sp/swarm/services/apps/geo-ip-measurement/manifest.yaml and /sp/swarm/services/apps/geo-ip-measurement/main.py
+#     /etc/swarm-cloud/services/geo-ip-measurement/manifest.yaml and /etc/swarm-cloud/services/geo-ip-measurement/main.py
 #   (mount or copy them similarly to the wireguard service)
 #
 # - geo-ip-measurement depends on a WireGuard cluster existing and sharing nodes with it.
@@ -24,8 +24,8 @@ CLUSTER_POLICY=${CLUSTER_POLICY:-geo-ip-measurement}
 CLUSTER_ID=${CLUSTER_ID:-geo-ip-measurement}
 
 # Path to manifest file INSIDE the container (configs are mounted to /configs)
-MANIFEST_PATH=${MANIFEST_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}/manifest.yaml}
-LOCATION_PATH=${LOCATION_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}}
+MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}/manifest.yaml}
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
 if [ ! -f "$MANIFEST_PATH" ]; then

@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Note:
 # - The latency-measurement manifest and main.py should be available inside the container at:
-#     /sp/swarm/services/apps/latency-measurement/manifest.yaml and /sp/swarm/services/apps/latency-measurement/main.py
+#     /etc/swarm-cloud/services/latency-measurement/manifest.yaml and /etc/swarm-cloud/services/latency-measurement/main.py
 #   (mount or copy them similarly to the wireguard service)
 #
 # - latency-measurement depends on a WireGuard cluster existing and sharing nodes with it.
@@ -24,8 +24,8 @@ CLUSTER_POLICY=${CLUSTER_POLICY:-latency-measurement}
 CLUSTER_ID=${CLUSTER_ID:-latency-measurement}
 
 # Path to manifest file INSIDE the container (configs are mounted to /configs)
-MANIFEST_PATH=${MANIFEST_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}/manifest.yaml}
-LOCATION_PATH=${LOCATION_PATH:-/sp/swarm/services/apps/${SERVICE_NAME}}
+MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}/manifest.yaml}
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
 if [ ! -f "$MANIFEST_PATH" ]; then
