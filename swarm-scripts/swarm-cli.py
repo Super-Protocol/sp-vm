@@ -9,6 +9,7 @@ import sys
 from typing import List
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from re import search as re_search
 
 def require_cmd(cmd_name: str) -> None:
   if shutil.which(cmd_name) is None:
@@ -104,7 +105,7 @@ def create_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) 
 def create_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) -> None:
   name = args.name
   cluster_policy = args.cluster_policy
-  version = args.version or "1.0.0"
+  version_raw = args.version or "1.0.0"
   location = args.location
   id_value = args.id
 
@@ -127,6 +128,12 @@ def create_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) 
     manifest_content = content
 
   # Parameterize everything; store plain YAML in 'manifest'
+  # Normalize version to an integer to be compatible with INT columns.
+  # - If version contains digits (e.g. 'dev', '1.0.0'), extract the first number
+  # - Fallback to 0 if nothing numeric is present
+  version_match = re_search(r"\d+", str(version_raw))
+  version_normalized = int(version_match.group(0)) if version_match else 0
+
   insert_sql = (
     "INSERT INTO ClusterServices (id, cluster_policy, name, version, location, hash, manifest, updated_ts)\n"
     "VALUES (\n"
@@ -149,7 +156,7 @@ def create_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) 
     "id": id_value,
     "cluster_policy": cluster_policy,
     "name": name,
-    "version": version,
+    "version": version_normalized,
     "location": f"dir://{location}",
     "manifest": manifest_content,
   }
