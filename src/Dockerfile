@@ -215,8 +215,12 @@ RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
 # RKE2: clean default installation inside rootfs (no legacy scripts)
 ARG RKE2_VERSION=v1.32.8+rke2r1
+ARG RKE2_INSTALL_SHA256=2d24db2184dd6b1a5e281fa45cc9a8234c889394721746f89b5fe953fdaaf40a
 ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
-RUN chroot ${OUTPUTDIR} /bin/sh -c 'curl -sfL https://get.rke2.io | sh -' \
+RUN chroot ${OUTPUTDIR} /bin/sh -c 'set -e; \
+    curl -fsSL -o /tmp/rke2-install.sh https://get.rke2.io; \
+    echo "${RKE2_INSTALL_SHA256}  /tmp/rke2-install.sh" | sha256sum -c -; \
+    sh /tmp/rke2-install.sh' \
     && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
     && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
 
