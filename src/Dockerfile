@@ -217,12 +217,9 @@ RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 ARG RKE2_VERSION=v1.32.8+rke2r1
 ARG RKE2_INSTALL_SHA256=2d24db2184dd6b1a5e281fa45cc9a8234c889394721746f89b5fe953fdaaf40a
 ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
-RUN chroot ${OUTPUTDIR} /bin/sh -c 'set -e; \
-    curl -fsSL -o /tmp/rke2-install.sh https://get.rke2.io; \
-    echo "${RKE2_INSTALL_SHA256}  /tmp/rke2-install.sh" | sha256sum -c -; \
-    sh /tmp/rke2-install.sh' \
-    && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-server.service' \
-    && chroot ${OUTPUTDIR} /bin/sh -c 'systemctl disable rke2-agent.service'
+ENV RKE2_INSTALL_SHA256=${RKE2_INSTALL_SHA256}
+ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
+RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
 
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
