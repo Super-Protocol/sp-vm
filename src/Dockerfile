@@ -269,7 +269,9 @@ ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTD
 RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bin"
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
 COPY repos/swarm-cloud ${OUTPUTDIR}/opt/swarm-cloud
-RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud && cp -r ${OUTPUTDIR}/opt/swarm-cloud/services ${OUTPUTDIR}/etc/swarm-cloud/services
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud
+RUN cp -r ${OUTPUTDIR}/opt/swarm-cloud/services ${OUTPUTDIR}/etc/swarm-cloud/services
+RUN cp -r ${OUTPUTDIR}/opt/swarm-cloud/provision-plugin-sdk ${OUTPUTDIR}/etc/swarm-cloud/provision-plugin-sdk
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
 ADD rootfs/files/configs/usr/local/bin/kubectl ${OUTPUTDIR}/usr/local/bin/kubectl
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/kubectl
