@@ -336,7 +336,7 @@ RUN chroot ${OUTPUTDIR} /bin/bash -lc 'python3 -m pip install --break-system-pac
 RUN chroot ${OUTPUTDIR} /bin/bash -lc 'mkdir -p /var/lib/redis /var/log/redis && chown -R redis:redis /var/lib/redis /var/log/redis && chmod 0750 /var/lib/redis'
 # MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
 ADD rootfs/files/scripts/install_mongodb.sh /buildroot/files/scripts/
-RUN --security=insecure /buildroot/files/scripts/install_mongodb.sh
+RUN --security=insecure bash /buildroot/files/scripts/install_mongodb.sh
 # disable autostart without requiring systemd during build (remove enable symlinks for MongoDB)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongod.service \
     && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongod.service \
@@ -352,7 +352,7 @@ RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
 # install provision-plugin-sdk into VM python environment (from prebuilt wheel)
 COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
 ADD rootfs/files/scripts/install_provision_plugin_sdk.sh /buildroot/files/scripts/
-RUN --security=insecure /buildroot/files/scripts/install_provision_plugin_sdk.sh
+RUN --security=insecure bash /buildroot/files/scripts/install_provision_plugin_sdk.sh
 
 # Build info
 ARG SP_VM_IMAGE_VERSION
