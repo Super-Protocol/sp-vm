@@ -20,20 +20,24 @@ function build_swarm_cloud() {
     chroot "${OUTPUTDIR}" /bin/bash -lc 'corepack enable';
 
     log_info "installing Node.js dependencies with pnpm";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'export NX_DAEMON=false NX_ADD_PLUGINS=false NX_NO_CLOUD=true; cd /etc/swarm-cloud && pnpm install --frozen-lockfile';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'export NX_DAEMON=false NX_ADD_PLUGINS=false NX_NO_CLOUD=true; cd /opt/swarm-cloud && pnpm install --frozen-lockfile';
 
     log_info "building swarm-cloud-api";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /etc/swarm-cloud && pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbose';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbose';
 
     log_info "building swarm-node";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /etc/swarm-cloud && pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose';
 
     log_info "publishing built artifacts to /usr/local/lib/swarm-cloud";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud';
-    # copy Node.js dist outputs if present
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [[ -d /etc/swarm-cloud/dist ]]; then cp -r /etc/swarm-cloud/dist /usr/local/lib/swarm-cloud/; fi';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/dist/apps/swarm-cloud-api /usr/local/lib/swarm-cloud/dist/apps/';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/dist/apps/swarm-node /usr/local/lib/swarm-cloud/dist/apps/';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -a /opt/swarm-cloud/node_modules /usr/local/lib/swarm-cloud/node_modules';
     # copy optional prebuilt binary if present
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [[ -f /etc/swarm-cloud/swarm-cloud-api-linux-amd64 ]]; then cp /etc/swarm-cloud/swarm-cloud-api-linux-amd64 /usr/local/lib/swarm-cloud/ && chmod +x /usr/local/lib/swarm-cloud/swarm-cloud-api-linux-amd64; fi';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [[ -f /opt/swarm-cloud/swarm-cloud-api-linux-amd64 ]]; then cp /opt/swarm-cloud/swarm-cloud-api-linux-amd64 /usr/local/lib/swarm-cloud/ && chmod +x /usr/local/lib/swarm-cloud/swarm-cloud-api-linux-amd64; fi';
+
+    log_info "removing sources from /opt/swarm-cloud";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/swarm-cloud || true';
 }
 
 chroot_init;

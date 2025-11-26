@@ -268,7 +268,7 @@ ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTD
 # swarm binaries into VM rootfs
 RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bin"
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
-COPY repos/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
+COPY repos/swarm-cloud ${OUTPUTDIR}/opt/swarm-cloud
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
 ADD rootfs/files/configs/usr/local/bin/kubectl ${OUTPUTDIR}/usr/local/bin/kubectl
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/kubectl
@@ -292,8 +292,9 @@ RUN chmod +x "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
 RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pccs-init.service"
 
 # Custom swarm services
-COPY services/apps/ ${OUTPUTDIR}/etc/swarm-cloud/services/
-RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/*/main.py
+RUN mkdir -p ${OUTPUTDIR}/usr/local/lib/swarm-cloud/services/
+COPY services/apps/ ${OUTPUTDIR}/usr/local/lib/swarm-cloud/services/
+RUN chmod +x ${OUTPUTDIR}/usr/local/lib/swarm-cloud/services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
