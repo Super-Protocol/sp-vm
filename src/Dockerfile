@@ -257,9 +257,10 @@ RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}
 ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
 RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
-ADD rootfs/files/configs/etc/cni/net.d/05-cilium.conflist ${OUTPUTDIR}/etc/cni/net.d/05-cilium.conflist
 ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/etc/sysctl.d/99-zzz-override_cilium.conf
 ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
+RUN mkdir -p "${OUTPUTDIR}/etc/rancher/rke2"
+ADD rootfs/files/configs/etc/rancher/rke2/config.yaml ${OUTPUTDIR}/etc/rancher/rke2/config.yaml
 
 # copy iscsi configs, cause this partition will be remounted with empty dir
 RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
