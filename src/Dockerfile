@@ -317,9 +317,20 @@ RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-cloud"
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
-ARG NODE_VERSION=22.18.0
-COPY --from=swarm-build /root/.nvm/versions/node/v${NODE_VERSION}/bin/node ${OUTPUTDIR}/usr/local/bin/node
 RUN ln -sf /var/lib/rancher/rke2/bin/kubectl "${OUTPUTDIR}/usr/local/bin/kubectl"
+
+# install Node.js
+ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/install_nodejs.sh
+
+# install PCCS
+ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
+ADD rootfs/files/configs/pccs-init/ /buildroot/files/configs/pccs-init/
+RUN --security=insecure /buildroot/files/scripts/install_pccs.sh
+RUN cp /buildroot/files/configs/pccs-init/pccs-init.service "${OUTPUTDIR}/usr/lib/systemd/system/pccs-init.service"
+RUN cp /buildroot/files/configs/pccs-init/pccs-init.sh "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
+RUN chmod +x "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
+RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pccs-init.service"
 
 # Custom swarm services
 COPY services/apps/ ${OUTPUTDIR}/etc/swarm-cloud/services/
@@ -444,14 +455,6 @@ RUN /buildroot/files/scripts/generate_vm_json.sh
 
 ### Start sp_vm ###
 FROM scratch AS sp_vm
-
-ARG NODE_VERSION=22.18.0
-ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
-
 COPY --from=vm_json_builder /output /
 
-#### swarm
-COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
-COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
-COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
 ### End sp_vm ###
