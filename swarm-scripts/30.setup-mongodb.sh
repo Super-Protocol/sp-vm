@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Note:
 # - The mongodb manifest and main.py are provided by the image at:
-#     /etc/swarm-cloud/services/mongodb/{manifest.yaml, main.py}
+#     /etc/swarm-services/mongodb/{manifest.yaml, main.py}
 #   This script only registers service records in SwarmDB.
 # - mongodb depends on a WireGuard cluster existing and sharing nodes with it.
 #   When bootstrapping WireGuard, prefer ClusterPolicy id 'wireguard' to match mongodb's stateExpr.
@@ -25,8 +25,8 @@ CLUSTER_ID=${CLUSTER_ID:-mongodb}
 
 # Location and manifest inside the container.
 # IMPORTANT: This script runs only on one node. All nodes must have the same location available already
-# (baked into the image), so we point to /etc/swarm-cloud/services/${SERVICE_NAME}.
-LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
+# (baked into the image), so we point to /etc/swarm-services/${SERVICE_NAME}.
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
 MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
