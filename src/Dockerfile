@@ -270,7 +270,7 @@ RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bi
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
 COPY repos/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
-RUN cp -f "${OUTPUTDIR}/var/lib/rancher/rke2/bin/kubectl" "${OUTPUTDIR}/usr/local/bin/kubectl" && chmod +x "${OUTPUTDIR}/usr/local/bin/kubectl"
+RUN ln -sf /var/lib/rancher/rke2/bin/kubectl "${OUTPUTDIR}/usr/local/bin/kubectl"
 
 # install Node.js
 ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
