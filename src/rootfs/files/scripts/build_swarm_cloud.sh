@@ -29,12 +29,10 @@ function build_swarm_cloud() {
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose';
 
     log_info "publishing built artifacts to /usr/local/lib/swarm-cloud";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/dist/apps/swarm-cloud-api /usr/local/lib/swarm-cloud/dist/apps/';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/dist/apps/swarm-node /usr/local/lib/swarm-cloud/dist/apps/';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api /usr/local/lib/swarm-cloud/dist/apps/swarm-node';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-cloud-api/dist/* /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api/';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-node/dist/* /usr/local/lib/swarm-cloud/dist/apps/swarm-node/';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -a /opt/swarm-cloud/node_modules /usr/local/lib/swarm-cloud/node_modules';
-    # copy optional prebuilt binary if present
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [[ -f /opt/swarm-cloud/swarm-cloud-api-linux-amd64 ]]; then cp /opt/swarm-cloud/swarm-cloud-api-linux-amd64 /usr/local/lib/swarm-cloud/ && chmod +x /usr/local/lib/swarm-cloud/swarm-cloud-api-linux-amd64; fi';
 
     log_info "removing sources from /opt/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/swarm-cloud || true';
