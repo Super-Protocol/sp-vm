@@ -270,7 +270,7 @@ RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bi
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
 COPY repos/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
-RUN ln -sf /var/lib/rancher/rke2/bin/kubectl "${OUTPUTDIR}/usr/local/bin/kubectl"
+RUN cp -f "${OUTPUTDIR}/var/lib/rancher/rke2/bin/kubectl" "${OUTPUTDIR}/usr/local/bin/kubectl" && chmod +x "${OUTPUTDIR}/usr/local/bin/kubectl"
 
 # install Node.js
 ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
@@ -293,6 +293,12 @@ RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/sy
 # Custom swarm services
 COPY services/apps/ ${OUTPUTDIR}/etc/swarm-cloud/services/
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/*/main.py
+
+# ensure kubectl path compatibility after /var bind mount
+ADD rootfs/files/configs/etc/systemd/system/ensure-kubectl-link.service ${OUTPUTDIR}/etc/systemd/system/ensure-kubectl-link.service
+ADD rootfs/files/configs/usr/local/bin/ensure-kubectl-link.sh ${OUTPUTDIR}/usr/local/bin/ensure-kubectl-link.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/ensure-kubectl-link.sh
+RUN ln -sf /etc/systemd/system/ensure-kubectl-link.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/ensure-kubectl-link.service"
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/

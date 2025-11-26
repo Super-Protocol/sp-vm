@@ -1,0 +1,12 @@
+[Unit]
+Description=Ensure kubectl link in RKE2 bin after /var mount
+After=state_disk_mount.service local-fs.target
+Wants=state_disk_mount.service
+ConditionPathExists=/usr/local/bin/kubectl
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ensure-kubectl-link.sh
+
+[Install]
+WantedBy=multi-user.target
