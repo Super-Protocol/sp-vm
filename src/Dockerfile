@@ -335,16 +335,8 @@ RUN chroot ${OUTPUTDIR} /bin/bash -lc 'python3 -m pip install --break-system-pac
 # ensure redis data/log dirs exist
 RUN chroot ${OUTPUTDIR} /bin/bash -lc 'mkdir -p /var/lib/redis /var/log/redis && chown -R redis:redis /var/lib/redis /var/log/redis && chmod 0750 /var/lib/redis'
 # MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
-RUN chroot ${OUTPUTDIR} /bin/bash -lc 'set -e; \
-    apt update; \
-    apt install -y --no-install-recommends gnupg curl; \
-    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg; \
-    echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-7.0.list; \
-    apt update; \
-    apt install -y --no-install-recommends mongodb-org mongodb-mongosh || (echo \"mongodb-org install failed\" >&2; exit 1); \
-    apt clean; \
-    mkdir -p /var/lib/mongodb /var/log/mongodb; \
-    chown -R mongodb:mongodb /var/lib/mongodb /var/log/mongodb || true'
+ADD rootfs/files/scripts/install_mongodb.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/install_mongodb.sh
 # disable autostart without requiring systemd during build (remove enable symlinks for MongoDB)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongod.service \
     && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongod.service \
@@ -359,13 +351,8 @@ RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
 
 # install provision-plugin-sdk into VM python environment (from prebuilt wheel)
 COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
-RUN chroot ${OUTPUTDIR} /bin/bash -lc 'shopt -s nullglob; set -e; files=(/opt/provision-wheels/*.whl); \
-  if (( ${#files[@]} )); then \
-    python3 -m pip install --break-system-packages "${files[@]}"; \
-  else \
-    echo "No wheels found, installing from source"; \
-    python3 -m pip install --break-system-packages /etc/swarm-cloud/services/provision-plugin-sdk; \
-  fi'
+ADD rootfs/files/scripts/install_provision_plugin_sdk.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/install_provision_plugin_sdk.sh
 
 # Build info
 ARG SP_VM_IMAGE_VERSION
