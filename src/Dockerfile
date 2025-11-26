@@ -139,54 +139,6 @@ RUN make
 RUN make build-linux-amd64
 ### Swarm DB finish
 
-### Swarm start
-FROM ubuntu:24.04 AS swarm-build
-
-USER root
-
-ARG NODE_VERSION=22.18.0
-ENV DEBIAN_FRONTEND=noninteractive
-ENV CFG_DIR=/configs
-ENV NVM_DIR=/root/.nvm
-ENV PATH=$PATH:/root/.nvm/versions/node/v$NODE_VERSION/bin/
-ENV NX_DAEMON=false
-ENV NX_ADD_PLUGINS=false
-ENV NX_NO_CLOUD=true
-
-RUN apt update
-RUN apt install -y \
-    curl \
-    python3 \
-    python3-pip \
-    python3-venv \
-    iproute2 \
-    iptables \
-    wireguard-tools \
-    sqlite3 \
-    mysql-client \
-    jq
-
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-RUN bash -c "source $NVM_DIR/nvm.sh && nvm install $NODE_VERSION && nvm use $NODE_VERSION"
-RUN npm i -g nx@21.5.2 corepack@latest webpack-cli
-RUN curl -fsSL https://get.pnpm.io/install.sh | bash -
-RUN corepack enable
-
-WORKDIR /app/swarm
-
-COPY repos/swarm-cloud /app/swarm/swarm-cloud
-
-WORKDIR /app/swarm/swarm-cloud
-RUN pnpm install --frozen-lockfile
-RUN pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbose
-RUN pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose
-# build provision-plugin-sdk wheel for reuse (use venv to avoid PEP 668 restrictions)
-RUN python3 -m venv /tmp/pvenv \
-    && /tmp/pvenv/bin/pip install --no-cache-dir build wheel sqlalchemy pymysql \
-    && bash -lc 'cd /app/swarm/swarm-cloud/services/provision-plugin-sdk && /tmp/pvenv/bin/python -m build --wheel --outdir /tmp/provision-wheels' \
-    && ls -l /tmp/provision-wheels
-### Swarm finish
-
 ### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
 RUN apt update && apt install -y wget gcc make build-essential debootstrap petname gettext
@@ -316,13 +268,17 @@ ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTD
 # swarm binaries into VM rootfs
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-cloud"
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
-COPY --from=swarm-build /app/swarm/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
+COPY repos/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
 RUN ln -sf /var/lib/rancher/rke2/bin/kubectl "${OUTPUTDIR}/usr/local/bin/kubectl"
 
 # install Node.js
 ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/install_nodejs.sh
+
+# install pnpm and build Node.js applications inside rootfs via script
+ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
 
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
@@ -337,15 +293,9 @@ RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/sy
 COPY services/apps/ ${OUTPUTDIR}/etc/swarm-cloud/services/
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/*/main.py
 
-# tools needed at runtime (prevent daemons from starting in chroot)
-RUN bash -lc 'set -e; echo -e "#!/bin/sh\nexit 101" > "${OUTPUTDIR}/usr/sbin/policy-rc.d"; chmod +x "${OUTPUTDIR}/usr/sbin/policy-rc.d"'
-RUN chroot ${OUTPUTDIR} /usr/bin/apt update \
-    && chroot ${OUTPUTDIR} /usr/bin/apt install -y --no-install-recommends mysql-client python3 python3-pip redis-server redis-tools \
-    && chroot ${OUTPUTDIR} /usr/bin/apt clean
-# Python runtime deps for swarm CLI and services
-RUN chroot ${OUTPUTDIR} /bin/bash -lc 'python3 -m pip install --break-system-packages SQLAlchemy PyMySQL'
-# ensure redis data/log dirs exist
-RUN chroot ${OUTPUTDIR} /bin/bash -lc 'mkdir -p /var/lib/redis /var/log/redis && chown -R redis:redis /var/lib/redis /var/log/redis && chmod 0750 /var/lib/redis'
+# tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
+ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 # MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
 ADD rootfs/files/scripts/install_mongodb.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_mongodb.sh
@@ -361,8 +311,9 @@ RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.s
 RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
     && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
 
-# install provision-plugin-sdk into VM python environment (from prebuilt wheel)
-COPY --from=swarm-build /tmp/provision-wheels ${OUTPUTDIR}/opt/provision-wheels
+# build provision-plugin-sdk wheels inside rootfs (then install)
+ADD rootfs/files/scripts/build_provision_wheels.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/build_provision_wheels.sh
 ADD rootfs/files/scripts/install_provision_plugin_sdk.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_provision_plugin_sdk.sh
 
