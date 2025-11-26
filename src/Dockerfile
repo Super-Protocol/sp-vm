@@ -295,6 +295,10 @@ RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/sy
 RUN mkdir -p ${OUTPUTDIR}/usr/local/lib/swarm-cloud/services/
 COPY services/apps/ ${OUTPUTDIR}/usr/local/lib/swarm-cloud/services/
 RUN chmod +x ${OUTPUTDIR}/usr/local/lib/swarm-cloud/services/*/main.py
+RUN mkdir -p ${OUTPUTDIR}/var/lib/swarm-cloud/services
+RUN cp -r ${OUTPUTDIR}/usr/local/lib/swarm-cloud/services/* ${OUTPUTDIR}/var/lib/swarm-cloud/services/ || true
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud
+RUN cp -r ${OUTPUTDIR}/var/lib/swarm-cloud/services ${OUTPUTDIR}/etc/swarm-cloud/services
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
