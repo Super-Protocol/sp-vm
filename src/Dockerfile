@@ -447,7 +447,6 @@ FROM scratch AS sp_vm
 
 ARG NODE_VERSION=22.18.0
 ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
-ENV PATH=$PATH:/root/.nvm/versions/node/v$NODE_VERSION/bin/
 
 COPY --from=vm_json_builder /output /
 
