@@ -278,6 +278,7 @@ RUN --security=insecure /buildroot/files/scripts/install_nodejs.sh
 
 # install pnpm and build Node.js applications inside rootfs via script
 ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
 
 # install PCCS
@@ -295,6 +296,7 @@ RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 # MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
 ADD rootfs/files/scripts/install_mongodb.sh /buildroot/files/scripts/
