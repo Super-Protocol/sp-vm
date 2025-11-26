@@ -275,6 +275,8 @@ RUN cp -r ${OUTPUTDIR}/opt/swarm-cloud/provision-plugin-sdk ${OUTPUTDIR}/etc/swa
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
 ADD rootfs/files/configs/usr/local/bin/kubectl ${OUTPUTDIR}/usr/local/bin/kubectl
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/kubectl
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-db
+COPY repos/swarm-db/schema.yaml ${OUTPUTDIR}/etc/swarm-db/schema.yaml
 
 # install Node.js
 ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
