@@ -457,13 +457,15 @@ RUN /buildroot/files/scripts/generate_vm_json.sh
 
 ### Start sp_vm ###
 FROM scratch AS sp_vm
+
+ARG NODE_VERSION=22.18.0
+ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+ENV PATH=$PATH:/root/.nvm/versions/node/v$NODE_VERSION/bin/
+
 COPY --from=vm_json_builder /output /
 
 #### swarm
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 /etc/swarm-db/swarm-db-linux-amd64
 COPY --from=swarm-build /app/swarm/swarm-cloud /etc/swarm-cloud
 COPY --from=swarm-build /tmp/provision-wheels /artifacts/provision-wheels
-
-ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
-ENV PATH=$PATH:/root/.nvm/versions/node/v$NODE_VERSION/bin/
 ### End sp_vm ###
