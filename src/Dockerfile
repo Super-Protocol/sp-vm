@@ -316,9 +316,6 @@ RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.s
 RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
     && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
 
-# build provision-plugin-sdk wheels inside rootfs (then install)
-ADD rootfs/files/scripts/build_provision_wheels.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/build_provision_wheels.sh
 ADD rootfs/files/scripts/install_provision_plugin_sdk.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_provision_plugin_sdk.sh
 
