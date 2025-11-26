@@ -414,6 +414,7 @@ RUN /buildroot/files/scripts/generate_vm_json.sh
 
 ### Start sp_vm ###
 FROM scratch AS sp_vm
+ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
 COPY --from=vm_json_builder /output /
 
 ### End sp_vm ###
