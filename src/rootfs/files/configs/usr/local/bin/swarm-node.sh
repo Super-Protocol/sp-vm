@@ -2,6 +2,6 @@
 
 set -euo pipefail
 
-cd /etc/swarm-cloud
+cd /usr/local/lib/swarm-cloud
 
-exec node ./apps/swarm-node/dist/main.js
+exec node ./dist/apps/swarm-node/main.js
