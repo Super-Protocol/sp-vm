@@ -294,7 +294,7 @@ RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/sy
 
 # Custom swarm services
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
-COPY services/apps/* ${OUTPUTDIR}/etc/swarm-services/
+COPY services/apps/ ${OUTPUTDIR}/etc/swarm-services/
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
