@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-cd /etc/swarm-cloud
+cd /usr/local/lib/swarm-cloud
 
 if [[ -x "./swarm-cloud-api-linux-amd64" ]]; then
   exec ./swarm-cloud-api-linux-amd64
@@ -16,5 +16,3 @@ fi
 
 echo "swarm-cloud-api: no runnable entrypoint found (binary or NodeJS dist)" >&2
 exit 1
-
-

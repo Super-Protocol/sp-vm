@@ -27,6 +27,13 @@ function build_swarm_cloud() {
 
     log_info "building swarm-node";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /etc/swarm-cloud && pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose';
+
+    log_info "publishing built artifacts to /usr/local/lib/swarm-cloud";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud';
+    # copy Node.js dist outputs if present
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [[ -d /etc/swarm-cloud/dist ]]; then cp -r /etc/swarm-cloud/dist /usr/local/lib/swarm-cloud/; fi';
+    # copy optional prebuilt binary if present
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [[ -f /etc/swarm-cloud/swarm-cloud-api-linux-amd64 ]]; then cp /etc/swarm-cloud/swarm-cloud-api-linux-amd64 /usr/local/lib/swarm-cloud/ && chmod +x /usr/local/lib/swarm-cloud/swarm-cloud-api-linux-amd64; fi';
 }
 
 chroot_init;
