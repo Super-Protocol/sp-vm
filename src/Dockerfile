@@ -215,6 +215,7 @@ RUN mkdir -p "${OUTPUTDIR}/etc/rancher/rke2"
 ADD rootfs/files/configs/etc/rancher/rke2/config.yaml ${OUTPUTDIR}/etc/rancher/rke2/config.yaml
 
 # copy iscsi configs, cause this partition will be remounted with empty dir
+RUN mkdir -p "${OUTPUTDIR}/etc/iscsi"
 RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
 ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
 RUN /buildroot/files/scripts/setup_sshd_config.sh
@@ -261,6 +262,16 @@ RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/syst
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
 # run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
+
+# provide default RKE2 PSS config for runtime copy by check-config-files.sh
+RUN mkdir -p "${OUTPUTDIR}/etc/super/var/lib/rancher/rke2"
+ADD rootfs/files/configs/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
+
+# swarm one-shot services runner
+ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
+ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
+RUN ln -sf /etc/systemd/system/swarm-services.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-services.service"
 
 # disabling serial getty
 ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
@@ -414,7 +425,6 @@ RUN /buildroot/files/scripts/generate_vm_json.sh
 
 ### Start sp_vm ###
 FROM scratch AS sp_vm
-ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
 COPY --from=vm_json_builder /output /
 
 ### End sp_vm ###

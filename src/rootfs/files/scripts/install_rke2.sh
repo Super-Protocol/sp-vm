@@ -37,7 +37,7 @@ function disable_rke2_service() {
 
 function add_aliases() {
     log_info "adding kubectl aliases"
-    echo "export KUBECONFIG=/var/lib/rancher/rke2/rke2.yaml" >> "$OUTPUTDIR/etc/profile";
+    echo "export KUBECONFIG=/etc/rancher/rke2/rke2.yaml" >> "$OUTPUTDIR/etc/profile";
     echo "alias k='/usr/local/bin/kubectl'" >> "$OUTPUTDIR/etc/profile";
     echo "alias kubectl='/usr/local/bin/kubectl'" >> "$OUTPUTDIR/etc/profile";
 }
