@@ -19,8 +19,8 @@ for src in "${!files[@]}"; do
     if [ ! -d "$dest_dir" ]; then
         mkdir -p "$dest_dir"
     fi
-    # Copy file if it does not exist
-    if [ ! -f "$dest" ]; then
+    # Copy file if it does not exist and source exists
+    if [ ! -f "$dest" ] && [ -f "$src" ]; then
         cp -v "$src" "$dest"
     fi
 done

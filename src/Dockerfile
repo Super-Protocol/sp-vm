@@ -215,6 +215,7 @@ RUN mkdir -p "${OUTPUTDIR}/etc/rancher/rke2"
 ADD rootfs/files/configs/etc/rancher/rke2/config.yaml ${OUTPUTDIR}/etc/rancher/rke2/config.yaml
 
 # copy iscsi configs, cause this partition will be remounted with empty dir
+RUN mkdir -p "${OUTPUTDIR}/etc/iscsi"
 RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
 ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
 RUN /buildroot/files/scripts/setup_sshd_config.sh
