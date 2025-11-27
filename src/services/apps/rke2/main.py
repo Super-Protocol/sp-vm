@@ -184,7 +184,7 @@ spec:
     tunnelProtocol: vxlan
     autoDetectDevices: "interface=wg0"
     mtu: 1370
-    kubeProxyReplacement: strict
+    kubeProxyReplacement: true
 """
 
     (manifests_dir / "rke2-cilium-config.yaml").write_text(cilium_config)
