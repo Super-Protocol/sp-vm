@@ -264,8 +264,7 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/loca
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
 # provide default RKE2 PSS config for runtime copy by check-config-files.sh
-RUN mkdir -p "${OUTPUTDIR}/etc/super/var/lib/rancher/rke2"
-ADD rootfs/files/configs/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
+## removed: legacy bootstrap via local PSS template
 
 # swarm one-shot services runner
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
