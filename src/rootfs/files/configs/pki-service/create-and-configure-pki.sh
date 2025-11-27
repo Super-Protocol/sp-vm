@@ -17,7 +17,7 @@ create_container() {
         echo "Container '${CONTAINER_NAME}' already exists."
     else
         echo "Container '${CONTAINER_NAME}' not found. Creating..."
-        lxc-create -n "${CONTAINER_NAME}" -t oci -- --url docker-archive://root/containers/pki-authority.tar
+        lxc-create -n "${CONTAINER_NAME}" -t oci -- --url docker-archive:/etc/super/containers/pki-authority.tar
         echo "Container '${CONTAINER_NAME}' created."
     fi
 }
