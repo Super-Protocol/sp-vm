@@ -1,0 +1,27 @@
+api:
+  port: 443
+pki:
+  allowedChallenges:
+    - token
+    - tdx
+  allowedSubRootChallenges:
+    - type: tdx
+      signatureVerification: github
+    - type: sev-snp
+      signatureVerification: github
+  tokenChallengeFilePath: /app/access-token
+  ownDomain: ca-subroot.super-protocol.svc.cluster.local
+  ownChallenge:
+    type: tdx
+  certParams:
+    ocspUrl: https://ocsp.certs.superprotocol.com/v1/ocsp
+  keyStorage:
+    type: trusted
+    storage:
+      type: super
+      keysPath: /app/keys
+  mode:
+    role: subroot
+    attestationServiceSource:
+      type: swarm
+      mode: init

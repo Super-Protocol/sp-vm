@@ -17,14 +17,24 @@ create_container() {
         echo "Container '${CONTAINER_NAME}' already exists."
     else
         echo "Container '${CONTAINER_NAME}' not found. Creating..."
-        lxc-create -n "${CONTAINER_NAME}" -t oci -- --url docker-archive:/etc/super/containers/pki-authority.tar
+        lxc-create -n "${CONTAINER_NAME}" -t oci -- --url docker-archive:/etc/super/containers/pki-authority/pki-authority.tar
         echo "Container '${CONTAINER_NAME}' created."
     fi
 }
 
 # Set own challenge type in LXC container configuration
 set_own_challenge() {
-    local src_yaml="/root/containers/lxc-template.yaml"
+    local template_name="lxc-swarm-template.yaml"
+    
+    # Check if vm_mode=legacy is set in kernel command line
+    if grep -q "vm_mode=legacy" /proc/cmdline 2>/dev/null; then
+        template_name="lxc-legacy-vm-template.yaml"
+        echo "Detected vm_mode=legacy in kernel cmdline, using legacy template"
+    else
+        echo "Using swarm template"
+    fi
+    
+    local src_yaml="/etc/super/containers/pki-authority/${template_name}"
     local dst_yaml="/var/lib/lxc/${CONTAINER_NAME}/rootfs/app/conf/lxc.yaml"
     
     if [[ -f "${src_yaml}" ]]; then
