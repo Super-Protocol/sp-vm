@@ -149,7 +149,8 @@ def write_rke2_config(local_node_id: str, local_tunnel_ip: str, is_bootstrap: bo
         f"token: {RKE2_TOKEN}",
         f"node-ip: {local_tunnel_ip}",
         f"node-name: {local_hashed_id}",
-        "cni: cilium"
+        "cni: cilium",
+        "disable-kube-proxy: true"
     ]
 
     # Add TLS SANs for all tunnel IPs
