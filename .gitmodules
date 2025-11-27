@@ -4,8 +4,6 @@
 [submodule "swarm-cloud"]
 	path = src/repos/swarm-cloud
 	url = git@github.com:Super-Protocol/swarm-cloud.git
-	branch = main
 [submodule "swarm-db"]
 	path = src/repos/swarm-db
 	url = git@github.com:Super-Protocol/swarm-db.git
-	branch = main
