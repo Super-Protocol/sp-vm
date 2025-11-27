@@ -1,8 +1,34 @@
 #!/bin/sh
 
-if [ -x /var/lib/rancher/rke2/bin/kubectl ]; then
-  exec /var/lib/rancher/rke2/bin/kubectl "$@"
+KUBECTL="/var/lib/rancher/rke2/bin/kubectl"
+
+if [ -x "$KUBECTL" ]; then
+  exec "$KUBECTL" "$@"
 else
-  echo "kubectl not yet available: expected at /var/lib/rancher/rke2/bin/kubectl" >&2
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl status rke2-server.service >/dev/null 2>&1
+    rc=$?
+    if [ "$rc" -eq 4 ]; then
+      echo "kubectl is not available: RKE2 is not deployed on this node. Please deploy RKE2 via Swarm first." >&2
+    else
+      state=$(systemctl is-active rke2-server.service 2>/dev/null)
+      case "$state" in
+        activating)
+          echo "kubectl is not available yet: RKE2 is starting (rke2-server.service is activating). Please wait until it becomes active." >&2
+          ;;
+        failed)
+          echo "kubectl is not available: RKE2 failed to start (rke2-server.service is failed). Check logs with: journalctl -u rke2-server -xe" >&2
+          ;;
+        active)
+          echo "kubectl not found at $KUBECTL even though RKE2 is active. This is unexpected; please verify your RKE2 installation." >&2
+          ;;
+        *)
+          echo "kubectl is not available: RKE2 is not running (state: $state). Please deploy or start RKE2 via Swarm." >&2
+          ;;
+      esac
+    fi
+  else
+    echo "kubectl not yet available: expected at $KUBECTL. RKE2 may still be starting; please wait until RKE2 is up and running." >&2
+  fi
   exit 127
 fi
