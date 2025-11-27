@@ -1,9 +1,0 @@
-[Unit]
-Description=Check and Copy Config Files Service
-After=local-fs.target network-online.target state_disk_mount.service
-Wants=network-online.target
-Requires=state_disk_mount.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/check-config-files.sh
