@@ -180,9 +180,9 @@ metadata:
 spec:
   valuesContent: |-
     # Use VXLAN overlay and route via WireGuard interface
-    tunnel: vxlan
-    devices:
-      - "wg0"
+    routingMode: tunnel
+    tunnelProtocol: vxlan
+    autoDetectDevices: "interface=wg0"
     mtu: 1370
     kubeProxyReplacement: strict
 """
