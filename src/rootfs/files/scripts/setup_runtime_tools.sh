@@ -32,5 +32,3 @@ function setup_runtime_tools() {
 chroot_init
 setup_runtime_tools
 chroot_deinit
-
-

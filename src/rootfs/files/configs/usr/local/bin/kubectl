@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if [ -x /var/lib/rancher/rke2/bin/kubectl ]; then
+  exec /var/lib/rancher/rke2/bin/kubectl "$@"
+else
+  echo "kubectl not yet available: expected at /var/lib/rancher/rke2/bin/kubectl" >&2
+  exit 127
+fi

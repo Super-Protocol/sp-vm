@@ -266,11 +266,18 @@ ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
 
 # swarm binaries into VM rootfs
-RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-cloud"
-COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
-COPY repos/swarm-cloud ${OUTPUTDIR}/etc/swarm-cloud
-RUN chmod +x ${OUTPUTDIR}/etc/swarm-db/swarm-db-linux-amd64
-RUN ln -sf /var/lib/rancher/rke2/bin/kubectl "${OUTPUTDIR}/usr/local/bin/kubectl"
+RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bin"
+COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
+COPY repos/swarm-cloud ${OUTPUTDIR}/opt/swarm-cloud
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud
+RUN cp -r ${OUTPUTDIR}/opt/swarm-cloud/services ${OUTPUTDIR}/etc/swarm-cloud/services
+RUN cp -r ${OUTPUTDIR}/opt/swarm-cloud/provision-plugin-sdk ${OUTPUTDIR}/etc/swarm-cloud/provision-plugin-sdk
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
+ADD rootfs/files/configs/usr/local/bin/kubectl ${OUTPUTDIR}/usr/local/bin/kubectl
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/kubectl
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-db
+# COPY repos/swarm-db/schema.yaml ${OUTPUTDIR}/etc/swarm-db/schema.yaml
+COPY repos/swarm-cloud/apps/swarm-node-e2e/fixtures/schema.yaml ${OUTPUTDIR}/etc/swarm-db/schema.yaml
 
 # install Node.js
 ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
@@ -291,8 +298,9 @@ RUN chmod +x "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
 RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pccs-init.service"
 
 # Custom swarm services
-COPY services/apps/ ${OUTPUTDIR}/etc/swarm-cloud/services/
-RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/*/main.py
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
+COPY services/apps/ ${OUTPUTDIR}/etc/swarm-services/
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
@@ -313,9 +321,6 @@ RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.s
 RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
     && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
 
-# build provision-plugin-sdk wheels inside rootfs (then install)
-ADD rootfs/files/scripts/build_provision_wheels.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/build_provision_wheels.sh
 ADD rootfs/files/scripts/install_provision_plugin_sdk.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_provision_plugin_sdk.sh
 
@@ -409,6 +414,7 @@ RUN /buildroot/files/scripts/generate_vm_json.sh
 
 ### Start sp_vm ###
 FROM scratch AS sp_vm
+ENV KUBECONFIG=/etc/rancher/rke2/rke2.yaml
 COPY --from=vm_json_builder /output /
 
 ### End sp_vm ###

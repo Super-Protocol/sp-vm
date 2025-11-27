@@ -6,7 +6,7 @@ Requires=swarm-db.service
 
 [Service]
 Type=simple
-WorkingDirectory=/etc/swarm-cloud
+WorkingDirectory=/usr/local/lib/swarm-cloud
 ExecStart=/usr/local/bin/swarm-cloud-api.sh
 StandardOutput=append:/var/log/swarm-cloud-api.log
 StandardError=append:/var/log/swarm-cloud-api-err.log
