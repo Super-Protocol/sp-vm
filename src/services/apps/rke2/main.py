@@ -166,7 +166,7 @@ def write_rke2_config(local_node_id: str, local_tunnel_ip: str, is_bootstrap: bo
     RKE2_CONFIG_FILE.write_text("\n".join(cfg_lines) + "\n")
 
 
-def write_cilium_cni_config():
+def write_cilium_cni_config(k8s_api_host: str, k8s_api_port: int = 6443):
     """Write Cilium CNI configuration for WireGuard."""
     manifests_dir = Path("/var/lib/rancher/rke2/server/manifests")
     manifests_dir.mkdir(parents=True, exist_ok=True)
@@ -185,7 +185,13 @@ spec:
     autoDetectDevices: "interface=wg0"
     mtu: 1370
     kubeProxyReplacement: true
-"""
+    # Connect directly to kube-apiserver (bypass ClusterIP during bootstrap)
+    k8sServiceHost: "%(K8S_HOST)s"
+    k8sServicePort: %(K8S_PORT)d
+""" % {
+        "K8S_HOST": k8s_api_host,
+        "K8S_PORT": k8s_api_port,
+    }
 
     (manifests_dir / "rke2-cilium-config.yaml").write_text(cilium_config)
 
@@ -646,7 +652,9 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
     # Write RKE2 configuration
     try:
         write_rke2_config(local_node_id, local_tunnel_ip, is_bootstrap, leader_tunnel_ip, all_tunnel_ips)
-        write_cilium_cni_config()
+        # Use leader tunnel IP if available (bootstrap node), else local tunnel IP
+        apiserver_host = leader_tunnel_ip if leader_tunnel_ip else local_tunnel_ip
+        write_cilium_cni_config(apiserver_host, 6443)
         write_ingress_nginx_config()
     except Exception as e:
         return PluginOutput(status='error', error_message=f'Failed to write config: {str(e)}', local_state=local_state)
