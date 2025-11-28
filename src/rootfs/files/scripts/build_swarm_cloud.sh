@@ -47,7 +47,7 @@ function build_swarm_cloud() {
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-lock.yaml /usr/local/lib/swarm-cloud/pnpm-lock.yaml || true';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-workspace.yaml /usr/local/lib/swarm-cloud/pnpm-workspace.yaml || true';
     # install Next runtime at root so we can run `next start` without modifying app package.json
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud && pnpm add --prod --no-optional next@~15.2.4 react@19.0.0 react-dom@19.0.0';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud && pnpm add -w --prod --no-optional next@~15.2.4 react@19.0.0 react-dom@19.0.0';
 
     log_info "installing production-only Node.js dependencies (no optional) in app dist folders";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api && pnpm install --prod --frozen-lockfile --no-optional';
