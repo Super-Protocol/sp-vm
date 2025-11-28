@@ -24,9 +24,13 @@ function build_swarm_cloud() {
 
     log_info "building swarm-cloud-api";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-cloud-api --skip-nx-cache --output-style=stream --verbose';
+    log_info "pruning deps and copying workspace modules for swarm-cloud-api";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx run swarm-cloud-api:prune --skip-nx-cache --output-style=stream --verbose';
 
     log_info "building swarm-node";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose';
+    log_info "pruning deps and copying workspace modules for swarm-node";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx run swarm-node:prune --skip-nx-cache --output-style=stream --verbose';
 
     log_info "building swarm-cloud-ui";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-cloud-ui --skip-nx-cache --output-style=stream --verbose || true';
@@ -44,8 +48,8 @@ function build_swarm_cloud() {
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-workspace.yaml /usr/local/lib/swarm-cloud/pnpm-workspace.yaml || true';
 
     log_info "installing production-only Node.js dependencies (no optional) in app dist folders";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api && pnpm install --no-optional --lockfile-dir=/usr/local/lib/swarm-cloud 2>/dev/null || true';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-node && pnpm install --no-optional --lockfile-dir=/usr/local/lib/swarm-cloud';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api && pnpm install --prod --frozen-lockfile --no-optional';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-node && pnpm install --prod --frozen-lockfile --no-optional';
 
     log_info "removing sources from /opt/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/swarm-cloud || true';
