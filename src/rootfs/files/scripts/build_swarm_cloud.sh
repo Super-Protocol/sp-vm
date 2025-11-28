@@ -40,14 +40,15 @@ function build_swarm_cloud() {
     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-node';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-cloud-api/dist/* /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api/ 2>/dev/null || true';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-node/dist/* /usr/local/lib/swarm-cloud/dist/apps/swarm-node/';
-    # UI (Next.js) artifacts location differs by plugin; prefer Nx dist if present, fallback to .next
+    # UI (Next.js): copy built .next to dist (server runtime)
     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [ -d "/opt/swarm-cloud/dist/apps/swarm-cloud-ui" ]; then cp -r /opt/swarm-cloud/dist/apps/swarm-cloud-ui/* /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/; elif [ -d "/opt/swarm-cloud/apps/swarm-cloud-ui/.next" ]; then cp -r /opt/swarm-cloud/apps/swarm-cloud-ui/.next /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/; fi';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [ -d "/opt/swarm-cloud/apps/swarm-cloud-ui/.next" ]; then cp -r /opt/swarm-cloud/apps/swarm-cloud-ui/.next /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/; fi';
+    # ensure Next runtime available at root to run server
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud && pnpm add -w --prod --no-optional next@~15.2.4 react@19.0.0 react-dom@19.0.0';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/package.json /usr/local/lib/swarm-cloud/package.json';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-lock.yaml /usr/local/lib/swarm-cloud/pnpm-lock.yaml || true';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-workspace.yaml /usr/local/lib/swarm-cloud/pnpm-workspace.yaml || true';
-    # install Next runtime at root so we can run `next start` without modifying app package.json
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud && pnpm add -w --prod --no-optional next@~15.2.4 react@19.0.0 react-dom@19.0.0';
+    # no Next runtime install needed when serving static export
 
     log_info "installing production-only Node.js dependencies (no optional) in app dist folders";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api && pnpm install --prod --frozen-lockfile --no-optional';
