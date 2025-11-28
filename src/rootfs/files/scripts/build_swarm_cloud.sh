@@ -46,10 +46,14 @@ function build_swarm_cloud() {
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/package.json /usr/local/lib/swarm-cloud/package.json';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-lock.yaml /usr/local/lib/swarm-cloud/pnpm-lock.yaml || true';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-workspace.yaml /usr/local/lib/swarm-cloud/pnpm-workspace.yaml || true';
+    # ensure UI runtime deps if we need to run "next start" (when no static export)
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [ -d "/usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/.next" ]; then cp /opt/swarm-cloud/apps/swarm-cloud-ui/package.json /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/package.json || true; fi';
 
     log_info "installing production-only Node.js dependencies (no optional) in app dist folders";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api && pnpm install --prod --frozen-lockfile --no-optional';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-node && pnpm install --prod --frozen-lockfile --no-optional';
+    # install UI deps only if we plan to run Next.js server
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [ -f "/usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/package.json" ]; then cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui && pnpm install --prod --frozen-lockfile --no-optional --lockfile-dir=/usr/local/lib/swarm-cloud; fi';
 
     log_info "removing sources from /opt/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/swarm-cloud || true';
