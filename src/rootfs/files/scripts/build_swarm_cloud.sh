@@ -53,7 +53,7 @@ function build_swarm_cloud() {
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api && pnpm install --prod --frozen-lockfile --no-optional';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-node && pnpm install --prod --frozen-lockfile --no-optional';
     # install UI deps only if we plan to run Next.js server
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [ -f "/usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/package.json" ]; then cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui && pnpm install --prod --frozen-lockfile --no-optional --lockfile-dir=/usr/local/lib/swarm-cloud; fi';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [ -f "/usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/package.json" ]; then cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui && pnpm install --prod --no-optional; fi';
 
     log_info "removing sources from /opt/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/swarm-cloud || true';

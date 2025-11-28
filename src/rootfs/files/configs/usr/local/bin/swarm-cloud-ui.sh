@@ -10,7 +10,7 @@ if [[ -d "${UI_DIR}/out" && -f "${UI_DIR}/out/index.html" ]]; then
 elif [[ -d "${UI_DIR}/.next" ]]; then
   cd "${UI_DIR}"
   if [[ -x "./node_modules/.bin/next" ]]; then
-    exec ./node_modules/.bin/next start -p 32198
+    exec ./node_modules/.bin/next start -p 32198 -H 0.0.0.0
   fi
 fi
 
