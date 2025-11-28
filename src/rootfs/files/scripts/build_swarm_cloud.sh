@@ -32,27 +32,20 @@ function build_swarm_cloud() {
     log_info "pruning deps and copying workspace modules for swarm-node";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx run swarm-node:prune --skip-nx-cache --output-style=stream --verbose';
 
-    log_info "building swarm-cloud-ui";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-cloud-ui --skip-nx-cache --output-style=stream --verbose || true';
+    # swarm-cloud-ui build disabled
 
     log_info "publishing built artifacts to /usr/local/lib/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-node';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-cloud-api/dist/* /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api/ 2>/dev/null || true';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-node/dist/* /usr/local/lib/swarm-cloud/dist/apps/swarm-node/';
-    # UI (Next.js): copy built .next to dist (server runtime)
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'if [ -d "/opt/swarm-cloud/apps/swarm-cloud-ui/.next" ]; then cp -r /opt/swarm-cloud/apps/swarm-cloud-ui/.next /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/; fi';
-    # ensure Next runtime available at root to run server
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud && pnpm add -w --prod --no-optional next@~15.2.4 react@19.0.0 react-dom@19.0.0';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/package.json /usr/local/lib/swarm-cloud/package.json';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-lock.yaml /usr/local/lib/swarm-cloud/pnpm-lock.yaml || true';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-workspace.yaml /usr/local/lib/swarm-cloud/pnpm-workspace.yaml || true';
-    # no Next runtime install needed when serving static export
+    # swarm-cloud-ui publish disabled
+    # swarm-cloud-ui runtime deps install disabled
 
     log_info "installing production-only Node.js dependencies (no optional) in app dist folders";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api && pnpm install --prod --frozen-lockfile --no-optional';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-node && pnpm install --prod --frozen-lockfile --no-optional';
+    # swarm-cloud-ui deps install disabled
 
     log_info "removing sources from /opt/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/swarm-cloud || true';
