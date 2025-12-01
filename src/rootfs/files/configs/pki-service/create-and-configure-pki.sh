@@ -139,8 +139,6 @@ update_pccs_url_and_setup_iptables() {
         exit 1
     fi
     
-    #local network=$(echo "${host_ip}" | awk -F. '{print $1"."$2"."$3".0/24"}')
-
     # Enable route_localnet for the bridge to allow routing to localhost
     if [[ $(sysctl -n net.ipv4.conf.${bridge_name}.route_localnet 2>/dev/null) != "1" ]]; then
         sysctl -w net.ipv4.conf.${bridge_name}.route_localnet=1
@@ -149,7 +147,7 @@ update_pccs_url_and_setup_iptables() {
         echo "route_localnet already enabled for ${bridge_name}"
     fi
     
-    # Add DNAT rule to redirect traffic from LXC bridge to localhost (if not already present)
+    # PCCS service on port 8081
     if ! iptables -t nat -C PREROUTING -p tcp -d "${host_ip}" --dport "${service_port}" -j DNAT --to-destination 127.0.0.1:"${service_port}" 2>/dev/null; then
         iptables -t nat -A PREROUTING -p tcp -d "${host_ip}" --dport "${service_port}" -j DNAT --to-destination 127.0.0.1:"${service_port}"
         echo "iptables DNAT rule added: ${host_ip}:${service_port} -> 127.0.0.1:${service_port}"
@@ -157,13 +155,14 @@ update_pccs_url_and_setup_iptables() {
         echo "iptables DNAT rule already exists for ${host_ip}:${service_port}"
     fi
     
-    # Add MASQUERADE rule for the network (if not already present)
-    #if ! iptables -t nat -C POSTROUTING -s "${network}" -j MASQUERADE 2>/dev/null; then
-    #    iptables -t nat -A POSTROUTING -s "${network}" -j MASQUERADE
-    #    echo "iptables MASQUERADE rule added for network ${network}"
-    #else
-    #    echo "iptables MASQUERADE rule already exists for network ${network}"
-    #fi
+    # MongoDB service on port 27017
+    local mongodb_port="27017"
+    if ! iptables -t nat -C PREROUTING -p tcp -d "${host_ip}" --dport "${mongodb_port}" -j DNAT --to-destination 127.0.0.1:"${mongodb_port}" 2>/dev/null; then
+        iptables -t nat -A PREROUTING -p tcp -d "${host_ip}" --dport "${mongodb_port}" -j DNAT --to-destination 127.0.0.1:"${mongodb_port}"
+        echo "iptables DNAT rule added: ${host_ip}:${mongodb_port} -> 127.0.0.1:${mongodb_port}"
+    else
+        echo "iptables DNAT rule already exists for ${host_ip}:${mongodb_port}"
+    fi
     
     # Update PCCS URL in QCNL configuration
     local pccs_url="https://${host_ip}:${service_port}/sgx/certification/v4/"

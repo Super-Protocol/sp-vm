@@ -25,3 +25,6 @@ pki:
     attestationServiceSource:
       type: swarm
       mode: init
+      storage:
+        storageType: mongodb
+        connectionString: mongodb://10.0.3.1:27017/pki
