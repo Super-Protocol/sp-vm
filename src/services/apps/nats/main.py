@@ -93,20 +93,28 @@ def write_nats_config(local_node_id: str, local_tunnel_ip: str, cluster_nodes: l
         f"http: {NATS_MONITOR_PORT}",
         f"host: {local_tunnel_ip}",
         "",
-        "jetstream: true",
-        f"server_name: {local_node_id}",
-        "",
-        "cluster: {",
-        f"  name: {CLUSTER_NAME},",
-        f"  host: {local_tunnel_ip},",
-        f"  port: {NATS_CLUSTER_PORT},",
-        "  routes: [",
-    ]
-    for r in routes:
-        cfg_lines.append(f'    "{r}",')
-    cfg_lines += [
-        "  ]",
+        "jetstream: {",
+        f"  store_dir: \"{(NATS_DATA_DIR / 'jetstream').as_posix()}\"",
         "}",
+        f"server_name: {local_node_id}",
+    ]
+    # Only enable clustering when there are peers to route to.
+    if routes:
+        cfg_lines += [
+            "",
+            "cluster: {",
+            f"  name: {CLUSTER_NAME},",
+            f"  host: {local_tunnel_ip},",
+            f"  port: {NATS_CLUSTER_PORT},",
+            "  routes: [",
+        ]
+        for r in routes:
+            cfg_lines.append(f'    "{r}",')
+        cfg_lines += [
+            "  ]",
+            "}",
+        ]
+    cfg_lines += [
         "",
         "resolver: memory",
         "no_auth_user: ''",
