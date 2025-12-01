@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Optional
 
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
+import pwd
+import grp
 
 # Configuration
 NATS_VERSION = os.environ.get("NATS_VERSION", "2")  # informational
@@ -28,6 +30,34 @@ plugin = ProvisionPlugin()
 
 
 # Helpers
+def _get_uid_gid(user: str, group: str) -> tuple[int, int]:
+    """Return uid,gid for user/group, fallback to 0 if not found."""
+    try:
+        uid = pwd.getpwnam(user).pw_uid
+    except KeyError:
+        uid = 0
+    try:
+        gid = grp.getgrnam(group).gr_gid
+    except KeyError:
+        gid = 0
+    return uid, gid
+
+
+def _ensure_dir_owned(path: Path, user: str, group: str, mode: int = 0o750) -> None:
+    """Ensure directory exists with given owner and mode."""
+    path.mkdir(parents=True, exist_ok=True)
+    uid, gid = _get_uid_gid(user, group)
+    try:
+        os.chown(path.as_posix(), uid, gid)
+    except PermissionError:
+        # Not fatal; service may still have access if perms allow
+        pass
+    try:
+        os.chmod(path.as_posix(), mode)
+    except PermissionError:
+        pass
+
+
 def get_node_tunnel_ip(node_id: str, wg_props: list) -> Optional[str]:
     for prop in wg_props:
         if prop.get("node_id") == node_id and prop.get("name") == "tunnel_ip":
@@ -75,7 +105,8 @@ def install_nats():
 
 def write_nats_config(local_node_id: str, local_tunnel_ip: str, cluster_nodes: list, wg_props: list):
     NATS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    NATS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # Ensure data dir is owned by nats so JetStream can create subdirs
+    _ensure_dir_owned(NATS_DATA_DIR, user="nats", group="nats", mode=0o750)
 
     # Build routes for all peers except self
     routes = []
@@ -163,7 +194,9 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
     try:
         if not is_nats_available():
             install_nats()
-        Path("/var/log/nats").mkdir(parents=True, exist_ok=True)
+        # Ensure runtime dirs exist and owned by nats
+        _ensure_dir_owned(Path("/var/log/nats"), user="nats", group="nats", mode=0o750)
+        _ensure_dir_owned(NATS_DATA_DIR, user="nats", group="nats", mode=0o750)
         return PluginOutput(status="completed", local_state=input_data.local_state)
     except Exception as e:
         return PluginOutput(status="error", error_message=str(e), local_state=input_data.local_state)
