@@ -292,6 +292,12 @@ ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
 
+# build sp-swarm-services applications inside rootfs via script
+COPY repos/sp-swarm-services ${OUTPUTDIR}/opt/sp-swarm-services
+ADD rootfs/files/scripts/build_swarm_services.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/build_swarm_services.sh
+RUN --security=insecure /buildroot/files/scripts/build_swarm_services.sh
+
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
 ADD rootfs/files/configs/pccs-init/ /buildroot/files/configs/pccs-init/
