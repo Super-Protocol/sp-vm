@@ -141,7 +141,7 @@ RUN make build-linux-amd64
 
 ### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
-RUN apt update && apt install -y wget gcc make build-essential debootstrap petname gettext
+RUN apt update && apt install -y wget gcc make build-essential debootstrap petname gettext git golang
 
 ARG PROVIDER_CONFIG_DST=/sp
 ARG VERSION_CODENAME=noble
