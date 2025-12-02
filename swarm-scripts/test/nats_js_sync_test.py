@@ -2,6 +2,7 @@
 import argparse
 import asyncio
 import os
+import json
 import socket
 import sys
 import time
@@ -90,6 +91,7 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description="NATS JetStream sync test: publish from local and read from all endpoints.")
     parser.add_argument("--urls", required=True, help="Comma-separated NATS URLs, e.g. nats://10.0.0.1:4222,nats://10.0.0.2:4222")
     parser.add_argument("--local-url", default=None, help="Local node NATS URL to publish from (default: first from --urls)")
+    parser.add_argument("--id", dest="sender_id", default=None, help="Custom sender id to embed in message (or use env NATS_TEST_ID)")
     parser.add_argument("--subject", default="test.sync", help="Subject to publish/consume")
     parser.add_argument("--stream", default="SYNC_TEST", help="JetStream stream name to use/create")
     parser.add_argument("--replicas", type=int, default=0, help="Desired stream replicas (0 -> equals number of urls, min 1)")
@@ -106,7 +108,15 @@ async def main() -> int:
     local_url = args.local_url.strip() if args.local_url else urls[0]
     replicas = args.replicas if args.replicas > 0 else len(urls)
     host = socket.gethostname()
-    payload = (args.message or f"hello from {host} at {int(time.time())}").encode("utf-8")
+    sender_id = (args.sender_id or os.environ.get("NATS_TEST_ID") or host).strip()
+    payload_obj = {
+        "sender_id": sender_id,
+        "host": host,
+        "ts": int(time.time()),
+        "pid": os.getpid(),
+        "message": args.message or "",
+    }
+    payload = json.dumps(payload_obj, ensure_ascii=False).encode("utf-8")
 
     # Ensure stream exists (best-effort connect to first reachable)
     stream_ok = False
@@ -149,7 +159,12 @@ async def main() -> int:
     for u, msgs in all_msgs.items():
         print(f"{u}:")
         for i, m in enumerate(msgs, 1):
-            print(f"  [{i}] {m}")
+            # Try to parse JSON payload for clearer attribution
+            try:
+                obj = json.loads(m)
+                print(f"  [{i}] sender={obj.get('sender_id')} host={obj.get('host')} ts={obj.get('ts')} pid={obj.get('pid')} msg={obj.get('message')}")
+            except Exception:
+                print(f"  [{i}] {m}")
 
     # Success criteria: each endpoint read at least 1 message, and globally we saw at least the number of publishes
     # Since you'll run this script on each node, set --count to expected total before each run if needed.
