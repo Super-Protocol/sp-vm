@@ -226,7 +226,6 @@ RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
 ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
 
-ADD rootfs/files/configs/pki-service/create-and-configure-pki.sh "${OUTPUTDIR}/usr/local/bin"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/containers/pki-authority"
 COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-18725490828 /pki-authority.tar "${OUTPUTDIR}/etc/super/containers/pki-authority/pki-authority.tar"
 ADD rootfs/files/configs/pki-service/lxc-swarm-template.yaml "${OUTPUTDIR}/etc/super/containers/pki-authority/lxc-swarm-template.yaml"
