@@ -1,8 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
-APP_DIR="/usr/local/lib/sp-swarm-services/apps/api-gateway"
-ETC_DIR="/etc/sp-swarm-services/apps/api-gateway"
+BASE_DIR="/usr/local/lib/sp-swarm-services"
+APP_PATH="apps/api-gateway"
+APP_DIR="${BASE_DIR}/$APP_PATH"
+ETC_DIR="/etc/sp-swarm-services/$APP_PATH"
 SP_CONFIG="/sp/swarm/services/sp-swarm-services/api-gateway/configuration.yaml"
 ETC_CONFIG="${ETC_DIR}/configuration.yaml"
 
@@ -22,5 +24,5 @@ else
 fi
 
 export NODE_ENV="${NODE_ENV:-production}"
-cd "${APP_DIR}"
-exec node ./dist/main.js
+cd "${BASE_DIR}"
+exec npm run start -w $APP_PATH
