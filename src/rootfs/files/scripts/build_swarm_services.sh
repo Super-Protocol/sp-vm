@@ -29,10 +29,10 @@ function build_swarm_services() {
     local target="/usr/local/lib/sp-swarm-services";
 
     log_info "installing Node.js dependencies with npm ci";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/sp-swarm-services && npm ci';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/sp-swarm-services && npm ci -a';
 
     log_info "building all workspaces";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/sp-swarm-services && npm run build';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/sp-swarm-services && npm run build -a';
 
     log_info "preparing ${target}";
     chroot "${OUTPUTDIR}" /bin/bash -lc "set -e; rm -rf ${target}; mkdir -p ${target}/apps";
