@@ -29,7 +29,7 @@ function build_swarm_services() {
     local target="/usr/local/lib/sp-swarm-services";
 
     log_info "installing Node.js dependencies with npm ci";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/sp-swarm-services && npm ci -a';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/sp-swarm-services && npm ci --no-fund --no-audit --no-progress --loglevel=error -a';
 
     log_info "building all workspaces";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/sp-swarm-services && npm run build -a';
@@ -44,11 +44,19 @@ function build_swarm_services() {
     for service in "${services[@]}"; do
         local dir_name="${service#@apps/}";
         log_info "copying service ${service}";
-        chroot "${OUTPUTDIR}" /bin/bash -lc "set -e; src=/opt/sp-swarm-services/apps/${dir_name}; dst=${target}/apps/${dir_name}; mkdir -p \"\$dst\"; cp \"\$src/package.json\" \"\$dst/\"; [ -f \"\$src/configuration.example.yaml\" ] && cp \"\$src/configuration.example.yaml\" \"\$dst/\"; [ -d \"\$src/dist\" ] && cp -r \"\$src/dist\" \"\$dst/\"";
+        chroot "${OUTPUTDIR}" /bin/bash -lc "set -e; \
+            src=/opt/sp-swarm-services/apps/${dir_name}; \
+            dst=${target}/apps/${dir_name}; \
+            mkdir -p \"\$dst\"; \
+            cp \"\$src/package.json\" \"\$dst/\"; \
+            [ -f \"\$src/configuration.example.yaml\" ] && cp \"\$src/configuration.example.yaml\" \"\$dst/\"; \
+            [ -d \"\$src/dist\" ] && cp -r \"\$src/dist\" \"\$dst/\"";
     done
 
     log_info "removing sources from /opt/sp-swarm-services";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/sp-swarm-services || true';
+
+    chroot "${target}" /bin/bash -lc "npm ci --omit=dev --no-fund --no-audit --no-progress --loglevel=error -a"
 }
 
 chroot_init;
