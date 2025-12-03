@@ -16,14 +16,22 @@ source "${BUILDROOT}/files/scripts/log.sh";
 source "${BUILDROOT}/files/scripts/chroot.sh";
 
 function build_swarm_services() {
-    local services=(
-        "@apps/api-gateway"
-        "@apps/workload-service"
-        "@apps/blockchain-observer-service"
-        "@apps/tee-entry-certificates-service"
-        "@apps/content-certificates-service"
-        "@apps/version-certificates-service"
-        "@apps/resource-certificates-service"
+    local workspaces=(
+        "apps/api-gateway"
+        "apps/workload-service"
+        "apps/blockchain-observer-service"
+        "apps/tee-entry-certificates-service"
+        "apps/content-certificates-service"
+        "apps/version-certificates-service"
+        "apps/resource-certificates-service"
+        "packages/blockchain"
+        "packages/common"
+        "packages/config"
+        "packages/dto"
+        "packages/metrics"
+        "packages/resource-certificates-client"
+        "packages/utils"
+        "packages/version-certificates-client"
     );
 
     local target="/usr/local/lib/sp-swarm-services";
@@ -40,12 +48,11 @@ function build_swarm_services() {
     chroot "${OUTPUTDIR}" /bin/bash -lc "cp /opt/sp-swarm-services/package-lock.json ${target}/package-lock.json";
     chroot "${OUTPUTDIR}" /bin/bash -lc "cp /opt/sp-swarm-services/env.example ${target}/env.example || true";
 
-    for service in "${services[@]}"; do
-        local dir_name="${service#@apps/}";
-        log_info "copying service ${service}";
+    for workspace in "${workspaces[@]}"; do
+        log_info "copying service ${workspace}";
         chroot "${OUTPUTDIR}" /bin/bash -lc "set -e; \
-            src=/opt/sp-swarm-services/apps/${dir_name}; \
-            dst=${target}/apps/${dir_name}; \
+            src=/opt/sp-swarm-services/${workspace}; \
+            dst=${target}/${workspace}; \
             mkdir -p \"\$dst\"; \
             cp \"\$src/package.json\" \"\$dst/\"; \
             [ -f \"\$src/configuration.example.yaml\" ] && cp \"\$src/configuration.example.yaml\" \"\$dst/\"; \
