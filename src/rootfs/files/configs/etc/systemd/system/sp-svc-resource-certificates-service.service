@@ -1,0 +1,18 @@
+[Unit]
+Description=SP Swarm Service - resource-certificates-service
+After=network-online.target nats-server.service redis-server.service mongod.service
+Wants=network-online.target
+Requires=nats-server.service redis-server.service mongod.service
+
+[Service]
+Type=simple
+WorkingDirectory=/usr/local/lib/sp-swarm-services/apps/resource-certificates-service
+ExecStart=/usr/local/bin/sp-svc-resource-certificates-service.sh
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/sp-svc-resource-certificates-service.log
+StandardError=append:/var/log/sp-svc-resource-certificates-service-err.log
+
+[Install]
+WantedBy=multi-user.target

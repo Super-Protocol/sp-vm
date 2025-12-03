@@ -259,6 +259,31 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/loca
 # run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
+# sp-swarm-services systemd units and runners
+ADD rootfs/files/configs/usr/local/bin/sp-svc-api-gateway.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-api-gateway.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-workload-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-workload-service.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-blockchain-observer-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-blockchain-observer-service.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-tee-entry-certificates-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-tee-entry-certificates-service.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-content-certificates-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-content-certificates-service.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-version-certificates-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-version-certificates-service.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-resource-certificates-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-resource-certificates-service.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/sp-svc-*.sh
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-api-gateway.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-api-gateway.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-workload-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-workload-service.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-blockchain-observer-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-blockchain-observer-service.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-tee-entry-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-tee-entry-certificates-service.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-content-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-content-certificates-service.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-version-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-version-certificates-service.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-resource-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-resource-certificates-service.service
+# Enable all sp-swarm-services by default
+RUN ln -sf /etc/systemd/system/sp-svc-api-gateway.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-api-gateway.service" && \
+    ln -sf /etc/systemd/system/sp-svc-workload-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-workload-service.service" && \
+    ln -sf /etc/systemd/system/sp-svc-blockchain-observer-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-blockchain-observer-service.service" && \
+    ln -sf /etc/systemd/system/sp-svc-tee-entry-certificates-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-tee-entry-certificates-service.service" && \
+    ln -sf /etc/systemd/system/sp-svc-content-certificates-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-content-certificates-service.service" && \
+    ln -sf /etc/systemd/system/sp-svc-version-certificates-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-version-certificates-service.service" && \
+    ln -sf /etc/systemd/system/sp-svc-resource-certificates-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-resource-certificates-service.service"
+
 # swarm one-shot services runner
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
 ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/bin/swarm-services.sh

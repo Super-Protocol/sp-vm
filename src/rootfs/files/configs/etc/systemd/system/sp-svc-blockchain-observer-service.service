@@ -1,0 +1,18 @@
+[Unit]
+Description=SP Swarm Service - blockchain-observer-service
+After=network-online.target nats-server.service redis-server.service mongod.service
+Wants=network-online.target
+Requires=nats-server.service redis-server.service mongod.service
+
+[Service]
+Type=simple
+WorkingDirectory=/usr/local/lib/sp-swarm-services/apps/blockchain-observer-service
+ExecStart=/usr/local/bin/sp-svc-blockchain-observer-service.sh
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/sp-svc-blockchain-observer-service.log
+StandardError=append:/var/log/sp-svc-blockchain-observer-service-err.log
+
+[Install]
+WantedBy=multi-user.target

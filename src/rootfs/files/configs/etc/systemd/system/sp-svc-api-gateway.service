@@ -1,0 +1,18 @@
+[Unit]
+Description=SP Swarm Service - api-gateway
+After=network-online.target nats-server.service
+Wants=network-online.target
+Requires=nats-server.service
+
+[Service]
+Type=simple
+WorkingDirectory=/usr/local/lib/sp-swarm-services/apps/api-gateway
+ExecStart=/usr/local/bin/sp-svc-api-gateway.sh
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/sp-svc-api-gateway.log
+StandardError=append:/var/log/sp-svc-api-gateway-err.log
+
+[Install]
+WantedBy=multi-user.target
