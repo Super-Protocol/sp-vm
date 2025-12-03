@@ -18,7 +18,6 @@ from helpers import (
     update_pccs_url,
     LXCContainer,
     PKI_SERVICE_NAME,
-    VMMode,
     get_node_tunnel_ip,
     init_container,
 )
@@ -45,14 +44,6 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
 def handle_apply(input_data: PluginInput) -> PluginOutput:
     """Apply PKI Authority configuration and start service."""
 
-    cpu_type = detect_cpu_type()
-    patch_yaml_config(cpu_type)
-    set_subroot_env()
-    patch_lxc_config(cpu_type)
-    setup_iptables()
-    update_pccs_url()
-
-
     local_node_id = input_data.local_node_id
     state_json = input_data.state or {}
     local_state = input_data.local_state or {}
@@ -67,6 +58,13 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
         return PluginOutput(status="error", error_message="Local node has no WireGuard tunnel IP", local_state=local_state)
 
     try:
+        cpu_type = detect_cpu_type()
+        delete_iptables_rules()
+        patch_yaml_config(cpu_type)
+        set_subroot_env()
+        patch_lxc_config(cpu_type)
+        update_pccs_url()
+        setup_iptables(local_tunnel_ip)
         container = LXCContainer(PKI_SERVICE_NAME)
         
         # Start or restart LXC container

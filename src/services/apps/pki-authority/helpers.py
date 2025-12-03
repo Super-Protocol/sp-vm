@@ -21,6 +21,9 @@ SERVICE_INSIDE_CONTAINER = "tee-pki"
 BRIDGE_NAME = "lxcbr0"
 PCCS_PORT = "8081"
 MONGODB_PORT = "27017"
+PKI_SERVICE_EXTERNAL_PORT = "8443"
+CONTAINER_IP = "10.0.3.100"
+WIREGUARD_INTERFACE = "wg0"
 
 
 class VMMode(Enum):
@@ -434,23 +437,27 @@ def add_iptables_rule(host_ip: str, port: str):
         print(f"iptables DNAT rule added: {host_ip}:{port} -> 127.0.0.1:{port}")
 
 def delete_iptables_rules():
-    """Delete all iptables DNAT rules in PREROUTING that contain host_ip."""
+    """Delete all iptables NAT rules for PKI container."""
     host_ip = get_bridge_ip(BRIDGE_NAME)
-    result = subprocess.run(
-        ["iptables", "-t", "nat", "-S", "PREROUTING"],
-        capture_output=True, text=True, check=True
-    )
     
-    rules = result.stdout.splitlines()
-    
-    for rule in rules:
-        if host_ip in rule:
-            delete_rule = rule.replace("-A", "-D", 1)
-            subprocess.run(["iptables", "-t", "nat"] + delete_rule.split()[1:], check=True)
-            print(f"Deleted iptables rule: {delete_rule}")
+    # Delete rules from all chains: PREROUTING, OUTPUT, POSTROUTING
+    for chain in ["PREROUTING", "OUTPUT", "POSTROUTING"]:
+        result = subprocess.run(
+            ["iptables", "-t", "nat", "-S", chain],
+            capture_output=True, text=True, check=True
+        )
+        
+        rules = result.stdout.splitlines()
+        
+        for rule in rules:
+            # Delete rules that contain host_ip or CONTAINER_IP
+            if host_ip in rule or CONTAINER_IP in rule:
+                delete_rule = rule.replace("-A", "-D", 1)
+                subprocess.run(["iptables", "-t", "nat"] + delete_rule.split()[1:], check=True)
+                print(f"Deleted iptables rule: {delete_rule}")
 
 
-def setup_iptables():
+def setup_iptables(wg_ip):
     """Setup iptables NAT rules for LXC container access to host services."""
     host_ip = get_bridge_ip(BRIDGE_NAME)
     
@@ -460,6 +467,47 @@ def setup_iptables():
     # Add iptables rules for PCCS and MongoDB
     add_iptables_rule(host_ip, PCCS_PORT)
     add_iptables_rule(host_ip, MONGODB_PORT)
+    
+    # Add WireGuard interface routing rules
+    # Route external traffic from WireGuard to container
+    subprocess.run(
+        [
+            "iptables", "-t", "nat", "-A", "PREROUTING",
+            "-i", WIREGUARD_INTERFACE,
+            "-p", "tcp",
+            "--dport", PKI_SERVICE_EXTERNAL_PORT,
+            "-j", "DNAT",
+            "--to-destination", f"{CONTAINER_IP}:443"
+        ],
+        check=True
+    )
+    print(f"Added iptables rule: PREROUTING WireGuard {PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443")
+    
+    # Route local traffic to container
+    subprocess.run(
+        [
+            "iptables", "-t", "nat", "-A", "OUTPUT",
+            "-d", wg_ip,
+            "-p", "tcp",
+            "--dport", PKI_SERVICE_EXTERNAL_PORT,
+            "-j", "DNAT",
+            "--to-destination", f"{CONTAINER_IP}:443"
+        ],
+        check=True
+    )
+    print(f"Added iptables rule: OUTPUT {wg_ip}:{PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443")
+    
+    # Add masquerading for container traffic
+    subprocess.run(
+        [
+            "iptables", "-t", "nat", "-A", "POSTROUTING",
+            "-s", f"{CONTAINER_IP}/32",
+            "-j", "MASQUERADE"
+        ],
+        check=True
+    )
+    print(f"Added iptables rule: POSTROUTING MASQUERADE for {CONTAINER_IP}/32")
+
 
 
 def update_pccs_url():
