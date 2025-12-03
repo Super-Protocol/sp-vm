@@ -1,0 +1,68 @@
+name: sp-workload-service
+version: 1.0.0
+commands:
+  - init
+  - apply
+  - health
+  - finalize
+  - destroy
+healthcheckIntervalSecs: 60
+entrypoint: main.py
+stateExpr:
+  engine: jq
+  query: |
+    ($swarmdb.clusters[] | select(.id == "{{ clusterId }}" and .deleted_ts == null)) as $cluster |
+
+    ([$swarmdb.clusternodes[] | select(.cluster == "{{ clusterId }}" and .deleted_ts == null)]) as $svcClusterNodes |
+
+    ($svcClusterNodes | map(.node)) as $svcNodeIds |
+
+    (
+      $swarmdb.clusters[] |
+      select(.cluster_policy == "wireguard" and .deleted_ts == null) |
+      select(
+        (
+          [$swarmdb.clusternodes[] | select(.deleted_ts == null and (.node | IN($svcNodeIds[])))] |
+          length > 0
+        )
+      )
+    ) as $wgCluster |
+
+    {
+      cluster: {
+        id: $cluster.id,
+        cluster_policy: $cluster.cluster_policy,
+        leader_node: $cluster.leader_node
+      },
+
+      clusterNodes: [
+        $svcClusterNodes[] |
+        {id, node_id: .node, cluster}
+      ] | sort_by(.id, .node_id, .cluster),
+
+      workloadServiceNodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith("{{ clusterId }}:")) and
+          .deleted_ts == null and
+          (.name | startswith("workload_service_"))
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
+      wgCluster: {
+        id: $wgCluster.id
+      },
+
+      wgNodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith($wgCluster.id)) and
+          .deleted_ts == null and
+          .name == "tunnel_ip"
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id)
+    }
+
+
