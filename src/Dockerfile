@@ -267,6 +267,7 @@ RUN ln -sf /etc/systemd/system/swarm-services.service "${OUTPUTDIR}/etc/systemd/
 
 # disabling serial getty
 ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
+RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
 
 # swarm binaries into VM rootfs
 RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bin"
@@ -424,5 +425,4 @@ RUN /buildroot/files/scripts/generate_vm_json.sh
 ### Start sp_vm ###
 FROM scratch AS sp_vm
 COPY --from=vm_json_builder /output /
-
 ### End sp_vm ###
