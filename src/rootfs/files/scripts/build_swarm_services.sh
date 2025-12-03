@@ -39,7 +39,6 @@ function build_swarm_services() {
     chroot "${OUTPUTDIR}" /bin/bash -lc "cp /opt/sp-swarm-services/package.json ${target}/package.json";
     chroot "${OUTPUTDIR}" /bin/bash -lc "cp /opt/sp-swarm-services/package-lock.json ${target}/package-lock.json";
     chroot "${OUTPUTDIR}" /bin/bash -lc "cp /opt/sp-swarm-services/env.example ${target}/env.example || true";
-    chroot "${OUTPUTDIR}" /bin/bash -lc "cp -a /opt/sp-swarm-services/node_modules ${target}/node_modules";
 
     for service in "${services[@]}"; do
         local dir_name="${service#@apps/}";
@@ -55,8 +54,7 @@ function build_swarm_services() {
 
     log_info "removing sources from /opt/sp-swarm-services";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/sp-swarm-services || true';
-
-    chroot "${target}" /bin/bash -lc "cd ${target} && npm ci --omit=dev --no-fund --no-audit --no-progress --loglevel=error -a"
+    chroot "${OUTPUTDIR}" /bin/bash -lc "cd ${target} && npm ci --omit=dev --no-fund --no-audit --no-progress --loglevel=error"
 }
 
 chroot_init;
