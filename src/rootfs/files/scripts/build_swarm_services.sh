@@ -56,7 +56,7 @@ function build_swarm_services() {
             mkdir -p \"\$dst\"; \
             cp \"\$src/package.json\" \"\$dst/\"; \
             [ -f \"\$src/configuration.example.yaml\" ] && cp \"\$src/configuration.example.yaml\" \"\$dst/\"; \
-            [ -d \"\$src/dist\" ] && cp -r \"\$src/dist\" \"\$dst/\"";
+            [ -d \"\$src/dist\" ] && cp -fR \"\$src/dist\" \"\$dst/\"";
     done
 
     log_info "removing sources from /opt/sp-swarm-services";
