@@ -68,11 +68,27 @@ RUN make -j gen_init_cpio
 RUN install gen_init_cpio /usr/sbin/
 ### End gen_init_cpio ###
 
+### Start e2fsprogs ###
+FROM ubuntu:24.04 AS e2fsprogs_builder
+RUN apt-get update && apt-get install -y wget gcc make build-essential
+ARG e2fsprogs_version=1.47.3
+ADD https://github.com/tytso/e2fsprogs/archive/refs/tags/v${e2fsprogs_version}.tar.gz /tmp/e2fsprogs-${e2fsprogs_version}.tar.gz
+RUN tar -C /tmp -xvf/tmp/e2fsprogs-${e2fsprogs_version}.tar.gz
+WORKDIR /tmp/e2fsprogs-${e2fsprogs_version}
+RUN ./configure CFLAGS='-g -O2 -static' LDFLAGS='-static'
+RUN make -j
+RUN mkdir -p /initramfs-root/sbin
+RUN cp /tmp/e2fsprogs-${e2fsprogs_version}/misc/mke2fs /initramfs-root/sbin/mkfs.ext4
+RUN strip /initramfs-root/sbin/mkfs.ext4
+### End e2fsprogs ###
+
 ### Start initramfs ###
 FROM gen_init_cpio_builder AS initramfs_builder
 COPY --from=busybox_builder /initramfs-root/sbin/busybox /initramfs-root/sbin/
 COPY --from=util_linux_builder /initramfs-root/sbin/blkid /initramfs-root/sbin/
 COPY --from=cryptsetup_builder /initramfs-root/sbin/veritysetup.static /initramfs-root/sbin/
+COPY --from=cryptsetup_builder /initramfs-root/sbin/cryptsetup.static /initramfs-root/sbin/
+COPY --from=e2fsprogs_builder /initramfs-root/sbin/mkfs.ext4 /initramfs-root/sbin/
 ADD initramfs/files/initramfs.list /initramfs-root/initramfs.list
 ADD initramfs/files/init.sh /initramfs-root/sbin/init.sh
 RUN gen_init_cpio /initramfs-root/initramfs.list | gzip -9 -n > /initramfs-root/initramfs.cpio.gz
