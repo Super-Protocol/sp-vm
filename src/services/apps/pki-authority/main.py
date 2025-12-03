@@ -10,12 +10,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 from helpers import (
     delete_iptables_rules,
     detect_cpu_type,
-    set_own_challenge,
+    detect_vm_mode,
+    patch_yaml_config,
     set_subroot_env,
     patch_lxc_config,
-    update_pccs_url_and_setup_iptables,
+    setup_iptables,
+    update_pccs_url,
     LXCContainer,
     PKI_SERVICE_NAME,
+    VMMode,
     get_node_tunnel_ip,
     init_container,
 )
@@ -43,10 +46,11 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
     """Apply PKI Authority configuration and start service."""
 
     cpu_type = detect_cpu_type()
-    set_own_challenge(cpu_type)
+    patch_yaml_config(cpu_type)
     set_subroot_env()
     patch_lxc_config(cpu_type)
-    update_pccs_url_and_setup_iptables()
+    setup_iptables()
+    update_pccs_url()
 
 
     local_node_id = input_data.local_node_id

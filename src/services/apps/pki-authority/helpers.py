@@ -14,10 +14,20 @@ import urllib.request
 import ssl
 from pathlib import Path
 from typing import List, Optional
+from enum import Enum
 
 PKI_SERVICE_NAME = "pki-authority"
 SERVICE_INSIDE_CONTAINER = "tee-pki"
 BRIDGE_NAME = "lxcbr0"
+PCCS_PORT = "8081"
+MONGODB_PORT = "27017"
+
+
+class VMMode(Enum):
+    """VM mode types."""
+    LEGACY = "legacy"
+    SWARM_INIT = "swarm-init"
+    SWARM_NORMAL = "swarm-normal"
 
 class LXCContainer:
     """Manager for LXC container operations."""
@@ -204,22 +214,33 @@ def detect_cpu_type() -> str:
     else:
         return "untrusted"
 
-def set_own_challenge(cpu_type: str):
-    """Set own challenge type in LXC container configuration."""
-    # Check if vm_mode=legacy is set in kernel command line
+
+def detect_vm_mode() -> VMMode:
+    """Detect VM mode from kernel command line."""
     try:
         with open("/proc/cmdline", "r") as f:
             cmdline = f.read()
         
         if "vm_mode=legacy" in cmdline:
-            template_name = "lxc-legacy-vm-template.yaml"
-            print("Detected vm_mode=legacy in kernel cmdline, using legacy template")
+            return VMMode.LEGACY
+        elif "vm_mode=swarm-init" in cmdline:
+            return VMMode.SWARM_INIT
         else:
-            template_name = "lxc-swarm-template.yaml"
-            print("Using swarm template")
+            return VMMode.SWARM_NORMAL
     except FileNotFoundError:
+        return VMMode.SWARM_NORMAL
+
+
+def patch_yaml_config(cpu_type: str):
+    """Set own challenge type in LXC container configuration."""
+    vm_mode = detect_vm_mode()
+    
+    if vm_mode == VMMode.LEGACY:
+        template_name = "lxc-legacy-vm-template.yaml"
+        print(f"Detected {vm_mode.value} mode, using legacy template")
+    else:
         template_name = "lxc-swarm-template.yaml"
-        print("Using swarm template")
+        print(f"Detected {vm_mode.value} mode, using swarm template")
     
     src_yaml = Path(f"/etc/super/containers/pki-authority/{template_name}")
     dst_yaml = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/conf/lxc.yaml")
@@ -238,6 +259,17 @@ def set_own_challenge(cpu_type: str):
     if "ownChallenge" not in config["pki"]:
         config["pki"]["ownChallenge"] = {}
     config["pki"]["ownChallenge"]["type"] = cpu_type
+    
+    # Set mode.attestationServiceSource.mode for swarm modes
+    if vm_mode in (VMMode.SWARM_INIT, VMMode.SWARM_NORMAL):
+        if "mode" not in config["pki"]:
+            config["pki"]["mode"] = {}
+        if "attestationServiceSource" not in config["pki"]["mode"]:
+            config["pki"]["mode"]["attestationServiceSource"] = {}
+        
+        mode_value = "init" if vm_mode == VMMode.SWARM_INIT else "normal"
+        config["pki"]["mode"]["attestationServiceSource"]["mode"] = mode_value
+        print(f"Set attestationServiceSource mode to: {mode_value}")
     
     # Ensure destination directory exists
     dst_yaml.parent.mkdir(parents=True, exist_ok=True)
@@ -417,24 +449,29 @@ def delete_iptables_rules():
             subprocess.run(["iptables", "-t", "nat"] + delete_rule.split()[1:], check=True)
             print(f"Deleted iptables rule: {delete_rule}")
 
-def update_pccs_url_and_setup_iptables():
-    """Update PCCS URL and setup iptables NAT rules for LXC container access to host service."""
-    service_port = "8081"
-    qcnl_conf = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/etc/sgx_default_qcnl.conf")
-    qcnl_conf_bak = Path(f"{qcnl_conf}.bak")
-    
-    # Get host IP address on the LXC bridge
+
+def setup_iptables():
+    """Setup iptables NAT rules for LXC container access to host services."""
     host_ip = get_bridge_ip(BRIDGE_NAME)
     
     # Enable route_localnet for the bridge
     enable_route_localnet(BRIDGE_NAME)
     
     # Add iptables rules for PCCS and MongoDB
-    add_iptables_rule(host_ip, service_port)
-    add_iptables_rule(host_ip, "27017")
+    add_iptables_rule(host_ip, PCCS_PORT)
+    add_iptables_rule(host_ip, MONGODB_PORT)
+
+
+def update_pccs_url():
+    """Update PCCS URL in QCNL configuration."""
+    qcnl_conf = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/etc/sgx_default_qcnl.conf")
+    qcnl_conf_bak = Path(f"{qcnl_conf}.bak")
+    
+    # Get host IP address on the LXC bridge
+    host_ip = get_bridge_ip(BRIDGE_NAME)
     
     # Update PCCS URL in QCNL configuration
-    pccs_url = f"https://{host_ip}:{service_port}/sgx/certification/v4/"
+    pccs_url = f"https://{host_ip}:{PCCS_PORT}/sgx/certification/v4/"
     
     if not qcnl_conf.exists():
         print(f"Error: {qcnl_conf} not found")
