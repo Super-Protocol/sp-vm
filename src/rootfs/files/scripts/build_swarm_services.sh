@@ -56,7 +56,7 @@ function build_swarm_services() {
     log_info "removing sources from /opt/sp-swarm-services";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/sp-swarm-services || true';
 
-    chroot "${target}" /bin/bash -lc "npm ci --omit=dev --no-fund --no-audit --no-progress --loglevel=error -a"
+    chroot "${target}" /bin/bash -lc "cd ${target} && npm ci --omit=dev --no-fund --no-audit --no-progress --loglevel=error -a"
 }
 
 chroot_init;
