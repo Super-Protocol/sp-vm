@@ -275,14 +275,6 @@ ADD rootfs/files/configs/etc/systemd/system/sp-svc-tee-entry-certificates-servic
 ADD rootfs/files/configs/etc/systemd/system/sp-svc-content-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-content-certificates-service.service
 ADD rootfs/files/configs/etc/systemd/system/sp-svc-version-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-version-certificates-service.service
 ADD rootfs/files/configs/etc/systemd/system/sp-svc-resource-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-resource-certificates-service.service
-# Enable all sp-swarm-services by default
-RUN ln -sf /etc/systemd/system/sp-svc-api-gateway.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-api-gateway.service" && \
-    ln -sf /etc/systemd/system/sp-svc-workload-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-workload-service.service" && \
-    ln -sf /etc/systemd/system/sp-svc-blockchain-observer-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-blockchain-observer-service.service" && \
-    ln -sf /etc/systemd/system/sp-svc-tee-entry-certificates-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-tee-entry-certificates-service.service" && \
-    ln -sf /etc/systemd/system/sp-svc-content-certificates-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-content-certificates-service.service" && \
-    ln -sf /etc/systemd/system/sp-svc-version-certificates-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-version-certificates-service.service" && \
-    ln -sf /etc/systemd/system/sp-svc-resource-certificates-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-resource-certificates-service.service"
 
 # swarm one-shot services runner
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
