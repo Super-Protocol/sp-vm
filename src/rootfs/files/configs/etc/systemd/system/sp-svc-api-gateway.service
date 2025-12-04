@@ -8,7 +8,7 @@ Requires=nats-server.service
 Type=simple
 WorkingDirectory=/usr/local/lib/sp-swarm-services/apps/api-gateway
 ExecStart=/usr/local/bin/sp-svc-api-gateway.sh
-Environment=NODE_ENV=production
+Environment=NODE_ENV=production CONFIG_FILE=/etc/sp-swarm-services/apps/api-gateway/configuration.yaml
 Restart=always
 RestartSec=5
 StandardOutput=append:/var/log/sp-svc-api-gateway.log
