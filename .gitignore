@@ -141,3 +141,6 @@ src/rootfs/files/configs/cert/superprotocol-ca.crt
 *.img
 *.raw
 *.qcow2
+
+#.DS_Store
+.DS_Store
