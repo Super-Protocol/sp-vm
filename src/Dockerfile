@@ -21,10 +21,12 @@ ADD https://www.kernel.org/pub/linux/utils/util-linux/v${util_linux_version}/uti
 RUN tar -C /tmp -xvf/tmp/util-linux-${util_linux_version}.tar.gz
 WORKDIR /tmp/util-linux-${util_linux_version}
 RUN ./configure --disable-shared --enable-static --disable-liblastlog2 --without-tinfo --without-ncurses --disable-ipv6 --disable-pylibmount
-RUN make -j blkid LDFLAGS="--static"
-RUN strip blkid
+RUN make -j blkid wipefs lsblk LDFLAGS="--static"
+RUN strip blkid wipefs lsblk
 RUN mkdir -p /initramfs-root/sbin
 RUN cp /tmp/util-linux-${util_linux_version}/blkid /initramfs-root/sbin/blkid
+RUN cp /tmp/util-linux-${util_linux_version}/wipefs /initramfs-root/sbin/wipefs
+RUN cp /tmp/util-linux-${util_linux_version}/lsblk /initramfs-root/sbin/lsblk
 ### End util_linux ###
 
 ### Start lvm2 ###
@@ -54,6 +56,7 @@ RUN CFLAGS="-I/initramfs-root/include" CXXFLAGS="-I/initramfs-root/include" LDFL
 RUN make -j
 RUN make install
 RUN strip /initramfs-root/sbin/veritysetup.static
+RUN strip /initramfs-root/sbin/cryptsetup.static
 ### End cryptsetup ###
 
 ### Start gen_init_cpio ###
@@ -86,6 +89,8 @@ RUN strip /initramfs-root/sbin/mkfs.ext4
 FROM gen_init_cpio_builder AS initramfs_builder
 COPY --from=busybox_builder /initramfs-root/sbin/busybox /initramfs-root/sbin/
 COPY --from=util_linux_builder /initramfs-root/sbin/blkid /initramfs-root/sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/lsblk /initramfs-root/sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/wipefs /initramfs-root/sbin/
 COPY --from=cryptsetup_builder /initramfs-root/sbin/veritysetup.static /initramfs-root/sbin/
 COPY --from=cryptsetup_builder /initramfs-root/sbin/cryptsetup.static /initramfs-root/sbin/
 COPY --from=e2fsprogs_builder /initramfs-root/sbin/mkfs.ext4 /initramfs-root/sbin/
@@ -93,6 +98,18 @@ ADD initramfs/files/initramfs.list /initramfs-root/initramfs.list
 ADD initramfs/files/init.sh /initramfs-root/sbin/init.sh
 RUN gen_init_cpio /initramfs-root/initramfs.list | gzip -9 -n > /initramfs-root/initramfs.cpio.gz
 ### End  ###
+
+### TEst
+FROM scratch AS test
+COPY --from=busybox_builder /initramfs-root/sbin/busybox /sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/blkid /sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/lsblk /sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/wipefs /sbin/
+COPY --from=cryptsetup_builder /initramfs-root/sbin/veritysetup.static /sbin/
+COPY --from=cryptsetup_builder /initramfs-root/sbin/cryptsetup.static /sbin/
+COPY --from=e2fsprogs_builder /initramfs-root/sbin/mkfs.ext4 /sbin/
+ENTRYPOINT ["/sbin/busybox", "sh"]
+### TEst
 
 ### Start certs ###
 FROM ubuntu:24.04 AS certs_builder
@@ -183,124 +200,124 @@ COPY --from=kernel_builder /output/deb ${OUTPUTDIR}/kernel_deb
 ADD rootfs/files/scripts/install_kernel.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/install_kernel.sh
 
-ADD general/files/scripts/chroot.sh /buildroot/files/scripts/
-ADD rootfs/files/scripts/install_nvidia.sh /buildroot/files/scripts/
-RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
-ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
-RUN --security=insecure /buildroot/files/scripts/install_gve.sh
-
-RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
-RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
-
-RUN cp "${OUTPUTDIR}/usr/share/systemd/tmp.mount" "${OUTPUTDIR}/etc/systemd/system/tmp.mount";
-
-ADD rootfs/files/configs/01-netplan.yaml ${OUTPUTDIR}/etc/netplan/
-ADD rootfs/files/configs/fstab ${OUTPUTDIR}/etc/
-ADD rootfs/files/configs/tdx-attest.conf ${OUTPUTDIR}/etc/
-
-ADD rootfs/files/configs/chrony/chrony.conf ${OUTPUTDIR}/etc/chrony/
-ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
-
-ADD rootfs/files/configs/state_disk_mount/state_disk_mount.service ${OUTPUTDIR}/etc/systemd/system/
-ADD rootfs/files/configs/state_disk_mount/state_disk_mount.sh ${OUTPUTDIR}/usr/local/bin/
-RUN ln -s /etc/systemd/system/state_disk_mount.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/state_disk_mount.service"
-RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
-RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
-ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
-
-RUN mkdir -p "${OUTPUTDIR}/etc/super/certs"
-COPY --from=certs_builder /buildroot/registry.superprotocol.local.ca.crt ${OUTPUTDIR}/usr/local/share/ca-certificates/registry.superprotocol.local.ca.crt
-COPY --from=certs_builder /buildroot/registry.superprotocol.local.ca.crt ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.ca.crt
-COPY --from=certs_builder /buildroot/registry.superprotocol.local.key ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.key
-COPY --from=certs_builder /buildroot/registry.superprotocol.local.crt ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.crt
-ADD rootfs/files/configs/cert/superprotocol-certs.sh ${OUTPUTDIR}/usr/local/bin/
-ADD rootfs/files/configs/cert/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system
-RUN ln -s /etc/systemd/system/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/superprotocol-certs.service
-ADD rootfs/files/scripts/refresh_ca_certs.sh /buildroot/files/scripts/refresh_ca_certs.sh
-RUN --security=insecure /buildroot/files/scripts/refresh_ca_certs.sh
-
-# check for presence of trusted self-signed CA from Super Protocol
-RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < ${OUTPUTDIR}/etc/ssl/certs/ca-certificates.crt | grep -i 'super'
-
-ARG LOCAL_REGISTRY_HOST=hauler.local
-ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
-RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
-RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
-RUN mkdir -p "${OUTPUTDIR}/etc/rancher/node"
-RUN LC_ALL=C tr -dc '[:alpha:][:digit:]' < /dev/urandom | head -c 32 > "${OUTPUTDIR}/etc/rancher/node/password"
-ADD rootfs/files/configs/etc/cni/net.d/05-cilium.conflist ${OUTPUTDIR}/etc/cni/net.d/05-cilium.conflist
-ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/etc/sysctl.d/99-zzz-override_cilium.conf
-ADD rootfs/files/configs/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/var/lib/rancher/rke2/rke2-pss.yaml
-ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
-
-# copy iscsi configs, cause this partition will be remounted with empty dir
-RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
-ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
-RUN /buildroot/files/scripts/setup_sshd_config.sh
-
-RUN mkdir -p "$OUTPUTDIR/etc/super/opt/hauler";
-RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
-RUN ln -sf "/opt/hauler/.hauler" "${OUTPUTDIR}/root/.hauler";
-COPY --from=hauler_builder /opt/hauler/rke2-airgap.tar.zst ${OUTPUTDIR}/etc/super/opt/hauler/
-COPY --from=hauler_builder /usr/local/bin/hauler ${OUTPUTDIR}/usr/local/bin/
-
-# TODO: move hauler and rke2? to anuther independent layers..
-
-ADD rootfs/files/configs/etc/rancher/rke2/config.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/config.yaml.tmpl
-ADD rootfs/files/configs/etc/rancher/rke2/registries.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/registries.yaml.tmpl
-ADD rootfs/files/scripts/template_rke2_configs_preinstall.sh /buildroot/files/scripts/template_rke2_configs_preinstall.sh
-RUN /buildroot/files/scripts/template_rke2_configs_preinstall.sh
-ADD rootfs/files/scripts/download_rke2.sh /buildroot/files/scripts/download_rke2.sh
-RUN /buildroot/files/scripts/download_rke2.sh
-ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
-RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
-
-# copy pki-authority service files
-ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
-ADD rootfs/files/configs/pki-service/pki-authority.service "${OUTPUTDIR}/etc/systemd/system"
-RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
-ADD rootfs/files/configs/pki-service/create-and-configure-pki.sh "${OUTPUTDIR}/usr/local/bin"
-RUN mkdir -p "${OUTPUTDIR}/root/containers"
-COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-18725490828 /pki-authority.tar "${OUTPUTDIR}/root/containers/pki-authority.tar"
-ADD rootfs/files/configs/pki-service/lxc-template.yaml "${OUTPUTDIR}/root/containers/lxc-template.yaml"
-ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
-ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
-RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
-
-ADD rootfs/files/scripts/template_configs_post_rke2install.sh /buildroot/files/scripts/template_configs_post_rke2install.sh
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl /buildroot/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl
-ADD rootfs/files/configs/usr/local/lib/systemd/system/rke2-server.env.append /buildroot/files/configs/usr/local/lib/systemd/system/rke2-server.env.append
-ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
-ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
-RUN /buildroot/files/scripts/template_configs_post_rke2install.sh
-
-RUN mkdir -p "${OUTPUTDIR}/sp"
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml
-ADD rootfs/files/configs/etc/systemd/system/check-config-files.service ${OUTPUTDIR}/etc/systemd/system/check-config-files.service
-ADD rootfs/files/configs/etc/systemd/system/check-config-files.timer ${OUTPUTDIR}/etc/systemd/system/check-config-files.timer
-ADD rootfs/files/configs/usr/local/bin/check-config-files.sh ${OUTPUTDIR}/usr/local/bin/check-config-files.sh
-RUN ln -sf /etc/systemd/system/check-config-files.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/check-config-files.service"
-RUN ln -sf /etc/systemd/system/check-config-files.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/check-config-files.timer"
-ADD rootfs/files/configs/etc/systemd/system/local-registry.service ${OUTPUTDIR}/etc/systemd/system/local-registry.service
-ADD rootfs/files/configs/usr/local/bin/local-registry.sh ${OUTPUTDIR}/usr/local/bin/local-registry.sh
-RUN ln -sf /etc/systemd/system/local-registry.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/local-registry.service"
-ADD rootfs/files/configs/etc/systemd/system/hardening-vm.service ${OUTPUTDIR}/etc/systemd/system/hardening-vm.service
-ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bin/hardening-vm.sh
-RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
-ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
-
-# disabling serial getty
-ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
-RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
-
-# Build info
-ARG SP_VM_IMAGE_VERSION
-RUN bash -c '[[ -n "$SP_VM_IMAGE_VERSION" ]] && echo "$SP_VM_IMAGE_VERSION" > "${OUTPUTDIR}/etc/sp-release"'
-
-# after all!
-ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
-RUN --security=insecure /buildroot/files/scripts/cleanup_rootfs.sh
+#ADD general/files/scripts/chroot.sh /buildroot/files/scripts/
+#ADD rootfs/files/scripts/install_nvidia.sh /buildroot/files/scripts/
+#RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
+#ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
+#RUN --security=insecure /buildroot/files/scripts/install_gve.sh
+#
+#RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
+#RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
+#
+#RUN cp "${OUTPUTDIR}/usr/share/systemd/tmp.mount" "${OUTPUTDIR}/etc/systemd/system/tmp.mount";
+#
+#ADD rootfs/files/configs/01-netplan.yaml ${OUTPUTDIR}/etc/netplan/
+#ADD rootfs/files/configs/fstab ${OUTPUTDIR}/etc/
+#ADD rootfs/files/configs/tdx-attest.conf ${OUTPUTDIR}/etc/
+#
+#ADD rootfs/files/configs/chrony/chrony.conf ${OUTPUTDIR}/etc/chrony/
+#ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
+#
+#ADD rootfs/files/configs/state_disk_mount/state_disk_mount.service ${OUTPUTDIR}/etc/systemd/system/
+#ADD rootfs/files/configs/state_disk_mount/state_disk_mount.sh ${OUTPUTDIR}/usr/local/bin/
+#RUN ln -s /etc/systemd/system/state_disk_mount.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/state_disk_mount.service"
+#RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
+#RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
+#ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
+#
+#RUN mkdir -p "${OUTPUTDIR}/etc/super/certs"
+#COPY --from=certs_builder /buildroot/registry.superprotocol.local.ca.crt ${OUTPUTDIR}/usr/local/share/ca-certificates/registry.superprotocol.local.ca.crt
+#COPY --from=certs_builder /buildroot/registry.superprotocol.local.ca.crt ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.ca.crt
+#COPY --from=certs_builder /buildroot/registry.superprotocol.local.key ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.key
+#COPY --from=certs_builder /buildroot/registry.superprotocol.local.crt ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.crt
+#ADD rootfs/files/configs/cert/superprotocol-certs.sh ${OUTPUTDIR}/usr/local/bin/
+#ADD rootfs/files/configs/cert/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system
+#RUN ln -s /etc/systemd/system/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/superprotocol-certs.service
+#ADD rootfs/files/scripts/refresh_ca_certs.sh /buildroot/files/scripts/refresh_ca_certs.sh
+#RUN --security=insecure /buildroot/files/scripts/refresh_ca_certs.sh
+#
+## check for presence of trusted self-signed CA from Super Protocol
+#RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < ${OUTPUTDIR}/etc/ssl/certs/ca-certificates.crt | grep -i 'super'
+#
+#ARG LOCAL_REGISTRY_HOST=hauler.local
+#ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
+#RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
+#RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
+#RUN mkdir -p "${OUTPUTDIR}/etc/rancher/node"
+#RUN LC_ALL=C tr -dc '[:alpha:][:digit:]' < /dev/urandom | head -c 32 > "${OUTPUTDIR}/etc/rancher/node/password"
+#ADD rootfs/files/configs/etc/cni/net.d/05-cilium.conflist ${OUTPUTDIR}/etc/cni/net.d/05-cilium.conflist
+#ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/etc/sysctl.d/99-zzz-override_cilium.conf
+#ADD rootfs/files/configs/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/var/lib/rancher/rke2/rke2-pss.yaml
+#ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
+#
+## copy iscsi configs, cause this partition will be remounted with empty dir
+#RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
+#ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
+#RUN /buildroot/files/scripts/setup_sshd_config.sh
+#
+#RUN mkdir -p "$OUTPUTDIR/etc/super/opt/hauler";
+#RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
+#RUN ln -sf "/opt/hauler/.hauler" "${OUTPUTDIR}/root/.hauler";
+#COPY --from=hauler_builder /opt/hauler/rke2-airgap.tar.zst ${OUTPUTDIR}/etc/super/opt/hauler/
+#COPY --from=hauler_builder /usr/local/bin/hauler ${OUTPUTDIR}/usr/local/bin/
+#
+## TODO: move hauler and rke2? to anuther independent layers..
+#
+#ADD rootfs/files/configs/etc/rancher/rke2/config.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/config.yaml.tmpl
+#ADD rootfs/files/configs/etc/rancher/rke2/registries.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/registries.yaml.tmpl
+#ADD rootfs/files/scripts/template_rke2_configs_preinstall.sh /buildroot/files/scripts/template_rke2_configs_preinstall.sh
+#RUN /buildroot/files/scripts/template_rke2_configs_preinstall.sh
+#ADD rootfs/files/scripts/download_rke2.sh /buildroot/files/scripts/download_rke2.sh
+#RUN /buildroot/files/scripts/download_rke2.sh
+#ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
+#RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
+#ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
+#
+## copy pki-authority service files
+#ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
+#ADD rootfs/files/configs/pki-service/pki-authority.service "${OUTPUTDIR}/etc/systemd/system"
+#RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
+#ADD rootfs/files/configs/pki-service/create-and-configure-pki.sh "${OUTPUTDIR}/usr/local/bin"
+#RUN mkdir -p "${OUTPUTDIR}/root/containers"
+#COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-18725490828 /pki-authority.tar "${OUTPUTDIR}/root/containers/pki-authority.tar"
+#ADD rootfs/files/configs/pki-service/lxc-template.yaml "${OUTPUTDIR}/root/containers/lxc-template.yaml"
+#ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
+#ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
+#RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
+#
+#ADD rootfs/files/scripts/template_configs_post_rke2install.sh /buildroot/files/scripts/template_configs_post_rke2install.sh
+#ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl /buildroot/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl
+#ADD rootfs/files/configs/usr/local/lib/systemd/system/rke2-server.env.append /buildroot/files/configs/usr/local/lib/systemd/system/rke2-server.env.append
+#ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
+#ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
+#RUN /buildroot/files/scripts/template_configs_post_rke2install.sh
+#
+#RUN mkdir -p "${OUTPUTDIR}/sp"
+#ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml
+#ADD rootfs/files/configs/etc/systemd/system/check-config-files.service ${OUTPUTDIR}/etc/systemd/system/check-config-files.service
+#ADD rootfs/files/configs/etc/systemd/system/check-config-files.timer ${OUTPUTDIR}/etc/systemd/system/check-config-files.timer
+#ADD rootfs/files/configs/usr/local/bin/check-config-files.sh ${OUTPUTDIR}/usr/local/bin/check-config-files.sh
+#RUN ln -sf /etc/systemd/system/check-config-files.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/check-config-files.service"
+#RUN ln -sf /etc/systemd/system/check-config-files.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/check-config-files.timer"
+#ADD rootfs/files/configs/etc/systemd/system/local-registry.service ${OUTPUTDIR}/etc/systemd/system/local-registry.service
+#ADD rootfs/files/configs/usr/local/bin/local-registry.sh ${OUTPUTDIR}/usr/local/bin/local-registry.sh
+#RUN ln -sf /etc/systemd/system/local-registry.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/local-registry.service"
+#ADD rootfs/files/configs/etc/systemd/system/hardening-vm.service ${OUTPUTDIR}/etc/systemd/system/hardening-vm.service
+#ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bin/hardening-vm.sh
+#RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
+#ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
+#
+## disabling serial getty
+#ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
+#RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
+#
+## Build info
+#ARG SP_VM_IMAGE_VERSION
+#RUN bash -c '[[ -n "$SP_VM_IMAGE_VERSION" ]] && echo "$SP_VM_IMAGE_VERSION" > "${OUTPUTDIR}/etc/sp-release"'
+#
+## after all!
+#ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
+#RUN --security=insecure /buildroot/files/scripts/cleanup_rootfs.sh
 ### End rootfs ###
 
 ### Start image ###
