@@ -321,8 +321,6 @@ RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongod.service
 # NATS (install nats-server 2.12.2 into VM rootfs)
 ADD rootfs/files/scripts/install_nats.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_nats.sh
-# Ensure nats-server starts only after WireGuard tunnels (wg-quick.target) and network are up
-ADD rootfs/files/configs/etc/systemd/system/nats-server.service.d/override.conf ${OUTPUTDIR}/etc/systemd/system/nats-server.service.d/override.conf
 # disable autostart without requiring systemd during build (ensure no enable symlinks for nats)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/nats-server.service \
     && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/nats-server.service || true

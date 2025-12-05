@@ -40,8 +40,8 @@ function install_nats() {
     cat > "${OUTPUTDIR}/usr/lib/systemd/system/nats-server.service" <<'UNIT'
 [Unit]
 Description=NATS Server
-After=network-online.target
-Wants=network-online.target
+After=network-online.target wg-quick.target
+Wants=network-online.target wg-quick.target
 
 [Service]
 User=nats
