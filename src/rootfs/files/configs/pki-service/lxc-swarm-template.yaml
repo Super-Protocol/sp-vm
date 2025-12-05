@@ -4,6 +4,7 @@ pki:
   allowedChallenges:
     - token
     - tdx
+    - sev-snp
   allowedSubRootChallenges:
     - type: tdx
       signatureVerification: github
