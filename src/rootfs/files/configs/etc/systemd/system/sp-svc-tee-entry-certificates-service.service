@@ -1,0 +1,18 @@
+[Unit]
+Description=SP Swarm Service - tee-entry-certificates-service
+After=network-online.target nats-server.service redis-server.service mongod.service
+Wants=network-online.target
+Requires=nats-server.service redis-server.service mongod.service
+
+[Service]
+Type=simple
+WorkingDirectory=/usr/local/lib/sp-swarm-services/apps/tee-entry-certificates-service
+ExecStart=/usr/local/bin/sp-svc-tee-entry-certificates-service.sh
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/sp-svc-tee-entry-certificates-service.log
+StandardError=append:/var/log/sp-svc-tee-entry-certificates-service-err.log
+
+[Install]
+WantedBy=multi-user.target
