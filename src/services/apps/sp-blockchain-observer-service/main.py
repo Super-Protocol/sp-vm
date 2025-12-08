@@ -142,6 +142,9 @@ def ensure_config_written(
     lines.append("  producer:")
     lines.append("    retention: workqueue")
     lines.append("    num_replicas: 1")
+    lines.append("    max_msgs: -1")
+    lines.append("    max_bytes: -1")
+    lines.append("    streamInfoUpdateIntervalSeconds: 30")
 
     # Metrics configuration
     lines.append("metrics:")
