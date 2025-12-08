@@ -17,7 +17,7 @@ DEFAULT_REDIS_TTL_HOURS = 720
 NATS_PORT = 4222
 MONGODB_PORT = 27017
 REDIS_PORT = 6379
-BLOCKCHAIN_RPC_URL="wss://opbnb.testnet.superprotocol.com"
+BLOCKCHAIN_RPC_URL="https://opbnb.testnet.superprotocol.com"
 CONTRACT_ADDRESS="0x9CcBf0aABa30404B812414081c3F3789aa17E4eC"
 BLOCKCHAIN_WS_URL="wss://opbnb.testnet.superprotocol.com"
 
@@ -118,7 +118,6 @@ def ensure_config_written(
     # Blockchain configuration
     lines.append("blockchain:")
     lines.append(f"  blockchainRpcUrl: {blockchain_rpc_url}")
-    lines.append("  blockchainRpcUrl: http://localhost:8545")
     lines.append(f"  blockchainUrlWs: {blockchain_ws_url}")
     lines.append(f'  contractAddress: "{contract_address}"')
 
