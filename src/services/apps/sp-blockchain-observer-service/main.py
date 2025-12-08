@@ -135,8 +135,12 @@ def ensure_config_written(
 
     # JetStream configuration
     lines.append("jetstream:")
+    lines.append("  timeout: 10000")
+    lines.append("  reconnect: true")
+    lines.append("  maxReconnectAttempts: -1")
+    lines.append("  reconnectTimeWait: 2000")
     lines.append("  producer:")
-    lines.append("    retention: 0")
+    lines.append("    retention: workqueue")
     lines.append("    num_replicas: 1")
 
     # Metrics configuration
