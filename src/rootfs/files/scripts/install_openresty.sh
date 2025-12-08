@@ -37,5 +37,3 @@ function install_openresty() {
 chroot_init
 install_openresty
 chroot_deinit
-
-
