@@ -78,21 +78,30 @@ if [ "${rootfs_verifier}" = "dm-verity" ]; then
         log_fail "No hash device ${hash_device_path} found. Cannot verify the root device";
     fi
 
-    log_info "Verifying rootfs RO hash";
-    veritysetup open "${root_device}" root "${hash_device_path}" "${rootfs_hash}" || log_fail "Verifying failed";
+    log_info "Verifying rootfs hash";
+    veritysetup open "${root_device}" root "${hash_device_path}" "${rootfs_hash}" || log_fail "Verifying rootfs RO failed";
     log_info "Mounting rootfs RO";
-    mount /dev/mapper/root /sysroot-ro || log_fail "Mounting failed";
+    mount -o ro /dev/mapper/root /sysroot-ro || log_fail "Mounting rootfs RO failed";
 else
     log_warn "Skipping rootfs RO hash check";
     log_info "Mounting rootfs RO";
-    mount "${root_device}" /sysroot-ro || log_fail "Mounting failed";
+    mount -o ro "${root_device}" /sysroot-ro || log_fail "Mounting rootfs RO failed";
 fi
 
-log_info "All avaliable block devicts:\n$(lsblk)";
+log_info "All available block devices:\n$(lsblk)";
 
 main_block_device_name="$(lsblk -no PKNAME "$root_device" | grep -v "$(basename "$root_device")")";
 if [ -z "$main_block_device_name" ]; then
     log_fail "Failed to get main block device name from data part device path '$root_device'..";
+fi
+
+state_block_device_count="$(lsblk -d -n -o NAME | grep -v "$main_block_device_name" | grep -v "$(basename "$provider_config_device_path")" | wc -l)";
+
+if [ "$state_block_device_count" -lt 1 ]; then
+    log_fail "Failed to get state block device, please attach an extra disk to this VM";
+fi
+if [ "$state_block_device_count" -gt 1 ]; then
+    log_fail "Found more than one state block device, please remove an extra block device and restart the VM";
 fi
 
 state_block_device_name="$(lsblk -d -n -o NAME | grep -v "$main_block_device_name" | grep -v "$(basename "$provider_config_device_path")")";
@@ -101,39 +110,44 @@ if [ -z "$state_block_device_name" ]; then
 fi
 state_block_device_path="/dev/$state_block_device_name";
 
-
-# Mounting encrypted state disk
-log_info "Mounting encrypted state disk";
-
 random_key="$(dd if=/dev/urandom bs=1 count=32 2>/dev/null | base64)";
 
-wipefs -a "$state_block_device_path" || log_warn "Failed to wipe filesystem signatures from the device $state_block_device_path";
+log_info "Wiping filesystem signatures from the device $state_block_device_path";
+wipefs -a "$state_block_device_path" || log_warn "Failed to wipe $state_block_device_path";
 
-echo "$random_key" | cryptsetup luksFormat "$state_block_device_path" --batch-mode || log_fail "Failed to format the device $state_block_device_path as LUKS encrypted";
-echo "$random_key" | cryptsetup luksOpen "$state_block_device_path" crypto || log_fail "Failed to open the LUKS encrypted device $state_block_device_path";
+log_info "Formating the device $state_block_device_path as LUKS encrypted";
+echo "$random_key" | cryptsetup luksFormat "$state_block_device_path" --batch-mode || log_fail "Failed to format $state_block_device_path";
 
-mkfs.ext4 /dev/mapper/crypto || log_fail "Failed to create ext4 filesystem on the /dev/mapper/crypto";
+log_info "Opening the LUKS encrypted device $state_block_device_path"
+echo "$random_key" | cryptsetup luksOpen "$state_block_device_path" crypto || log_fail "Failed to open";
 
-mount /dev/mapper/crypto /sysroot-rw || log_fail "Mounting failed";
+log_info "Creating FS on /dev/mapper/crypto"
+mkfs.ext4 /dev/mapper/crypto || log_fail "Failed to create ext4 filesystem on /dev/mapper/crypto";
 
-log_info "Mounting overlay filesystem";
+log_info "Mounting encrypted state disk /dev/mapper/crypto";
+mount /dev/mapper/crypto /sysroot-rw || log_fail "Mounting encrypted state disk failed";
 
 [ -d /sysroot-rw/upper ] || mkdir /sysroot-rw/upper
 [ -d /sysroot-rw/work ] || mkdir /sysroot-rw/work
+[ -d /sysroot-rw/var ] || mkdir /sysroot-rw/var
 
+log_info "Mounting overlay FS";
 mount -t overlay overlay \
   -o lowerdir=/sysroot-ro,upperdir=/sysroot-rw/upper,workdir=/sysroot-rw/work \
-  /mnt || log_fail "Mounting failed";
-
-# Mounting read-only provider config
-log_info "Mounting RO provider config";
+  /mnt || log_fail "Mounting overlay FS failed";
 
 [ -d /mnt/sp ] || mkdir /mnt/sp
+log_info "Mounting provider config";
+mount -t ext4 -o ro "$provider_config_device_path" /mnt/sp || log_fail "Mounting provider config failed";
 
-mount -t ext4 -o ro "$provider_config_device_path" /mnt/sp || log_fail "Mounting failed";
+# we can't do overlay over overlay, so, moving whole /var to upper-level fs
+[ -d /mnt/var ] || mkdir /mnt/var
+log_info "Mounting /var";
+mount --bind /sysroot-rw/var /mnt/var || log_faile "Mounting /var failed";
 
+log_info "Umouning temp mounts";
 umount /proc
 umount /sys
 
-log_info "Starting true real respectable init! Bye..";
+log_info "Starting true real big great init! Bye..";
 exec switch_root /mnt /sbin/init
