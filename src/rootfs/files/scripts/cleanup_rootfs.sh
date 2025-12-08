@@ -18,7 +18,6 @@ source "$BUILDROOT/files/scripts/chroot.sh";
 function cleanup_rootfs() {
     log_info "cleaning up rootfs";
     rm -rf "${OUTPUTDIR}/kernel_deb";
-    # best-effort removal of build toolchain; ignore dependency errors so image build doesn't fail
     chroot "$OUTPUTDIR" /bin/bash -c \
         'dpkg -r \
             libc6-dev \
@@ -28,7 +27,7 @@ function cleanup_rootfs() {
             gcc-13 \
             g++-13 \
             g++-13-x86-64-linux-gnu \
-            g++-13-x86-64-linux-gnu \
+            g++-x86-64-linux-gnu \
             linux-headers-6.12.13-nvidia-gpu-confidential \
             g++ \
             gcc';
