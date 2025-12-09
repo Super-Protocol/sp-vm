@@ -32,6 +32,7 @@ function build_swarm_services() {
         "packages/metrics"
         "packages/nest-jetstream"
         "packages/resource-certificates-client"
+        "packages/tee-entry-certificates-client"
         "packages/utils"
         "packages/version-certificates-client"
     );
