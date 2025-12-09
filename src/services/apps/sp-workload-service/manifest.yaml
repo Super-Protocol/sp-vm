@@ -17,15 +17,18 @@ stateExpr:
 
     ($svcClusterNodes | map(.node)) as $svcNodeIds |
 
+    # Find a NATS cluster that shares nodes with this service cluster
+    (
+      $swarmdb.clusters[] |
+      select(.cluster_policy == "nats" and .deleted_ts == null) |
+      select( ([$swarmdb.clusternodes[] | select(.deleted_ts == null and (.node | IN($svcNodeIds[])))] | length) > 0 )
+    ) as $natsCluster |
+
+    # A WireGuard cluster (any) that includes our nodes; used to fetch tunnel IPs for our nodes
     (
       $swarmdb.clusters[] |
       select(.cluster_policy == "wireguard" and .deleted_ts == null) |
-      select(
-        (
-          [$swarmdb.clusternodes[] | select(.deleted_ts == null and (.node | IN($svcNodeIds[])))] |
-          length > 0
-        )
-      )
+      select( ([$swarmdb.clusternodes[] | select(.deleted_ts == null and (.node | IN($svcNodeIds[])))] | length) > 0 )
     ) as $wgCluster |
 
     {
@@ -40,6 +43,7 @@ stateExpr:
         {id, node_id: .node, cluster}
       ] | sort_by(.id, .node_id, .cluster),
 
+      # Node properties for this service's nodes from the WG cluster (to get tunnel_ip per node)
       workloadServiceNodeProperties: [
         $swarmdb.clusternodeproperties[] |
         select(
@@ -62,7 +66,30 @@ stateExpr:
           .name == "tunnel_ip"
         ) |
         {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
-      ] | sort_by(.cluster_node, .name, .value, .node_id)
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
+      # NATS related cluster and WG tunnel IPs for nodes that are part of the selected NATS cluster
+      natsCluster: (
+        if $natsCluster.id then { id: $natsCluster.id } else null end
+      ),
+
+      natsClusterNodes: (
+        if $natsCluster.id then
+          [$swarmdb.clusternodes[] | select(.cluster == $natsCluster.id and .deleted_ts == null)]
+        else [] end
+      ),
+
+      natsWgNodeProperties: (
+        if $natsCluster.id then
+          [
+            $swarmdb.clusternodeproperties[] |
+            select(
+              (.cluster_node | startswith($wgCluster.id)) and
+              .deleted_ts == null and
+              .name == "tunnel_ip"
+            ) |
+            {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+          ] | sort_by(.cluster_node, .name, .value, .node_id)
+        else [] end
+      )
     }
-
-
