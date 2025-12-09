@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 
 KUBECTL_BIN = "/var/lib/rancher/rke2/bin/kubectl"
-ROUTE_DOMAIN_SUFFIX = ".k8s.oresty.superprotocol.io"
+ROUTE_DOMAIN_SUFFIX = ".oresty.superprotocol.io"
 REDIS_PORT = 6379
 
 plugin = ProvisionPlugin()
