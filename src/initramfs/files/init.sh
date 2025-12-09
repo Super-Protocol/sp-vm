@@ -32,7 +32,7 @@ get_device() {
 }
 
 _log() {
-    echo -e "$1: $0: $2" > /dev/console 2>&1
+    echo "$1: $0: $2" > /dev/console 2>&1
 }
 
 log_fail() {
@@ -87,8 +87,6 @@ else
     log_info "Mounting rootfs RO";
     mount -o ro "${root_device}" /sysroot-ro || log_fail "Mounting rootfs RO failed";
 fi
-
-log_info "All available block devices:\n$(lsblk)";
 
 main_block_device_name="$(lsblk -no PKNAME "$root_device" | grep -v "$(basename "$root_device")")";
 if [ -z "$main_block_device_name" ]; then
