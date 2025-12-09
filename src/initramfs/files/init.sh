@@ -68,7 +68,7 @@ if [ ! -e "${root_device}" ]; then
     log_fail "No root device ${root_device} found";
 fi
 if [ ! -e "${provider_config_device_path}" ]; then
-    log_fail "No root device ${provider_config_device_path} found";
+    log_fail "No provider config device ${provider_config_device_path} found";
 fi
 
 if [ "${rootfs_verifier}" = "dm-verity" ]; then
@@ -113,10 +113,10 @@ random_key="$(dd if=/dev/urandom bs=1 count=32 2>/dev/null | base64)";
 log_info "Wiping filesystem signatures from the device $state_block_device_path";
 wipefs -a "$state_block_device_path" || log_warn "Failed to wipe $state_block_device_path";
 
-log_info "Formating the device $state_block_device_path as LUKS encrypted";
+log_info "Formatting the device $state_block_device_path as LUKS encrypted";
 echo "$random_key" | cryptsetup luksFormat "$state_block_device_path" --batch-mode || log_fail "Failed to format $state_block_device_path";
 
-log_info "Opening the LUKS encrypted device $state_block_device_path"
+log_info "Opening the LUKS encrypted device $state_block_device_path";
 echo "$random_key" | cryptsetup luksOpen "$state_block_device_path" crypto || log_fail "Failed to open";
 
 log_info "Creating FS on /dev/mapper/crypto"
@@ -141,9 +141,9 @@ mount -t ext4 -o ro "$provider_config_device_path" /mnt/sp || log_fail "Mounting
 # we can't do overlay over overlay, so, moving whole /var to upper-level fs
 [ -d /mnt/var ] || mkdir /mnt/var
 log_info "Mounting /var";
-mount --bind /sysroot-rw/var /mnt/var || log_faile "Mounting /var failed";
+mount --bind /sysroot-rw/var /mnt/var || log_fail "Mounting /var failed";
 
-log_info "Umouning temp mounts";
+log_info "Unmounting temp mounts";
 umount /proc
 umount /sys
 
