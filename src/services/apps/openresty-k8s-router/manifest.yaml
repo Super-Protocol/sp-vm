@@ -1,0 +1,119 @@
+name: openresty-k8s-router
+version: 1.0.0
+commands:
+  - init
+  - apply
+  - health
+  - finalize
+  - destroy
+healthcheckIntervalSecs: 60
+entrypoint: main.py
+stateExpr:
+  engine: jq
+  query: |
+    # Current router cluster
+    ($swarmdb.clusters[] | select(.id == "{{ clusterId }}" and .deleted_ts == null)) as $cluster |
+
+    ([$swarmdb.clusternodes[] | select(.cluster == "{{ clusterId }}" and .deleted_ts == null)]) as $routerClusterNodes |
+
+    ($routerClusterNodes | map(.node)) as $routerNodeIds |
+
+    # RKE2 cluster with the same clusterId (convention: router clusterId == RKE2 clusterId)
+    (
+      $swarmdb.clusters[] |
+      select(.cluster_policy == "rke2" and .id == "{{ clusterId }}" and .deleted_ts == null)
+    ) as $rke2Cluster |
+
+    ([$swarmdb.clusternodes[] | select(.cluster == $rke2Cluster.id and .deleted_ts == null)]) as $rke2ClusterNodes |
+
+    ($rke2ClusterNodes | map(.node)) as $rke2NodeIds |
+
+    # Redis cluster (single logical cluster used for routing metadata)
+    (
+      $swarmdb.clusters[] |
+      select(.cluster_policy == "redis" and .deleted_ts == null)
+    ) as $redisCluster |
+
+    ([$swarmdb.clusternodes[] | select(.cluster == $redisCluster.id and .deleted_ts == null)]) as $redisClusterNodes |
+
+    ($redisClusterNodes | map(.node)) as $redisNodeIds |
+
+    # WireGuard cluster that contains Redis and/or RKE2 nodes
+    (
+      $swarmdb.clusters[] |
+      select(.cluster_policy == "wireguard" and .deleted_ts == null) |
+      select(
+        (
+          [$swarmdb.clusternodes[] | select(.deleted_ts == null and (.node | IN($redisNodeIds[] + $rke2NodeIds[])))] |
+          length > 0
+        )
+      )
+    ) as $wgCluster |
+
+    {
+      cluster: {
+        id: $cluster.id,
+        cluster_policy: $cluster.cluster_policy,
+        leader_node: $cluster.leader_node
+      },
+
+      routerClusterNodes: [
+        $routerClusterNodes[] |
+        {id, node_id: .node, cluster}
+      ] | sort_by(.id, .node_id, .cluster),
+
+      rke2Cluster: {
+        id: $rke2Cluster.id,
+        cluster_policy: $rke2Cluster.cluster_policy,
+        leader_node: $rke2Cluster.leader_node
+      },
+
+      rke2ClusterNodes: [
+        $rke2ClusterNodes[] |
+        {id, node_id: .node, cluster}
+      ] | sort_by(.id, .node_id, .cluster),
+
+      rke2NodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith($rke2Cluster.id)) and
+          .deleted_ts == null and
+          (.name | startswith("k8s_"))
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
+      redisCluster: {
+        id: $redisCluster.id
+      },
+
+      redisNodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith($redisCluster.id)) and
+          .deleted_ts == null and
+          .name == "redis_node_ready"
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
+      wgCluster: {
+        id: $wgCluster.id
+      },
+
+      wgNodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith($wgCluster.id)) and
+          .deleted_ts == null and
+          .name == "tunnel_ip"
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
+      nodeAddrs: [
+        $swarmdb.nodes[] |
+        select(.node_id | IN($rke2NodeIds[])) |
+        {node_id: .node_id, addr: .addr, port: .port}
+      ] | sort_by(.node_id, .addr, .port)
+    }
