@@ -99,18 +99,6 @@ ADD initramfs/files/init.sh /initramfs-root/sbin/init.sh
 RUN gen_init_cpio /initramfs-root/initramfs.list | gzip -9 -n > /initramfs-root/initramfs.cpio.gz
 ### End  ###
 
-### TEst
-FROM scratch AS test
-COPY --from=busybox_builder /initramfs-root/sbin/busybox /sbin/
-COPY --from=util_linux_builder /initramfs-root/sbin/blkid /sbin/
-COPY --from=util_linux_builder /initramfs-root/sbin/lsblk /sbin/
-COPY --from=util_linux_builder /initramfs-root/sbin/wipefs /sbin/
-COPY --from=cryptsetup_builder /initramfs-root/sbin/veritysetup.static /sbin/
-COPY --from=cryptsetup_builder /initramfs-root/sbin/cryptsetup.static /sbin/
-COPY --from=e2fsprogs_builder /initramfs-root/sbin/mkfs.ext4 /sbin/
-ENTRYPOINT ["/sbin/busybox", "sh"]
-### TEst
-
 ### Start certs ###
 FROM ubuntu:24.04 AS certs_builder
 RUN apt update && apt install -y openssl
