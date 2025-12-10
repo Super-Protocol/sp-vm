@@ -329,6 +329,12 @@ RUN --security=insecure bash /buildroot/files/scripts/install_nats.sh
 # disable autostart without requiring systemd during build (ensure no enable symlinks for nats)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/nats-server.service \
     && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/nats-server.service || true
+# CockroachDB (install cockroach binary into VM rootfs)
+ADD rootfs/files/scripts/install_cockroachdb.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_cockroachdb.sh
+# Knot DNS (install knot into VM rootfs)
+ADD rootfs/files/scripts/install_knot.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_knot.sh
 # OpenResty (install into VM rootfs so provisioner only configures and manages it)
 ADD rootfs/files/scripts/install_openresty.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_openresty.sh
