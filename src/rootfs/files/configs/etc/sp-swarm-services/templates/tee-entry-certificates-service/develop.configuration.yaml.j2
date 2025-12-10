@@ -1,0 +1,25 @@
+# DEVELOP
+natsUrl: {{ nats_url }}
+
+port: {{ port | default(3003) }}
+
+logLevel: {{ log_level | default('info') }}
+
+mongodbUrl: {{ mongodb_url }}
+
+pkiServiceUrl: http://localhost:8080
+
+blockchainRpcUrl: https://opbnb.testnet.superprotocol.com
+
+expirationThresholdDays: {{ expiration_threshold_days | default(5) }}
+
+metrics:
+  defaultMetrics:
+    enabled: {{ metrics_default_enabled | default(true) }}
+  mode: {{ metrics_mode | default('pull') }}
+  push:
+    enabled: {{ metrics_push_enabled | default(false) }}
+  pull:
+    enabled: {{ metrics_pull_enabled | default(false) }}
+    port: {{ metrics_pull_port | default(9004) }}
+    path: {{ metrics_pull_path | default('/metrics') }}

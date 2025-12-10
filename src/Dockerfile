@@ -141,7 +141,7 @@ RUN make build-linux-amd64
 
 ### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
-RUN apt update && apt install -y wget gcc make build-essential debootstrap petname gettext
+RUN apt update && apt install -y wget gcc make build-essential debootstrap petname gettext git golang
 
 ARG PROVIDER_CONFIG_DST=/sp
 ARG VERSION_CODENAME=noble
@@ -259,9 +259,28 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/loca
 # run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
+# sp-swarm-services systemd units and runners
+ADD rootfs/files/configs/usr/local/bin/sp-svc-api-gateway.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-api-gateway.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-workload-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-workload-service.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-blockchain-observer-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-blockchain-observer-service.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-tee-entry-certificates-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-tee-entry-certificates-service.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-content-certificates-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-content-certificates-service.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-version-certificates-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-version-certificates-service.sh
+ADD rootfs/files/configs/usr/local/bin/sp-svc-resource-certificates-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-resource-certificates-service.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/sp-svc-*.sh
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-api-gateway.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-api-gateway.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-workload-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-workload-service.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-blockchain-observer-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-blockchain-observer-service.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-tee-entry-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-tee-entry-certificates-service.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-content-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-content-certificates-service.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-version-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-version-certificates-service.service
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-resource-certificates-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-resource-certificates-service.service
+
 # swarm one-shot services runner
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
 ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
+# Copy Jinja templates for sp-swarm-services
+ADD rootfs/files/configs/etc/sp-swarm-services/templates/ ${OUTPUTDIR}/etc/sp-swarm-services/templates/
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
 RUN ln -sf /etc/systemd/system/swarm-services.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-services.service"
 
@@ -291,6 +310,12 @@ RUN --security=insecure /buildroot/files/scripts/install_nodejs.sh
 ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
+
+# build sp-swarm-services applications inside rootfs via script
+COPY repos/sp-swarm-services ${OUTPUTDIR}/opt/sp-swarm-services
+ADD rootfs/files/scripts/build_swarm_services.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/build_swarm_services.sh
+RUN --security=insecure /buildroot/files/scripts/build_swarm_services.sh
 
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
