@@ -236,6 +236,10 @@ def ensure_config_written(
     # Write configuration file
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(rendered_content, encoding="UTF-8")
+    
+    # Verify file was created
+    if not config_path.exists():
+        raise RuntimeError(f"Failed to create configuration file at {config_path}")
 
 @plugin.command("init")
 def handle_init(input_data: PluginInput) -> PluginOutput:
@@ -260,9 +264,6 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
             nats_url,
             mongodb_url,
             redis_url,
-            BLOCKCHAIN_RPC_URL,
-            CONTRACT_ADDRESS,
-            BLOCKCHAIN_WS_URL,
         )
 
         # Enable and (re)start the service
