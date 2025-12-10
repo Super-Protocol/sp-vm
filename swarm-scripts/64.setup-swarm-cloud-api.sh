@@ -1,15 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-# This script bootstraps the openresty-k8s-router service into SwarmDB via mysql client.
-# Run it INSIDE the container. Assumes mysql client is available.
+# This script bootstraps the swarm-cloud-api service into SwarmDB via swarm-cli.
+# Run it INSIDE the container. Assumes mysql client and swarm-cli.py are available.
 #
 # Notes:
-# - The openresty-k8s-router manifest and main.py are provided by the image at:
-#     /etc/swarm-services/openresty-k8s-router/{manifest.yaml, main.py}
-#   This script only registers service records in SwarmDB.
-# - Convention: the router ClusterId should match the target RKE2 ClusterId.
-#   The router uses this to find the corresponding RKE2 cluster in stateExpr.
+# - The swarm-cloud-api manifest and main.py are provided by the image at:
+#     /etc/swarm-services/swarm-cloud-api/{manifest.yaml, main.py}
+#   We do not reimplement any logic here, only register ClusterPolicy and ClusterService.
+# - swarm-cloud-api depends on CockroachDB, Redis, WireGuard and Knot as expressed
+#   in its own manifest and provision plugin.
+# - This script is intentionally numbered *after* redis (60), cockroachdb (61) and knot (62)
+#   so you can run them in dependency order.
 #
 
 DB_HOST=${DB_HOST:-127.0.0.1}
@@ -18,10 +20,10 @@ DB_USER=${DB_USER:-root}
 DB_NAME=${DB_NAME:-swarmdb}
 
 # Service descriptors
-SERVICE_NAME=${SERVICE_NAME:-openresty-k8s-router}
+SERVICE_NAME=${SERVICE_NAME:-swarm-cloud-api}
 SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
-CLUSTER_POLICY=${CLUSTER_POLICY:-openresty-k8s-router}
-CLUSTER_ID=${CLUSTER_ID:-rke2}  # by default, bind router to the 'rke2' clusterId
+CLUSTER_POLICY=${CLUSTER_POLICY:-swarm-cloud-api}
+CLUSTER_ID=${CLUSTER_ID:-swarm-cloud-api}
 
 # Location and manifest inside the container.
 # IMPORTANT: This script runs only on one node. All nodes must have the same location available already
@@ -38,7 +40,7 @@ fi
 CLI="$(dirname "$0")/swarm-cli.sh"
 echo "Creating/Updating ClusterPolicies '$CLUSTER_POLICY'..."
 DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-  python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=3 --maxClusters=0
+  python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=3 --maxClusters=1
 
 echo "Creating/Updating ClusterServices '$SERVICE_PK'..."
 DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
