@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-import os
 import subprocess
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from jinja2 import Environment, FileSystemLoader
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 
 SERVICE_UNIT = "sp-svc-blockchain-observer-service.service"
@@ -17,9 +17,7 @@ DEFAULT_REDIS_TTL_HOURS = 720
 NATS_PORT = 4222
 MONGODB_PORT = 27017
 REDIS_PORT = 6379
-BLOCKCHAIN_RPC_URL="https://opbnb.testnet.superprotocol.com"
-CONTRACT_ADDRESS="0x9CcBf0aABa30404B812414081c3F3789aa17E4eC"
-BLOCKCHAIN_WS_URL="wss://opbnb.testnet.superprotocol.com"
+ENV_CMDLINE="argo_sp_env"
 
 plugin = ProvisionPlugin()
 
@@ -85,6 +83,102 @@ def pick_redis_url(state_json: Dict[str, Any]) -> str:
         return ",".join(hosts)
     return f"redis://127.0.0.1:{REDIS_PORT}"
 
+def get_cmdline_param(param_name: str) -> Optional[str]:
+    """
+    Read kernel command line from /proc/cmdline and extract a parameter value.
+    Returns None if parameter is not found.
+    """
+    try:
+        with open("/proc/cmdline", "r") as f:
+            cmdline = f.read().strip()
+        # Parse cmdline: split by spaces and find param=value
+        for item in cmdline.split():
+            if "=" in item:
+                key, value = item.split("=", 1)
+                if key == param_name:
+                    return value
+    except Exception:
+        pass
+    return None
+
+def get_sp_env() -> str:
+    """
+    Get argo_sp_env from /proc/cmdline.
+    Returns 'main' as default if not found or invalid.
+    """
+    env = get_cmdline_param(ENV_CMDLINE)
+    if env in ["main", "develop", "testnet", "staging"]:
+        return env
+    return "main"  # default to main
+
+def get_template_filename_for_env(env: str) -> str:
+    """
+    Map argo_sp_env value to template filename.
+    main -> production.configuration.yaml.j2
+    develop -> develop.configuration.yaml.j2
+    testnet -> testnet.configuration.yaml.j2
+    staging -> staging.configuration.yaml.j2
+    """
+    mapping = {
+        "main": "production.configuration.yaml.j2",
+        "develop": "develop.configuration.yaml.j2",
+        "testnet": "testnet.configuration.yaml.j2",
+        "staging": "staging.configuration.yaml.j2",
+    }
+    return mapping.get(env, "production.configuration.yaml.j2")
+
+def create_template_context(
+    nats_url: str,
+    mongodb_url: str,
+    redis_url: str,
+    port: int = DEFAULT_PORT,
+    log_level: str = DEFAULT_LOG_LEVEL,
+    block_offset: int = DEFAULT_BLOCK_OFFSET,
+    check_interval_minutes: int = DEFAULT_CHECK_INTERVAL_MINUTES,
+    init_block: int = DEFAULT_INIT_BLOCK,
+    redis_ttl_hours: int = DEFAULT_REDIS_TTL_HOURS,
+    jetstream_timeout: int = 10000,
+    jetstream_reconnect: bool = True,
+    jetstream_max_reconnect_attempts: int = -1,
+    jetstream_reconnect_time_wait: int = 2000,
+    jetstream_producer_retention: int = 0,
+    jetstream_producer_num_replicas: int = 1,
+    jetstream_producer_stream_info_update_interval: int = 30,
+    metrics_default_enabled: bool = True,
+    metrics_mode: str = "pull",
+    metrics_push_enabled: bool = False,
+    metrics_pull_enabled: bool = False,
+    metrics_pull_port: int = 9003,
+    metrics_pull_path: str = "/metrics",
+) -> Dict[str, Any]:
+    """
+    Create template context dictionary for Jinja2 rendering.
+    """
+    return {
+        "nats_url": nats_url,
+        "mongodb_url": mongodb_url,
+        "redis_url": redis_url,
+        "port": port,
+        "log_level": log_level,
+        "block_offset": block_offset,
+        "check_interval_minutes": check_interval_minutes,
+        "init_block": init_block,
+        "redis_ttl_hours": redis_ttl_hours,
+        "jetstream_timeout": jetstream_timeout,
+        "jetstream_reconnect": jetstream_reconnect,
+        "jetstream_max_reconnect_attempts": jetstream_max_reconnect_attempts,
+        "jetstream_reconnect_time_wait": jetstream_reconnect_time_wait,
+        "jetstream_producer_retention": jetstream_producer_retention,
+        "jetstream_producer_num_replicas": jetstream_producer_num_replicas,
+        "jetstream_producer_stream_info_update_interval": jetstream_producer_stream_info_update_interval,
+        "metrics_default_enabled": metrics_default_enabled,
+        "metrics_mode": metrics_mode,
+        "metrics_push_enabled": metrics_push_enabled,
+        "metrics_pull_enabled": metrics_pull_enabled,
+        "metrics_pull_port": metrics_pull_port,
+        "metrics_pull_path": metrics_pull_path,
+    }
+
 def ensure_config_written(
     config_path: Path,
     nats_url: str,
@@ -95,71 +189,53 @@ def ensure_config_written(
     blockchain_ws_url: Optional[str] = None,
 ) -> None:
     """
-    Write configuration file for blockchain-observer-service.
+    Write configuration file for blockchain-observer-service using Jinja template.
+    The template is selected based on argo_sp_env from /proc/cmdline.
     """
+    # Get environment from kernel cmdline
+    sp_env = get_sp_env()
+    template_filename = get_template_filename_for_env(sp_env)
+
+    template_dir = Path("/etc/sp-swarm-services/templates/blockchain-observer-service")
+    template_path = template_dir / template_filename
+
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}")
+
+    # Create template context
+    context = create_template_context(
+        nats_url=nats_url,
+        mongodb_url=mongodb_url,
+        redis_url=redis_url,
+        port=DEFAULT_PORT,
+        log_level=DEFAULT_LOG_LEVEL,
+        block_offset=DEFAULT_BLOCK_OFFSET,
+        check_interval_minutes=DEFAULT_CHECK_INTERVAL_MINUTES,
+        init_block=DEFAULT_INIT_BLOCK,
+        redis_ttl_hours=DEFAULT_REDIS_TTL_HOURS,
+        jetstream_timeout=10000,
+        jetstream_reconnect=True,
+        jetstream_max_reconnect_attempts=-1,
+        jetstream_reconnect_time_wait=2000,
+        jetstream_producer_retention=0,
+        jetstream_producer_num_replicas=1,
+        jetstream_producer_stream_info_update_interval=30,
+        metrics_default_enabled=True,
+        metrics_mode="pull",
+        metrics_push_enabled=False,
+        metrics_pull_enabled=False,
+        metrics_pull_port=9003,
+        metrics_pull_path="/metrics",
+    )
+
+    # Render template
+    env = Environment(loader=FileSystemLoader(str(template_dir)))
+    template = env.get_template(template_filename)
+    rendered_content = template.render(**context)
+
+    # Write configuration file
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    lines: List[str] = []
-
-    # NATS configuration
-    lines.append(f"natsUrl: {nats_url}")
-
-    # Service port
-    lines.append(f"port: {DEFAULT_PORT}")
-
-    # Log level
-    lines.append(f"logLevel: {DEFAULT_LOG_LEVEL}")
-
-    # MongoDB configuration
-    lines.append(f"mongodbUrl: {mongodb_url}")
-
-    # Redis configuration
-    lines.append(f"redisUrl: {redis_url}")
-
-    # Blockchain configuration
-    lines.append("blockchain:")
-    lines.append(f"  blockchainRpcUrl: {blockchain_rpc_url}")
-    lines.append(f"  blockchainUrlWs: {blockchain_ws_url}")
-    lines.append(f'  contractAddress: "{contract_address}"')
-
-    # Block offset
-    lines.append(f"blockOffset: {DEFAULT_BLOCK_OFFSET}")
-
-    # Check interval
-    lines.append(f"checkIntervalMinutes: {DEFAULT_CHECK_INTERVAL_MINUTES}")
-
-    # Initial block
-    lines.append(f"initBlock: {DEFAULT_INIT_BLOCK}")
-
-    # Redis TTL
-    lines.append(f"redisTtlHours: {DEFAULT_REDIS_TTL_HOURS}")
-
-    # JetStream configuration
-    lines.append("jetstream:")
-    lines.append("  timeout: 10000")
-    lines.append("  reconnect: true")
-    lines.append("  maxReconnectAttempts: -1")
-    lines.append("  reconnectTimeWait: 2000")
-    lines.append("  producer:")
-    lines.append("    retention: workqueue")
-    lines.append("    num_replicas: 1")
-    lines.append("    max_msgs: -1")
-    lines.append("    max_bytes: -1")
-    lines.append("    streamInfoUpdateIntervalSeconds: 30")
-
-    # Metrics configuration
-    lines.append("metrics:")
-    lines.append("  defaultMetrics:")
-    lines.append("    enabled: true")
-    lines.append("  mode: pull")
-    lines.append("  push:")
-    lines.append("    enabled: false")
-    lines.append("  pull:")
-    lines.append("    enabled: false")
-    lines.append("    port: 9003")
-    lines.append("    path: /metrics")
-
-    content = "\n".join(lines) + "\n"
-    config_path.write_text(content, encoding="UTF-8")
+    config_path.write_text(rendered_content, encoding="UTF-8")
 
 @plugin.command("init")
 def handle_init(input_data: PluginInput) -> PluginOutput:
@@ -177,7 +253,7 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
         mongodb_url = pick_mongodb_url(resolved_state)
         redis_url = pick_redis_url(resolved_state)
 
-        # Generate config under /etc for the runner
+        # Generate config file based on argo_sp_env from /proc/cmdline
         config_path = Path("/etc/sp-swarm-services/apps/blockchain-observer-service/configuration.yaml")
         ensure_config_written(
             config_path,

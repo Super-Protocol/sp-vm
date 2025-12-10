@@ -279,6 +279,8 @@ ADD rootfs/files/configs/etc/systemd/system/sp-svc-resource-certificates-service
 # swarm one-shot services runner
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
 ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
+# Copy Jinja templates for sp-swarm-services
+ADD rootfs/files/configs/etc/sp-swarm-services/templates/ ${OUTPUTDIR}/etc/sp-swarm-services/templates/
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
 RUN ln -sf /etc/systemd/system/swarm-services.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-services.service"
 

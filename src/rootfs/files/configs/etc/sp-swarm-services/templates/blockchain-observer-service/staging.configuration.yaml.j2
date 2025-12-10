@@ -1,0 +1,49 @@
+# STAGING
+port: {{ port | default(3002) }}
+
+natsUrl: {{ nats_url }}
+
+logLevel: {{ log_level | default('info') }}
+
+mongodbUrl: {{ mongodb_url }}
+
+redisUrl: {{ redis_url }}
+
+# Blockchain configuration
+blockchain:
+  blockchainRpcUrl: https://opbnb.testnet.superprotocol.com
+  blockchainUrlWs: wss://opbnb.testnet.superprotocol.com
+  contractAddress: "0x9CcBf0aABa30404B812414081c3F3789aa17E4eC"
+
+# Block offset for batch processing
+blockOffset: {{ block_offset | default(100) }}
+
+# Check interval in minutes (default: 5)
+checkIntervalMinutes: {{ check_interval_minutes | default(5) }}
+
+# Initial block number (required, block number used for initialization if no previous state exists)
+initBlock: {{ init_block | default(0) }}
+
+# Redis TTL in hours (default: 720 - 30 days)
+redisTtlHours: {{ redis_ttl_hours | default(720) }}
+
+# JetStream configuration
+jetstream:
+  timeout: {{ jetstream_timeout | default(10000) }}
+  reconnect: {{ jetstream_reconnect | default(true) }}
+  maxReconnectAttempts: {{ jetstream_max_reconnect_attempts | default(-1) }}
+  reconnectTimeWait: {{ jetstream_reconnect_time_wait | default(2000) }}
+  producer:
+    retention: {{ jetstream_producer_retention | default(0) }}
+    num_replicas: {{ jetstream_producer_num_replicas | default(1) }}
+    streamInfoUpdateIntervalSeconds: {{ jetstream_producer_stream_info_update_interval | default(30) }}
+
+# Metrics configuration
+metrics:
+  defaultMetrics:
+    enabled: {{ metrics_default_enabled | default(true) }}
+  mode: {{ metrics_mode | default('pull') }}
+  push:
+    enabled: {{ metrics_push_enabled | default(false) }}
+  pull:
+    enabled: {{ metrics_pull_enabled | default(false) }}
