@@ -34,7 +34,7 @@ jetstream:
   maxReconnectAttempts: {{ jetstream_max_reconnect_attempts | default(-1) }}
   reconnectTimeWait: {{ jetstream_reconnect_time_wait | default(2000) }}
   producer:
-    retention: {{ jetstream_producer_retention | default(0) }}
+    retention: {{ jetstream_producer_retention | default('workqueue') }}
     num_replicas: {{ jetstream_producer_num_replicas | default(1) }}
     streamInfoUpdateIntervalSeconds: {{ jetstream_producer_stream_info_update_interval | default(30) }}
 

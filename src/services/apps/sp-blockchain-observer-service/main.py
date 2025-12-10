@@ -141,7 +141,7 @@ def create_template_context(
     jetstream_reconnect: bool = True,
     jetstream_max_reconnect_attempts: int = -1,
     jetstream_reconnect_time_wait: int = 2000,
-    jetstream_producer_retention: int = 0,
+    jetstream_producer_retention: str = 'workqueue',
     jetstream_producer_num_replicas: int = 1,
     jetstream_producer_stream_info_update_interval: int = 30,
     metrics_default_enabled: bool = True,
@@ -217,7 +217,7 @@ def ensure_config_written(
         jetstream_reconnect=True,
         jetstream_max_reconnect_attempts=-1,
         jetstream_reconnect_time_wait=2000,
-        jetstream_producer_retention=0,
+        jetstream_producer_retention='workqueue',
         jetstream_producer_num_replicas=1,
         jetstream_producer_stream_info_update_interval=30,
         metrics_default_enabled=True,
@@ -236,7 +236,7 @@ def ensure_config_written(
     # Write configuration file
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(rendered_content, encoding="UTF-8")
-    
+
     # Verify file was created
     if not config_path.exists():
         raise RuntimeError(f"Failed to create configuration file at {config_path}")
