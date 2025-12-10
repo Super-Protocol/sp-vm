@@ -308,6 +308,7 @@ COPY services/apps/ ${OUTPUTDIR}/etc/swarm-services/
 COPY repos/swarm-cloud/services/swarm-cloud-api ${OUTPUTDIR}/etc/swarm-services/swarm-cloud-api
 COPY repos/swarm-cloud/services/cockroachdb ${OUTPUTDIR}/etc/swarm-services/cockroachdb
 COPY repos/swarm-cloud/services/knot ${OUTPUTDIR}/etc/swarm-services/knot
+COPY repos/swarm-cloud/services/openresty ${OUTPUTDIR}/etc/swarm-services/openresty
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
@@ -334,6 +335,8 @@ RUN --security=insecure bash /buildroot/files/scripts/install_openresty.sh
 # disable autostart without requiring systemd during build (ensure no enable symlinks for openresty)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/openresty.service \
     && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/openresty.service || true
+RUN mkdir -p ${OUTPUTDIR}/etc/resty-auto-ssl/storage \
+    && chown -R www-data:www-data ${OUTPUTDIR}/etc/resty-auto-ssl
 # disable autostart without requiring systemd during build (remove enable symlinks)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
     &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service
