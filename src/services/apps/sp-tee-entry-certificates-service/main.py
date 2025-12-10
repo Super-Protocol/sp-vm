@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-import os
 import subprocess
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from jinja2 import Environment, FileSystemLoader
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 
 SERVICE_UNIT = "sp-svc-tee-entry-certificates-service.service"
@@ -13,8 +13,7 @@ DEFAULT_LOG_LEVEL = "info"
 DEFAULT_EXPIRATION_THRESHOLD_DAYS = 5
 NATS_PORT = 4222
 MONGODB_PORT = 27017
-BLOCKCHAIN_RPC_URL = "https://opbnb.testnet.superprotocol.com"
-PKI_SERVICE_URL = "http://localhost:8080"
+ENV_CMDLINE = "argo_sp_env"
 
 plugin = ProvisionPlugin()
 
@@ -64,55 +63,126 @@ def pick_mongodb_url(state_json: Dict[str, Any]) -> str:
         return f"mongodb://{','.join(hosts)}"
     return f"mongodb://127.0.0.1:{MONGODB_PORT}"
 
+def get_cmdline_param(param_name: str) -> Optional[str]:
+    """
+    Read kernel command line from /proc/cmdline and extract a parameter value.
+    Returns None if parameter is not found.
+    """
+    try:
+        with open("/proc/cmdline", "r") as f:
+            cmdline = f.read().strip()
+        # Parse cmdline: split by spaces and find param=value
+        for item in cmdline.split():
+            if "=" in item:
+                key, value = item.split("=", 1)
+                if key == param_name:
+                    return value
+    except Exception:
+        pass
+    return None
+
+def get_sp_env() -> str:
+    """
+    Get argo_sp_env from /proc/cmdline.
+    Returns 'main' as default if not found or invalid.
+    """
+    env = get_cmdline_param(ENV_CMDLINE)
+    if env in ["main", "develop", "testnet", "staging"]:
+        return env
+    return "main"  # default to main
+
+def get_template_filename_for_env(env: str) -> str:
+    """
+    Map argo_sp_env value to template filename.
+    main -> production.configuration.yaml.j2
+    develop -> develop.configuration.yaml.j2
+    testnet -> testnet.configuration.yaml.j2
+    staging -> staging.configuration.yaml.j2
+    """
+    mapping = {
+        "main": "production.configuration.yaml.j2",
+        "develop": "develop.configuration.yaml.j2",
+        "testnet": "testnet.configuration.yaml.j2",
+        "staging": "staging.configuration.yaml.j2",
+    }
+    return mapping.get(env, "production.configuration.yaml.j2")
+
+def create_template_context(
+    nats_url: str,
+    mongodb_url: str,
+    port: int = DEFAULT_PORT,
+    log_level: str = DEFAULT_LOG_LEVEL,
+    expiration_threshold_days: int = DEFAULT_EXPIRATION_THRESHOLD_DAYS,
+    metrics_default_enabled: bool = True,
+    metrics_mode: str = "pull",
+    metrics_push_enabled: bool = False,
+    metrics_pull_enabled: bool = False,
+    metrics_pull_port: int = 9004,
+    metrics_pull_path: str = "/metrics",
+) -> Dict[str, Any]:
+    """
+    Create template context dictionary for Jinja2 rendering.
+    """
+    return {
+        "nats_url": nats_url,
+        "mongodb_url": mongodb_url,
+        "port": port,
+        "log_level": log_level,
+        "expiration_threshold_days": expiration_threshold_days,
+        "metrics_default_enabled": metrics_default_enabled,
+        "metrics_mode": metrics_mode,
+        "metrics_push_enabled": metrics_push_enabled,
+        "metrics_pull_enabled": metrics_pull_enabled,
+        "metrics_pull_port": metrics_pull_port,
+        "metrics_pull_path": metrics_pull_path,
+    }
+
 def ensure_config_written(
     config_path: Path,
     nats_url: str,
     mongodb_url: str,
-    blockchain_rpc_url: str,
-    pki_service_url: str,
-    expiration_threshold_days: int,
 ) -> None:
     """
-    Write configuration file for tee-entry-certificates-service.
+    Write configuration file for tee-entry-certificates-service using Jinja template.
+    The template is selected based on argo_sp_env from /proc/cmdline.
     """
+    # Get environment from kernel cmdline
+    sp_env = get_sp_env()
+    template_filename = get_template_filename_for_env(sp_env)
+
+    template_dir = Path("/etc/sp-swarm-services/templates/tee-entry-certificates-service")
+    template_path = template_dir / template_filename
+
+    if not template_path.exists():
+        raise FileNotFoundError(f"Template file not found: {template_path}")
+
+    # Create template context
+    context = create_template_context(
+        nats_url=nats_url,
+        mongodb_url=mongodb_url,
+        port=DEFAULT_PORT,
+        log_level=DEFAULT_LOG_LEVEL,
+        expiration_threshold_days=DEFAULT_EXPIRATION_THRESHOLD_DAYS,
+        metrics_default_enabled=True,
+        metrics_mode="pull",
+        metrics_push_enabled=False,
+        metrics_pull_enabled=False,
+        metrics_pull_port=9004,
+        metrics_pull_path="/metrics",
+    )
+
+    # Render template
+    env = Environment(loader=FileSystemLoader(str(template_dir)))
+    template = env.get_template(template_filename)
+    rendered_content = template.render(**context)
+
+    # Write configuration file
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    lines: List[str] = []
+    config_path.write_text(rendered_content, encoding="UTF-8")
 
-    # NATS configuration
-    lines.append(f"natsUrl: {nats_url}")
-
-    # Service port
-    lines.append(f"port: {DEFAULT_PORT}")
-
-    # Log level
-    lines.append(f"logLevel: {DEFAULT_LOG_LEVEL}")
-
-    # MongoDB configuration
-    lines.append(f"mongodbUrl: {mongodb_url}")
-
-    # PKI Service URL
-    lines.append(f"pkiServiceUrl: {pki_service_url}")
-
-    # Blockchain RPC URL
-    lines.append(f"blockchainRpcUrl: {blockchain_rpc_url}")
-
-    # Expiration threshold
-    lines.append(f"expirationThresholdDays: {expiration_threshold_days}")
-
-    # Metrics configuration
-    lines.append("metrics:")
-    lines.append("  defaultMetrics:")
-    lines.append("    enabled: true")
-    lines.append("  mode: pull")
-    lines.append("  push:")
-    lines.append("    enabled: false")
-    lines.append("  pull:")
-    lines.append("    enabled: false")
-    lines.append("    port: 9004")
-    lines.append("    path: /metrics")
-
-    content = "\n".join(lines) + "\n"
-    config_path.write_text(content, encoding="UTF-8")
+    # Verify file was created
+    if not config_path.exists():
+        raise RuntimeError(f"Failed to create configuration file at {config_path}")
 
 @plugin.command("init")
 def handle_init(input_data: PluginInput) -> PluginOutput:
@@ -129,15 +199,12 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
         nats_url = pick_nats_url(resolved_state)
         mongodb_url = pick_mongodb_url(resolved_state)
 
-        # Generate config under /etc for the runner
+        # Generate config file based on argo_sp_env from /proc/cmdline
         config_path = Path("/etc/sp-swarm-services/apps/tee-entry-certificates-service/configuration.yaml")
         ensure_config_written(
             config_path,
             nats_url,
             mongodb_url,
-            BLOCKCHAIN_RPC_URL,
-            PKI_SERVICE_URL,
-            DEFAULT_EXPIRATION_THRESHOLD_DAYS,
         )
 
         # Enable and (re)start the service

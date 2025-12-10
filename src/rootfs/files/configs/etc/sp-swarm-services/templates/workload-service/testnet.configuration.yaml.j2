@@ -1,0 +1,17 @@
+# TESTNET
+natsUrl: {{ nats_url }}
+
+port: {{ port | default(3001) }}
+
+logLevel: {{ log_level | default('info') }}
+
+metrics:
+  defaultMetrics:
+    enabled: {{ metrics_default_enabled | default(true) }}
+  mode: {{ metrics_mode | default('pull') }}
+  push:
+    enabled: {{ metrics_push_enabled | default(false) }}
+  pull:
+    enabled: {{ metrics_pull_enabled | default(false) }}
+    port: {{ metrics_pull_port | default(9001) }}
+    path: {{ metrics_pull_path | default('/metrics') }}

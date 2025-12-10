@@ -1,0 +1,31 @@
+# PRODUCTION
+natsUrl: {{ nats_url }}
+
+port: {{ port | default(3006) }}
+
+logLevel: {{ log_level | default('info') }}
+
+mongodbUrl: {{ mongodb_url }}
+
+blockchain:
+  blockchainRpcUrl: https://opbnb.testnet.superprotocol.com
+  blockchainUrlWs: wss://opbnb.testnet.superprotocol.com
+  contractAddress: "0x9CcBf0aABa30404B812414081c3F3789aa17E4eC"
+
+jetstream:
+  timeout: {{ jetstream_timeout | default(10000) }}
+  reconnect: {{ jetstream_reconnect | default(true) }}
+  maxReconnectAttempts: {{ jetstream_max_reconnect_attempts | default(-1) }}
+  reconnectTimeWait: {{ jetstream_reconnect_time_wait | default(2000) }}
+  consumer: {}
+
+metrics:
+  defaultMetrics:
+    enabled: {{ metrics_default_enabled | default(true) }}
+  mode: {{ metrics_mode | default('pull') }}
+  push:
+    enabled: {{ metrics_push_enabled | default(false) }}
+  pull:
+    enabled: {{ metrics_pull_enabled | default(false) }}
+    port: {{ metrics_pull_port | default(9007) }}
+    path: {{ metrics_pull_path | default('/metrics') }}
