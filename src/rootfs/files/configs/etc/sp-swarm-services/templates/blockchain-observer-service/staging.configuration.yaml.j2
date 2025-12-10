@@ -47,3 +47,5 @@ metrics:
     enabled: {{ metrics_push_enabled | default(false) }}
   pull:
     enabled: {{ metrics_pull_enabled | default(false) }}
+    port: 9003
+    path: /metrics
