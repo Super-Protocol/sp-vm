@@ -306,7 +306,6 @@ RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
 COPY services/apps/ ${OUTPUTDIR}/etc/swarm-services/
 # provision plugins from original swarm-cloud repo
 COPY repos/swarm-cloud/services/swarm-cloud-api ${OUTPUTDIR}/etc/swarm-services/swarm-cloud-api
-COPY repos/swarm-cloud/services/openresty ${OUTPUTDIR}/etc/swarm-services/openresty
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
