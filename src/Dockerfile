@@ -338,6 +338,9 @@ RUN --security=insecure bash /buildroot/files/scripts/install_cockroachdb.sh
 # Knot DNS (install knot into VM rootfs)
 ADD rootfs/files/scripts/install_knot.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_knot.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for knot)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/knot.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/knot.service || true
 # OpenResty (install into VM rootfs so provisioner only configures and manages it)
 ADD rootfs/files/scripts/install_openresty.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_openresty.sh
