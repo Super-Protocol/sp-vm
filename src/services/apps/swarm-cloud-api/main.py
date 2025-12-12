@@ -11,10 +11,11 @@ from pathlib import Path
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 
 # Configuration
-# swarm-cloud-api Node.js bundle is installed into /usr/local/lib/swarm-cloud-api
-API_INSTALL_DIR = Path("/usr/local/lib/swarm-cloud-api")
-API_BIN = API_INSTALL_DIR / "swarm-cloud-api"
-# Keep original config location used by swarm-cloud-api
+# Both swarm-node and swarm-cloud-api are built from the same monorepo into
+# /usr/local/lib/swarm-cloud, under dist/apps/<app>. We use a small wrapper
+# in /usr/local/bin to start the API with Node.js.
+API_INSTALL_DIR = Path("/usr/local/lib/swarm-cloud")
+API_BIN = Path("/usr/local/bin/swarm-cloud-api.sh")
 API_CONFIG_DIR = Path("/etc/swarm-cloud-api")
 API_CONFIG_FILE = API_CONFIG_DIR / "config.yaml"
 API_PORT = 3000
