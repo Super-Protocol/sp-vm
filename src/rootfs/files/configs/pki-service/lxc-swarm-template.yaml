@@ -10,7 +10,9 @@ pki:
       signatureVerification: github
     - type: sev-snp
       signatureVerification: github
-  tokenChallengeFilePath: /app/access-token
+  tokenStorage:
+    storageType: mongodb
+    connectionString: mongodb://10.0.3.1:27017/pki
   ownDomain: ca-subroot.super-protocol.svc.cluster.local
   ownChallenge:
     type: tdx

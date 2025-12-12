@@ -461,15 +461,10 @@ def setup_iptables(wg_ip):
     """Setup iptables NAT rules for LXC container access to host services."""
     host_ip = get_bridge_ip(BRIDGE_NAME)
     
-    # Enable route_localnet for the bridge
     enable_route_localnet(BRIDGE_NAME)
     
-    # Add iptables rules for PCCS and MongoDB
     add_iptables_rule(host_ip, PCCS_PORT)
     add_iptables_rule(host_ip, MONGODB_PORT)
-    
-    # Add WireGuard interface routing rules
-    # Route external traffic from WireGuard to container
     subprocess.run(
         [
             "iptables", "-t", "nat", "-A", "PREROUTING",
@@ -483,7 +478,6 @@ def setup_iptables(wg_ip):
     )
     print(f"Added iptables rule: PREROUTING WireGuard {PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443")
     
-    # Route local traffic to container
     subprocess.run(
         [
             "iptables", "-t", "nat", "-A", "OUTPUT",
@@ -497,7 +491,6 @@ def setup_iptables(wg_ip):
     )
     print(f"Added iptables rule: OUTPUT {wg_ip}:{PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443")
     
-    # Add masquerading for container traffic
     subprocess.run(
         [
             "iptables", "-t", "nat", "-A", "POSTROUTING",
@@ -515,36 +508,69 @@ def update_pccs_url():
     qcnl_conf = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/etc/sgx_default_qcnl.conf")
     qcnl_conf_bak = Path(f"{qcnl_conf}.bak")
     
-    # Get host IP address on the LXC bridge
     host_ip = get_bridge_ip(BRIDGE_NAME)
     
-    # Update PCCS URL in QCNL configuration
     pccs_url = f"https://{host_ip}:{PCCS_PORT}/sgx/certification/v4/"
     
     if not qcnl_conf.exists():
         print(f"Error: {qcnl_conf} not found")
         sys.exit(1)
     
-    # Create backup if it doesn't exist
     if not qcnl_conf_bak.exists():
         shutil.copy(qcnl_conf, qcnl_conf_bak)
-        
-        # Update pccs_url in the JSON configuration file
-        with open(qcnl_conf, "r") as f:
-            content = f.read()
-        
-        content = re.sub(
-            r'"pccs_url":\s*"[^"]*"',
-            f'"pccs_url": "{pccs_url}"',
-            content
-        )
-        
-        with open(qcnl_conf, "w") as f:
-            f.write(content)
-        
-        print(f"Updated PCCS URL in {qcnl_conf} to {pccs_url}")
-    else:
-        print(f"Backup {qcnl_conf_bak} already exists, skipping PCCS URL update")
+    
+    shutil.copy(qcnl_conf_bak, qcnl_conf)
+    
+    with open(qcnl_conf, "r") as f:
+        content = f.read()
+    
+    content = re.sub(
+        r'"pccs_url":\s*"[^"]*"',
+        f'"pccs_url": "{pccs_url}"',
+        content
+    )
+    
+    with open(qcnl_conf, "w") as f:
+        f.write(content)
+    
+    print(f"Updated PCCS URL in {qcnl_conf} to {pccs_url}")
+
+
+def update_mongodb_connection(nodes: List[str]):
+    """Update MongoDB connection string in LXC YAML configuration.
+    
+    Args:
+        nodes: List of MongoDB nodes in format "ip:port"
+    """
+    lxc_yaml = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/conf/lxc.yaml")
+    
+    if not lxc_yaml.exists():
+        print(f"Warning: {lxc_yaml} not found, skipping MongoDB connection update")
+        return
+    
+    with open(lxc_yaml, "r") as f:
+        config = yaml.safe_load(f)
+    
+    hosts = ",".join(nodes)
+    new_connection_string = f"mongodb://{hosts}/pki"
+    
+    if "pki" in config and "tokenStorage" in config["pki"]:
+        if "connectionString" in config["pki"]["tokenStorage"]:
+            old_conn = config["pki"]["tokenStorage"]["connectionString"]
+            config["pki"]["tokenStorage"]["connectionString"] = new_connection_string
+            print(f"Updated tokenStorage connectionString: {old_conn} -> {new_connection_string}")
+    
+    if "pki" in config and "mode" in config["pki"]:
+        if "attestationServiceSource" in config["pki"]["mode"]:
+            if "storage" in config["pki"]["mode"]["attestationServiceSource"]:
+                if "connectionString" in config["pki"]["mode"]["attestationServiceSource"]["storage"]:
+                    old_conn = config["pki"]["mode"]["attestationServiceSource"]["storage"]["connectionString"]
+                    config["pki"]["mode"]["attestationServiceSource"]["storage"]["connectionString"] = new_connection_string
+                    print(f"Updated attestationServiceSource storage connectionString: {old_conn} -> {new_connection_string}")
+    
+    with open(lxc_yaml, "w") as f:
+        yaml.dump(config, f, default_flow_style=False)
+    print(f"MongoDB connection updated in {lxc_yaml}")
 
 
 def init_container():

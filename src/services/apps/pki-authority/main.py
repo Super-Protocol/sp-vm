@@ -8,14 +8,18 @@ from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 # Import helpers
 sys.path.insert(0, str(Path(__file__).parent))
 from helpers import (
+    BRIDGE_NAME,
+    MONGODB_PORT,
     delete_iptables_rules,
     detect_cpu_type,
     detect_vm_mode,
+    get_bridge_ip,
     patch_yaml_config,
     set_subroot_env,
     patch_lxc_config,
     setup_iptables,
     update_pccs_url,
+    update_mongodb_connection,
     LXCContainer,
     PKI_SERVICE_NAME,
     get_node_tunnel_ip,
@@ -64,6 +68,9 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
         set_subroot_env()
         patch_lxc_config(cpu_type)
         update_pccs_url()
+        host_ip = get_bridge_ip(BRIDGE_NAME)
+        mongodb_nodes = [f"{host_ip}:{MONGODB_PORT}"]
+        update_mongodb_connection(mongodb_nodes)
         setup_iptables(local_tunnel_ip)
         container = LXCContainer(PKI_SERVICE_NAME)
         
