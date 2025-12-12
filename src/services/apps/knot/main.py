@@ -342,9 +342,9 @@ zone:
 
     cfg_content = f"""# Knot DNS Configuration with TSIG, RFC 2136, and Catalog Zones
 
-    # Listen only on the WireGuard tunnel IP for this node to avoid
-    # conflicts with other local DNS services (e.g. systemd-resolved).
-    server:
+# Listen only on the WireGuard tunnel IP for this node to avoid
+# conflicts with other local DNS services (e.g. systemd-resolved).
+server:
     listen: {local_tunnel_ip}@{KNOT_PORT}
     rundir: "/run/knot"
     user: knot:knot
