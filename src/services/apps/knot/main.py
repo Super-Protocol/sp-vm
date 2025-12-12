@@ -252,7 +252,6 @@ def write_knot_config(
     local_tunnel_ip: str,
     cluster_nodes: list,
     wg_props: list,
-    node_addrs: list,
     is_catalog_master: bool,
     tsig_key_name: str,
     tsig_key_secret: str,
@@ -265,7 +264,6 @@ def write_knot_config(
         local_tunnel_ip: Local WireGuard tunnel IP
         cluster_nodes: List of all cluster nodes
         wg_props: WireGuard properties with tunnel IPs
-        node_addrs: List of node address records from SwarmDB
         is_catalog_master: Whether this node is the catalog zone master
         tsig_key_name: TSIG key name for authentication
         tsig_key_secret: TSIG key secret (base64)
@@ -274,12 +272,6 @@ def write_knot_config(
     KNOT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     KNOT_ZONES_DIR.mkdir(parents=True, exist_ok=True)
     KNOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Determine listen address for this node.
-    # Upstream used 0.0.0.0@53, but in this VM dnsmasq already binds 10.0.3.1:53.
-    # To avoid conflicts while still serving DNS on the node's primary address,
-    # bind Knot only to the local node's address, falling back to its WireGuard IP.
-    listen_ip = get_node_addr(local_node_id, node_addrs) or local_tunnel_ip
 
     # Build list of remote server IPs (all nodes except local)
     remote_ips = []
@@ -351,7 +343,7 @@ zone:
     cfg_content = f"""# Knot DNS Configuration with TSIG, RFC 2136, and Catalog Zones
 
 server:
-    listen: {listen_ip}@{KNOT_PORT}
+    listen: 0.0.0.0@{KNOT_PORT}
     rundir: "/run/knot"
     user: knot:knot
     pidfile: "/run/knot/knot.pid"
@@ -496,6 +488,19 @@ def create_zone_in_knot(zone_name: str, is_catalog_master: bool) -> bool:
         True if zone was created or already exists, False on error
     """
     try:
+        # Proactively abort any previous unfinished config transaction to avoid
+        # "requested resource is busy" errors on conf-begin/commit.
+        try:
+            subprocess.run(
+                [KNOT_CLI, "conf-abort"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+        except Exception:
+            # It's fine if there was no active transaction.
+            pass
+
         # Check if zone already exists
         result = subprocess.run(
             [KNOT_CLI, "zone-status", zone_name],
@@ -551,15 +556,36 @@ def create_zone_in_knot(zone_name: str, is_catalog_master: bool) -> bool:
             print(f"[!] Failed to set template: {result.stderr}", file=sys.stderr)
             return False
 
-        # Commit configuration
-        result = subprocess.run(
-            [KNOT_CLI, "conf-commit"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        # Commit configuration, retrying a few times if Knot reports that the
+        # configuration database is currently busy with another operation.
+        commit_attempts = 3
+        last_err = ""
+        for attempt in range(1, commit_attempts + 1):
+            result = subprocess.run(
+                [KNOT_CLI, "conf-commit"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+
+            if result.returncode == 0:
+                break
+
+            last_err = (result.stderr or result.stdout or "").strip()
+            print(f"[!] conf-commit attempt {attempt} for zone {zone_name} failed: {last_err}", file=sys.stderr)
+
+            if "requested resource is busy" in last_err.lower() and attempt < commit_attempts:
+                # Give Knot a moment to finish the other operation and retry.
+                time.sleep(2)
+                continue
+
+            # Any other error (or last attempt with busy) – abort and fail.
+            subprocess.run([KNOT_CLI, "conf-abort"], capture_output=True, text=True)
+            return False
+
         if result.returncode != 0:
-            print(f"[!] Failed to commit config: {result.stderr}", file=sys.stderr)
+            subprocess.run([KNOT_CLI, "conf-abort"], capture_output=True, text=True)
+            print(f"[!] Failed to commit config for zone {zone_name} after {commit_attempts} attempts: {last_err}", file=sys.stderr)
             return False
 
         # Reload Knot to apply changes
@@ -887,7 +913,6 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
             local_tunnel_ip,
             cluster_nodes,
             wg_props,
-            node_addrs,
             is_catalog_master,
             tsig_key_name,
             tsig_key_secret,
