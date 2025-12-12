@@ -293,9 +293,10 @@ RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
 
 # swarm-cloud-api runtime wrappers (Node.js entrypoints)
-ADD rootfs/files/configs/opt/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/opt/swarm-cloud-api/swarm-cloud-api
-ADD rootfs/files/configs/opt/swarm-cloud-api/schema-sync ${OUTPUTDIR}/opt/swarm-cloud-api/schema-sync
-RUN chmod +x ${OUTPUTDIR}/opt/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/opt/swarm-cloud-api/schema-sync
+RUN mkdir -p ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api
+ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api
+ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/schema-sync ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
+RUN chmod +x ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
 
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
