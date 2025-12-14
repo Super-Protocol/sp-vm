@@ -298,6 +298,9 @@ def write_knot_config(
 
     if is_catalog_master:
         # Master node: catalog-generate
+        # Defines:
+        #   - template 'catalog'  : generates the catalog zone itself
+        #   - template 'member'   : member zones that will be listed in the catalog
         catalog_config = f"""
 # Catalog zone (master node)
 template:
@@ -305,6 +308,12 @@ template:
     storage: "{KNOT_ZONES_DIR}"
     semantic-checks: on
     catalog-role: generate
+    catalog-zone: {catalog_zone_name}
+
+  - id: member
+    storage: "{KNOT_ZONES_DIR}"
+    semantic-checks: on
+    catalog-role: member
     catalog-zone: {catalog_zone_name}
 
   - id: default
@@ -319,6 +328,11 @@ zone:
 """
     else:
         # Member node: catalog-interpret
+        # Defines:
+        #   - template 'catalog'  : interprets catalog zone from master
+        #   - template 'member'   : kept for symmetry, though member nodes don't
+        #                           create zones themselves (they receive them
+        #                           via catalog).
         catalog_config = f"""
 # Catalog zone (member node)
 template:
@@ -327,6 +341,10 @@ template:
     semantic-checks: on
     catalog-role: interpret
     catalog-zone: {catalog_zone_name}
+
+  - id: member
+    storage: "{KNOT_ZONES_DIR}"
+    semantic-checks: on
 
   - id: default
     storage: "{KNOT_ZONES_DIR}"
@@ -534,7 +552,11 @@ def create_zone_in_knot(zone_name: str, is_catalog_master: bool) -> bool:
             print(f"[!] Failed to begin config transaction: {result.stderr}", file=sys.stderr)
             return False
 
-        # Set zone with catalog template
+        # Set zone with catalog *member* template so that Knot treats this zone
+        # as a catalog member, not as another catalog generator. Newer Knot
+        # versions enforce that 'catalog-role' must match 'catalog-zone', so
+        # using the dedicated 'member' template avoids
+        # "('catalog-role' must correspond to configured 'catalog-zone')" errors.
         result = subprocess.run(
             [KNOT_CLI, "conf-set", f"zone[{zone_name}]"],
             capture_output=True,
@@ -546,9 +568,9 @@ def create_zone_in_knot(zone_name: str, is_catalog_master: bool) -> bool:
             print(f"[!] Failed to set zone: {result.stderr}", file=sys.stderr)
             return False
 
-        # Set template to catalog (will be included in catalog zone)
+        # Attach the member template so the zone is included in the catalog
         result = subprocess.run(
-            [KNOT_CLI, "conf-set", f"zone[{zone_name}].template", "catalog"],
+            [KNOT_CLI, "conf-set", f"zone[{zone_name}].template", "member"],
             capture_output=True,
             text=True,
             timeout=5
