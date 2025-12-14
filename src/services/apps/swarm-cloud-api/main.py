@@ -590,16 +590,23 @@ def initialize_schema_if_needed(local_node_id: str, state_json: dict) -> tuple[b
     env["DB_PASSWORD"] = cockroach_info.get("password", "")
     env["DB_DATABASE"] = cockroach_info["database"]
 
-    # Run schema sync using the schema-sync executable
+    # Run schema sync using the bundled CLI from the monorepo dist. We invoke
+    # Node.js directly here instead of relying on a wrapper script so that the
+    # behaviour is deterministic and fully controlled by this plugin.
     try:
-        # Path to the schema-sync executable script
-        schema_sync_script = API_INSTALL_DIR / "schema-sync"
+        # Path to the compiled CLI entrypoint within the shared monorepo
+        schema_sync_script = Path("/usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api/cli/schema-sync.js")
         if not schema_sync_script.exists():
-            return False, f"Schema sync script not found: {schema_sync_script}"
+            msg = f"Schema sync CLI not found: {schema_sync_script}"
+            print(f"[!] {msg}", file=sys.stderr)
+            return False, msg
 
-        print(f"[*] Running schema sync script: {schema_sync_script}", file=sys.stderr)
+        cmd = ["node", str(schema_sync_script)]
+        print(f"[*] Running schema sync via Node: {' '.join(cmd)}", file=sys.stderr)
+        print(f"[*] Schema DB target: {env['DB_TYPE']}://{env['DB_USERNAME']}@{env['DB_HOST']}:{env['DB_PORT']}/{env['DB_DATABASE']}", file=sys.stderr)
+
         result = subprocess.run(
-            [str(schema_sync_script)],
+            cmd,
             env=env,
             capture_output=True,
             text=True,
@@ -616,9 +623,13 @@ def initialize_schema_if_needed(local_node_id: str, state_json: dict) -> tuple[b
         return True, None
 
     except subprocess.TimeoutExpired:
-        return False, "Schema sync timed out after 5 minutes"
+        msg = "Schema sync timed out after 5 minutes"
+        print(f"[!] {msg}", file=sys.stderr)
+        return False, msg
     except Exception as e:
-        return False, f"Schema sync error: {str(e)}"
+        msg = f"Schema sync error: {str(e)}"
+        print(f"[!] {msg}", file=sys.stderr)
+        return False, msg
 
 
 @plugin.command('apply')
