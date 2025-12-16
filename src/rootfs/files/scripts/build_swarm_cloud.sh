@@ -52,18 +52,15 @@ cd /opt/swarm-cloud && pnpm --filter @swarm-cloud/swarm-cloud-ui deploy --legacy
 
     log_info "copying shared UI libraries to /usr/local/lib/swarm-cloud/dist/libs";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'mkdir -p /usr/local/lib/swarm-cloud/dist/libs';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/libs/ui /usr/local/lib/swarm-cloud/dist/libs/ui || true';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/libs/ui-utils /usr/local/lib/swarm-cloud/dist/libs/ui-utils || true';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/libs/ui /usr/local/lib/swarm-cloud/dist/libs/ui';
 
     # In the deployed UI lib, TypeScript sources live under libs/ui/src, but some imports
     # reference sibling TS modules with a .js extension (e.g. "../lib/utils.js", "./button.js").
     # Next + TS expect extension-less imports for TS modules. Adjust imports only in the
     # deployed copy (do not touch the original sources under src/repos).
-    chroot "${OUTPUTDIR}" /bin/bash -lc '\
-if [ -d /usr/local/lib/swarm-cloud/dist/libs/ui/src ]; then \
-  find /usr/local/lib/swarm-cloud/dist/libs/ui/src -type f \( -name \"*.ts\" -o -name \"*.tsx\" \) -print0 \
-    | xargs -0 sed -i \"s/\\.js\\\"/\\\"/g; s/\\.js\\'/'/g\"; \
-fi'
+    chroot "${OUTPUTDIR}" /bin/bash -lc "\
+find /usr/local/lib/swarm-cloud/dist/libs/ui/src -type f \\( -name '*.ts' -o -name '*.tsx' \\) -print0 \
+  | xargs -0 sed -i 's/\\.js\\([\"'\"'\"']\\)/\\1/g'"
 
     log_info "copying workspace-level Node.js dependencies and configs to /usr/local/lib/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/node_modules /usr/local/lib/swarm-cloud/node_modules || true';
