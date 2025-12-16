@@ -28,6 +28,9 @@ function build_swarm_cloud() {
     log_info "building swarm-node";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-node --skip-nx-cache --output-style=stream --verbose';
 
+    log_info "building swarm-cloud-ui";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-cloud-ui --skip-nx-cache --output-style=stream --verbose';
+
     log_info "publishing built swarm-node artifacts to /usr/local/lib/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-node';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-node/dist/* /usr/local/lib/swarm-cloud/dist/apps/swarm-node/';
@@ -43,6 +46,13 @@ function build_swarm_cloud() {
 
     log_info "installing production-only Node.js dependencies (no optional) for swarm-cloud-api dist";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api && pnpm install --no-optional --lockfile-dir=/usr/local/lib/swarm-cloud';
+
+    log_info "publishing built swarm-cloud-ui artifacts to /usr/local/lib/swarm-cloud";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-cloud-ui/. /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/';
+
+    log_info "installing production-only Node.js dependencies (no optional) for swarm-cloud-ui dist";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui && pnpm install --no-optional --lockfile-dir=/usr/local/lib/swarm-cloud';
 
     log_info "removing sources from /opt/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/swarm-cloud || true';
