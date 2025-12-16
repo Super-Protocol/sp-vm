@@ -55,12 +55,14 @@ cd /opt/swarm-cloud && pnpm --filter @swarm-cloud/swarm-cloud-ui deploy --legacy
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/libs/ui /usr/local/lib/swarm-cloud/dist/libs/ui || true';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/libs/ui-utils /usr/local/lib/swarm-cloud/dist/libs/ui-utils || true';
 
-    # Fix known path issue in deployed UI lib: Next transpiles TS sources from libs/ui/src,
-    # but the original code imports "../lib/utils.js" while only "../lib/utils.ts" exists.
-    # Adjust the import path in the deployed copy only (do not touch source tree under src/repos).
+    # In the deployed UI lib, TypeScript sources live under libs/ui/src, but some imports
+    # reference sibling TS modules with a .js extension (e.g. "../lib/utils.js", "./button.js").
+    # Next + TS expect extension-less imports for TS modules. Adjust imports only in the
+    # deployed copy (do not touch the original sources under src/repos).
     chroot "${OUTPUTDIR}" /bin/bash -lc '\
-if [ -f /usr/local/lib/swarm-cloud/dist/libs/ui/src/components/breadcrumb.tsx ]; then \
-  sed -i "s|../lib/utils.js|../lib/utils|g" /usr/local/lib/swarm-cloud/dist/libs/ui/src/components/breadcrumb.tsx; \
+if [ -d /usr/local/lib/swarm-cloud/dist/libs/ui/src ]; then \
+  find /usr/local/lib/swarm-cloud/dist/libs/ui/src -type f \( -name \"*.ts\" -o -name \"*.tsx\" \) -print0 \
+    | xargs -0 sed -i \"s/\\.js\\\"/\\\"/g; s/\\.js\\'/'/g\"; \
 fi'
 
     log_info "copying workspace-level Node.js dependencies and configs to /usr/local/lib/swarm-cloud";
