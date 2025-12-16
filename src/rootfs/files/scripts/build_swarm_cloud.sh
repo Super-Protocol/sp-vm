@@ -43,11 +43,19 @@ function build_swarm_cloud() {
     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-cloud-ui/. /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/';
 
-    log_info "copying workspace-level Node.js dependencies to /usr/local/lib/swarm-cloud";
+    log_info "copying shared UI libraries to /usr/local/lib/swarm-cloud/dist/libs";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'mkdir -p /usr/local/lib/swarm-cloud/dist/libs';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/libs/ui /usr/local/lib/swarm-cloud/dist/libs/ui || true';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/libs/ui-utils /usr/local/lib/swarm-cloud/dist/libs/ui-utils || true';
+
+    log_info "copying workspace-level Node.js dependencies and configs to /usr/local/lib/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/node_modules /usr/local/lib/swarm-cloud/node_modules || true';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/package.json /usr/local/lib/swarm-cloud/package.json';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-lock.yaml /usr/local/lib/swarm-cloud/pnpm-lock.yaml || true';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-workspace.yaml /usr/local/lib/swarm-cloud/pnpm-workspace.yaml || true';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'mkdir -p /usr/local/lib/swarm-cloud/dist';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/tsconfig.base.json /usr/local/lib/swarm-cloud/dist/tsconfig.base.json || true';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/tsconfig.json /usr/local/lib/swarm-cloud/dist/tsconfig.json || true';
 
     log_info "removing sources from /opt/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/swarm-cloud || true';

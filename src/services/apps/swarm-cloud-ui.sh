@@ -21,11 +21,11 @@ fi
 LISTEN_INTERFACE="${LISTEN_INTERFACE:-0.0.0.0}"
 SWARM_CLOUD_UI_PORT="${SWARM_CLOUD_UI_PORT:-3000}"
 
-echo "Starting swarm-cloud-ui in production mode with Next.js..."
+echo "Starting swarm-cloud-ui in development mode with Next.js..."
 echo "  Host: ${LISTEN_INTERFACE}"
 echo "  Port: ${SWARM_CLOUD_UI_PORT}"
 
-NODE_ENV=production exec node \
-  "${SWARM_CLOUD_ROOT}/node_modules/next/dist/bin/next" start \
+NODE_ENV=development exec node \
+  "${SWARM_CLOUD_ROOT}/node_modules/next/dist/bin/next" dev \
   --hostname "${LISTEN_INTERFACE}" \
   --port "${SWARM_CLOUD_UI_PORT}"
