@@ -42,7 +42,8 @@ function build_swarm_cloud() {
     log_info "building swarm-cloud-ui";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-cloud-ui --output-style=stream';
 
-    log_info "deploying swarm-cloud-ui via pnpm deploy to /usr/local/lib/swarm-cloud/apps/swarm-cloud-ui/.next";
+    log_info "deploying swarm-cloud-ui via pnpm deploy to /usr/local/lib/swarm-cloud/apps/swarm-cloud-ui";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/apps/swarm-cloud-ui';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-cloud-ui/{.next,node_modules} /usr/local/lib/swarm-cloud/apps/swarm-cloud-ui/';
 
     log_info "copying shared UI libraries to /usr/local/lib/swarm-cloud/libs";
