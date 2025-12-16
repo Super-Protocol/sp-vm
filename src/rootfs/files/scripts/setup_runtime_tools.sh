@@ -17,9 +17,10 @@ function setup_runtime_tools() {
     printf '#!/bin/sh\nexit 101\n' > "${OUTPUTDIR}/usr/sbin/policy-rc.d"
     chmod +x "${OUTPUTDIR}/usr/sbin/policy-rc.d"
 
-    log_info "installing runtime packages into rootfs (python3, redis, mysql client, openssl, netcat)"
+    log_info "installing runtime packages into rootfs (python3, redis, mysql client, openssl, netcat, dns tools)"
     chroot "${OUTPUTDIR}" /usr/bin/apt update
-    chroot "${OUTPUTDIR}" /usr/bin/apt install -y --no-install-recommends mysql-client python3 python3-pip redis-server redis-tools openssl netcat-openbsd
+    chroot "${OUTPUTDIR}" /usr/bin/apt install -y --no-install-recommends \
+        mysql-client python3 python3-pip redis-server redis-tools openssl netcat-openbsd dnsutils
     chroot "${OUTPUTDIR}" /usr/bin/apt clean
 
     log_info "installing Python runtime dependencies"

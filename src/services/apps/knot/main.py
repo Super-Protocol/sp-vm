@@ -612,7 +612,12 @@ def create_zone_in_knot(zone_name: str, is_catalog_master: bool) -> bool:
             print(f"[!] Failed to commit config for zone {zone_name} after {commit_attempts} attempts: {last_err}", file=sys.stderr)
             return False
 
-        # Reload Knot to apply changes
+        # Reload Knot to apply changes. On some systems the control socket can
+        # be briefly unavailable and 'knotc reload' may fail with
+        # "failed to control (connection reset)" even though the configuration
+        # was committed successfully. Treat such transient control errors as
+        # non-fatal: the zone is already in the configuration DB and will be
+        # loaded on the next successful reload or server restart.
         result = subprocess.run(
             [KNOT_CLI, "reload"],
             capture_output=True,
@@ -620,8 +625,12 @@ def create_zone_in_knot(zone_name: str, is_catalog_master: bool) -> bool:
             timeout=5
         )
         if result.returncode != 0:
-            print(f"[!] Failed to reload Knot: {result.stderr}", file=sys.stderr)
-            return False
+            err = (result.stderr or result.stdout or "").strip()
+            print(f"[!] Failed to reload Knot: {err}", file=sys.stderr)
+            if "failed to control" in err.lower() or "connection reset" in err.lower():
+                print(f"[*] Treating reload control error as non-fatal for zone {zone_name}", file=sys.stderr)
+            else:
+                return False
 
         print(f"[*] Successfully created zone {zone_name} on catalog master (will sync to members)", file=sys.stderr)
         return True
