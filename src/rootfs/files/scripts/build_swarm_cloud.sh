@@ -41,7 +41,7 @@ function build_swarm_cloud() {
 
     log_info "publishing built swarm-cloud-ui artifacts to /usr/local/lib/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui';
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/dist/apps/swarm-cloud-ui/. /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-cloud-ui/. /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/';
 
     log_info "copying workspace-level Node.js dependencies to /usr/local/lib/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/node_modules /usr/local/lib/swarm-cloud/node_modules || true';
