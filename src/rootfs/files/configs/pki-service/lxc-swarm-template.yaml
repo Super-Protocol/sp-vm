@@ -11,8 +11,8 @@ pki:
     - type: sev-snp
       signatureVerification: github
   tokenStorage:
-    storageType: mongodb
-    connectionString: mongodb://10.0.3.1:27017/pki
+    storageType: file
+    storageFolder: /app/swarm-storage
   ownDomain: ca-subroot.super-protocol.svc.cluster.local
   ownChallenge:
     type: tdx
@@ -29,5 +29,5 @@ pki:
       type: swarm
       mode: init
       storage:
-        storageType: mongodb
-        connectionString: mongodb://10.0.3.1:27017/pki
+        storageType: file
+        storageFolder: /app/swarm-storage

@@ -52,6 +52,16 @@ stateExpr:
           .name == "tunnel_ip"
         ) |
         {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
-      ] | sort_by(.cluster_node, .name, .value, .node_id)
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
+      authorityServiceProperties: [
+        $swarmdb.clusterproperties[] |
+        select(
+          .cluster == $cluster.id and
+          .deleted_ts == null and
+          (.name | startswith("pki_authority_"))
+        ) |
+        {name, value}
+      ] | sort_by(.name)
     }
 

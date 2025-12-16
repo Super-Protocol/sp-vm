@@ -20,10 +20,10 @@ PKI_SERVICE_NAME = "pki-authority"
 SERVICE_INSIDE_CONTAINER = "tee-pki"
 BRIDGE_NAME = "lxcbr0"
 PCCS_PORT = "8081"
-MONGODB_PORT = "27017"
 PKI_SERVICE_EXTERNAL_PORT = "8443"
 CONTAINER_IP = "10.0.3.100"
 WIREGUARD_INTERFACE = "wg0"
+STORAGE_PATH = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/swarm-storage")
 
 
 class VMMode(Enum):
@@ -464,7 +464,7 @@ def setup_iptables(wg_ip):
     enable_route_localnet(BRIDGE_NAME)
     
     add_iptables_rule(host_ip, PCCS_PORT)
-    add_iptables_rule(host_ip, MONGODB_PORT)
+
     subprocess.run(
         [
             "iptables", "-t", "nat", "-A", "PREROUTING",
@@ -536,43 +536,6 @@ def update_pccs_url():
     print(f"Updated PCCS URL in {qcnl_conf} to {pccs_url}")
 
 
-def update_mongodb_connection(nodes: List[str]):
-    """Update MongoDB connection string in LXC YAML configuration.
-    
-    Args:
-        nodes: List of MongoDB nodes in format "ip:port"
-    """
-    lxc_yaml = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/conf/lxc.yaml")
-    
-    if not lxc_yaml.exists():
-        print(f"Warning: {lxc_yaml} not found, skipping MongoDB connection update")
-        return
-    
-    with open(lxc_yaml, "r") as f:
-        config = yaml.safe_load(f)
-    
-    hosts = ",".join(nodes)
-    new_connection_string = f"mongodb://{hosts}/pki"
-    
-    if "pki" in config and "tokenStorage" in config["pki"]:
-        if "connectionString" in config["pki"]["tokenStorage"]:
-            old_conn = config["pki"]["tokenStorage"]["connectionString"]
-            config["pki"]["tokenStorage"]["connectionString"] = new_connection_string
-            print(f"Updated tokenStorage connectionString: {old_conn} -> {new_connection_string}")
-    
-    if "pki" in config and "mode" in config["pki"]:
-        if "attestationServiceSource" in config["pki"]["mode"]:
-            if "storage" in config["pki"]["mode"]["attestationServiceSource"]:
-                if "connectionString" in config["pki"]["mode"]["attestationServiceSource"]["storage"]:
-                    old_conn = config["pki"]["mode"]["attestationServiceSource"]["storage"]["connectionString"]
-                    config["pki"]["mode"]["attestationServiceSource"]["storage"]["connectionString"] = new_connection_string
-                    print(f"Updated attestationServiceSource storage connectionString: {old_conn} -> {new_connection_string}")
-    
-    with open(lxc_yaml, "w") as f:
-        yaml.dump(config, f, default_flow_style=False)
-    print(f"MongoDB connection updated in {lxc_yaml}")
-
-
 def init_container():
     LXCContainer(PKI_SERVICE_NAME).create()
 
@@ -582,3 +545,18 @@ def get_node_tunnel_ip(node_id: str, wg_props: List[dict]) -> Optional[str]:
         if prop.get("node_id") == node_id and prop.get("name") == "tunnel_ip":
             return prop.get("value")
     return None
+
+
+def save_property_into_fs(file_name: str, content: bytes):
+    STORAGE_PATH.mkdir(parents=True, exist_ok=True)
+    file_path = STORAGE_PATH / file_name
+    file_path.write_bytes(content)
+
+
+def read_property_from_fs(file_name: str) -> tuple[bool, bytes]:
+    file_path = STORAGE_PATH / file_name
+    if file_path.exists():
+        content = file_path.read_bytes()
+        if content:
+            return (True, content)
+    return (False, b"")
