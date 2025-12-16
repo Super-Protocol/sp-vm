@@ -63,7 +63,9 @@ find /usr/local/lib/swarm-cloud/dist/libs/ui/src -type f \\( -name '*.ts' -o -na
   | xargs -0 sed -i 's/\\.js\\([\"'\"'\"']\\)/\\1/g'"
 
     log_info "copying workspace-level Node.js dependencies and configs to /usr/local/lib/swarm-cloud";
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/node_modules /usr/local/lib/swarm-cloud/node_modules || true';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'mkdir -p /usr/local/lib/swarm-cloud/node_modules';
+    # copy the *contents* of node_modules so that the .pnpm layout and symlink targets remain valid
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -a /opt/swarm-cloud/node_modules/. /usr/local/lib/swarm-cloud/node_modules/';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/package.json /usr/local/lib/swarm-cloud/package.json';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-lock.yaml /usr/local/lib/swarm-cloud/pnpm-lock.yaml || true';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-workspace.yaml /usr/local/lib/swarm-cloud/pnpm-workspace.yaml || true';
