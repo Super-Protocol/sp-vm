@@ -13,16 +13,8 @@ SWARM_CLOUD_UI_DIR="${SWARM_CLOUD_ROOT}/dist/apps/swarm-cloud-ui"
 
 cd "${SWARM_CLOUD_UI_DIR}"
 
-if ! command -v corepack >/dev/null 2>&1; then
-  echo "corepack is not installed or not in PATH. Please install Node.js (with corepack) first." >&2
-  exit 1
-fi
-
-echo "Enabling corepack..."
-corepack enable
-
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "pnpm is not available via corepack. Please ensure your Node.js version supports pnpm via corepack." >&2
+if ! command -v node >/dev/null 2>&1; then
+  echo "Node.js is not installed or not in PATH. Please install Node.js first." >&2
   exit 1
 fi
 
@@ -33,6 +25,7 @@ echo "Starting swarm-cloud-ui in production mode with Next.js..."
 echo "  Host: ${LISTEN_INTERFACE}"
 echo "  Port: ${SWARM_CLOUD_UI_PORT}"
 
-exec pnpm exec next start \
+NODE_ENV=production exec node \
+  "${SWARM_CLOUD_ROOT}/node_modules/next/dist/bin/next" start \
   --hostname "${LISTEN_INTERFACE}" \
   --port "${SWARM_CLOUD_UI_PORT}"
