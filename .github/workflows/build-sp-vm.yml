@@ -32,7 +32,12 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Set SP_VM_IMAGE_VERSION variable
-        run: echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}" >> $GITHUB_ENV
+        run: |
+          if [[ "${{ inputs.build-type }}" == "cloud" ]]; then
+            echo "SP_VM_IMAGE_VERSION=cloud-build-${{ github.run_number }}" >> "$GITHUB_ENV"
+          else
+            echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}" >> "$GITHUB_ENV"
+          fi
 
       - name: Setup builder
         run: |
