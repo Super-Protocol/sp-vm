@@ -42,6 +42,8 @@ function build_swarm_cloud() {
     log_info "publishing built swarm-cloud-ui artifacts to /usr/local/lib/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-cloud-ui/. /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/';
+    # Remove app-local node_modules with broken pnpm symlinks; use workspace-level node_modules instead
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui/node_modules || true';
 
     log_info "copying shared UI libraries to /usr/local/lib/swarm-cloud/dist/libs";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'mkdir -p /usr/local/lib/swarm-cloud/dist/libs';

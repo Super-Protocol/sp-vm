@@ -21,6 +21,8 @@ fi
 LISTEN_INTERFACE="${LISTEN_INTERFACE:-0.0.0.0}"
 SWARM_CLOUD_UI_PORT="${SWARM_CLOUD_UI_PORT:-3000}"
 
+export NODE_PATH="${SWARM_CLOUD_ROOT}/node_modules:${NODE_PATH:-}"
+
 echo "Starting swarm-cloud-ui in development mode with Next.js..."
 echo "  Host: ${LISTEN_INTERFACE}"
 echo "  Port: ${SWARM_CLOUD_UI_PORT}"

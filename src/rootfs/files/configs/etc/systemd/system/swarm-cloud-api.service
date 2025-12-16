@@ -1,8 +1,8 @@
 [Unit]
 Description=Swarm Cloud API service
-After=network-online.target swarm-db.service redis.service cockroachdb.service
+After=network-online.target swarm-db.service
 Wants=network-online.target
-Requires=swarm-db.service redis.service cockroachdb.service
+Requires=swarm-db.service
 
 [Service]
 Type=simple
