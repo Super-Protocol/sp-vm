@@ -595,7 +595,7 @@ def initialize_schema_if_needed(local_node_id: str, state_json: dict) -> tuple[b
     # behaviour is deterministic and fully controlled by this plugin.
     try:
         # Path to the compiled CLI entrypoint within the shared monorepo
-        schema_sync_script = Path("/usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-api/cli/schema-sync.js")
+        schema_sync_script = Path("/usr/local/lib/swarm-cloud/apps/swarm-cloud-api/dist/cli/schema-sync.js")
         if not schema_sync_script.exists():
             msg = f"Schema sync CLI not found: {schema_sync_script}"
             print(f"[!] {msg}", file=sys.stderr)
