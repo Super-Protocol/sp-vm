@@ -5,9 +5,13 @@ set -euo pipefail
 # This script starts the swarm-cloud-ui frontend in the same layout that the VM image uses.
 # According to build_swarm_cloud.sh and the Dockerfile, the built UI is published to:
 #   /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui
-# We intentionally hardcode this path to match the runtime environment inside the VM.
+# All dependencies are installed at image build time in build_swarm_cloud.sh; this script
+# MUST NOT run pnpm install or modify node_modules at runtime.
 
-cd /usr/local/lib/swarm-cloud/dist/apps/swarm-cloud-ui
+SWARM_CLOUD_ROOT="/usr/local/lib/swarm-cloud"
+SWARM_CLOUD_UI_DIR="${SWARM_CLOUD_ROOT}/dist/apps/swarm-cloud-ui"
+
+cd "${SWARM_CLOUD_UI_DIR}"
 
 if ! command -v corepack >/dev/null 2>&1; then
   echo "corepack is not installed or not in PATH. Please install Node.js (with corepack) first." >&2
@@ -22,11 +26,13 @@ if ! command -v pnpm >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -d "node_modules" ]]; then
-  echo "Installing Node.js dependencies with pnpm (this may take a while)..."
-  pnpm install --frozen-lockfile
-fi
+LISTEN_INTERFACE="${LISTEN_INTERFACE:-0.0.0.0}"
+SWARM_CLOUD_UI_PORT="${SWARM_CLOUD_UI_PORT:-3000}"
 
-echo "Starting swarm-cloud-ui dev server (Nx target swarm-cloud-ui:dev)..."
-echo "Once started, the UI should be available at http://localhost:3000"
-pnpm nx run swarm-cloud-ui:dev
+echo "Starting swarm-cloud-ui in production mode with Next.js..."
+echo "  Host: ${LISTEN_INTERFACE}"
+echo "  Port: ${SWARM_CLOUD_UI_PORT}"
+
+exec pnpm exec next start \
+  --hostname "${LISTEN_INTERFACE}" \
+  --port "${SWARM_CLOUD_UI_PORT}"
