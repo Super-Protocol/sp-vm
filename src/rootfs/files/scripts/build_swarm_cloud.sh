@@ -30,13 +30,13 @@ function build_swarm_cloud() {
     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/apps/swarm-cloud-api';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-cloud-api/{dist,node_modules} /usr/local/lib/swarm-cloud/apps/swarm-cloud-api/';
 
-#    # swarm-node
-#     log_info "building swarm-node";
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-node --output-style=stream';
-# 
-#     log_info "publishing built swarm-node artifacts to /usr/local/lib/swarm-cloud";
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/apps/swarm-node';
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-node/{dist,node_modules} /usr/local/lib/swarm-cloud/apps/swarm-node/';
+   # swarm-node
+    log_info "building swarm-node";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-node --output-style=stream';
+
+    log_info "publishing built swarm-node artifacts to /usr/local/lib/swarm-cloud";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/apps/swarm-node';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-node/{dist,node_modules} /usr/local/lib/swarm-cloud/apps/swarm-node/';
 # 
 #     # swarm-cloud-ui
 #     log_info "building swarm-cloud-ui";
