@@ -292,6 +292,12 @@ ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
 
+# swarm-cloud-api runtime wrappers (Node.js entrypoints)
+RUN mkdir -p ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api
+ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api
+ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/schema-sync ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
+RUN chmod +x ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
+
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
 ADD rootfs/files/configs/pccs-init/ /buildroot/files/configs/pccs-init/
@@ -304,6 +310,8 @@ RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/sy
 # Custom swarm services
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
 COPY services/apps/ ${OUTPUTDIR}/etc/swarm-services/
+# provision plugins from original swarm-cloud repo
+# COPY repos/swarm-cloud/services/swarm-cloud-api ${OUTPUTDIR}/etc/swarm-services/swarm-cloud-api
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
@@ -324,6 +332,23 @@ RUN --security=insecure bash /buildroot/files/scripts/install_nats.sh
 # disable autostart without requiring systemd during build (ensure no enable symlinks for nats)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/nats-server.service \
     && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/nats-server.service || true
+# CockroachDB (install cockroach binary into VM rootfs)
+ADD rootfs/files/scripts/install_cockroachdb.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_cockroachdb.sh
+# Knot DNS (install knot into VM rootfs)
+ADD rootfs/files/scripts/install_knot.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_knot.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for knot)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/knot.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/knot.service || true
+# OpenResty (install into VM rootfs so provisioner only configures and manages it)
+ADD rootfs/files/scripts/install_openresty.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_openresty.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for openresty)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/openresty.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/openresty.service || true
+RUN mkdir -p ${OUTPUTDIR}/etc/resty-auto-ssl/storage \
+    && chown -R www-data:www-data ${OUTPUTDIR}/etc/resty-auto-ssl
 # disable autostart without requiring systemd during build (remove enable symlinks)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
     &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service
