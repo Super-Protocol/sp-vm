@@ -1,7 +1,6 @@
 [Unit]
 Description=Ensure kubectl link in RKE2 bin after /var mount
-After=state_disk_mount.service local-fs.target
-Wants=state_disk_mount.service
+After=local-fs.target
 ConditionPathExists=/usr/local/bin/kubectl
 
 [Service]
