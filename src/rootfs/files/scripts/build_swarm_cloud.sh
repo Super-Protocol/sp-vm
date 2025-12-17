@@ -61,10 +61,12 @@ function build_swarm_cloud() {
 #     log_info "copying workspace-level Node.js dependencies and configs to /usr/local/lib/swarm-cloud";
 #     chroot "${OUTPUTDIR}" /bin/bash -lc 'mkdir -p /usr/local/lib/swarm-cloud/node_modules';
 #     # copy the *contents* of node_modules so that the .pnpm layout and symlink targets remain valid
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -a /opt/swarm-cloud/node_modules/. /usr/local/lib/swarm-cloud/node_modules/';
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/package.json /usr/local/lib/swarm-cloud/package.json';
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-lock.yaml /usr/local/lib/swarm-cloud/pnpm-lock.yaml';
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-workspace.yaml /usr/local/lib/swarm-cloud/pnpm-workspace.yaml';
+
+    # common
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/package.json /usr/local/lib/swarm-cloud/package.json';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-lock.yaml /usr/local/lib/swarm-cloud/pnpm-lock.yaml';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp /opt/swarm-cloud/pnpm-workspace.yaml /usr/local/lib/swarm-cloud/pnpm-workspace.yaml';
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -a /opt/swarm-cloud/node_modules/. /usr/local/lib/swarm-cloud/node_modules/';
 
     log_info "removing sources from /opt/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'rm -rf /opt/swarm-cloud || true';
