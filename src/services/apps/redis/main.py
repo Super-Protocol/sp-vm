@@ -7,6 +7,8 @@ import subprocess
 import hashlib
 import time
 from pathlib import Path
+import pwd
+import grp
 
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 
@@ -118,10 +120,39 @@ def install_redis():
         raise
 
 
-def write_redis_config(local_node_id: str, local_tunnel_ip: str, cluster_nodes: list, wg_props: list):
-    """Write Redis cluster configuration file."""
+def ensure_redis_directories():
+    """Ensure Redis data and log directories exist with correct ownership."""
     REDIS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     REDIS_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    log_dir = Path("/var/log/redis")
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Try to set ownership to the redis user if it exists
+    try:
+        redis_user = pwd.getpwnam("redis")
+        uid = redis_user.pw_uid
+        gid = redis_user.pw_gid
+    except KeyError:
+        uid = gid = None
+
+    if uid is not None:
+        for path in (REDIS_DATA_DIR, log_dir):
+            try:
+                os.chown(path, uid, gid)
+            except PermissionError:
+                # If we cannot change ownership, continue with defaults
+                pass
+
+    # Ensure restrictive permissions on data dir
+    try:
+        REDIS_DATA_DIR.chmod(0o750)
+    except PermissionError:
+        pass
+
+
+def write_redis_config(local_node_id: str, local_tunnel_ip: str, cluster_nodes: list, wg_props: list):
+    """Write Redis cluster configuration file."""
+    ensure_redis_directories()
 
     cfg_lines = [
         f"bind {local_tunnel_ip}",
