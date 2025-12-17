@@ -24,7 +24,7 @@ function setup_runtime_tools() {
     chroot "${OUTPUTDIR}" /usr/bin/apt clean
 
     log_info "installing Python runtime dependencies"
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'python3 -m pip install --break-system-packages SQLAlchemy PyMySQL requests'
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'python3 -m pip install --break-system-packages SQLAlchemy PyMySQL requests redis'
 
     log_info "ensuring redis data/log directories exist with proper ownership"
     chroot "${OUTPUTDIR}" /bin/bash -lc 'mkdir -p /var/lib/redis /var/log/redis && chown -R redis:redis /var/lib/redis /var/log/redis && chmod 0750 /var/lib/redis'
