@@ -9,7 +9,7 @@ from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 
 ROUTE_DOMAIN = "test.test.oresty.superprotocol.io"
 ROUTE_KEY = f"routes:{ROUTE_DOMAIN}"
-TARGET_URL = "http://server-app:34567"
+APP_PORT = 34567
 
 
 plugin = ProvisionPlugin()
@@ -59,10 +59,30 @@ def get_redis_connection_info(state_json: dict) -> List[Tuple[str, int]]:
 
 
 def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
-    """Create or update the OpenResty route in Redis Cluster."""
+    """Create or update the OpenResty route in Redis Cluster.
+
+    Targets are derived from Swarm state:
+    - For each node in the test-app cluster (clusterNodes),
+      we find its WireGuard tunnel IP via wgNodeProperties.
+    - Each such IP becomes a backend URL http://<ip>:APP_PORT.
+    """
     endpoints = get_redis_connection_info(state_json)
     if not endpoints:
         return False, "No Redis endpoints available"
+
+    cluster_nodes = state_json.get("clusterNodes", [])
+    wg_props = state_json.get("wgNodeProperties", [])
+
+    # Collect tunnel IPs of all nodes that run test-app
+    tunnel_ips: List[str] = []
+    for node in cluster_nodes:
+        node_id = node.get("node_id")
+        ip = get_node_tunnel_ip(node_id, wg_props)
+        if ip:
+            tunnel_ips.append(ip)
+
+    if not tunnel_ips:
+        return False, "No WireGuard tunnel IPs available for test-app nodes"
 
     try:
         import redis
@@ -83,7 +103,8 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
 
         route_config = {
             "targets": [
-                {"url": TARGET_URL, "weight": 1},
+                {"url": f"http://{ip}:{APP_PORT}", "weight": 1}
+                for ip in tunnel_ips
             ],
             "policy": "rr",
             "preserve_host": False,
