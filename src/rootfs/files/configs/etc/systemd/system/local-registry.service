@@ -1,8 +1,7 @@
 [Unit]
 Description=Run local registry & fileserver by using Hauler
-After=network.target state_disk_mount.service
+After=network.target
 Before=rke2-server.service
-Requires=state_disk_mount.service
 
 [Service]
 Type=simple
