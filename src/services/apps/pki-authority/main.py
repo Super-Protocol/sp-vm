@@ -35,6 +35,38 @@ AUTHORITY_SERVICE_PREFIX = "pki_authority_"
 AUTHORITY_SERVICE_PROPERTIES = ["auth_token", "basic_certificate", "basic_privateKey", "lite_certificate", "lite_privateKey"]
 PROP_INITIALIZED = f"{AUTHORITY_SERVICE_PREFIX}initialized"
 
+def is_restart_required(authority_config: dict) -> bool:
+    # Compare authority config properties with values stored in filesystem
+    for prop in AUTHORITY_SERVICE_PROPERTIES:
+        prop_name = f"{AUTHORITY_SERVICE_PREFIX}{prop}"
+        config_value = authority_config.get(prop_name, "")
+        
+        if not config_value:
+            continue
+            
+        # Read current value from filesystem
+        success, fs_value = read_property_from_fs(prop)
+        
+        if not success:
+            # File doesn't exist in FS, restart required
+            print(f"[*] Property {prop} not found in filesystem, restart required")
+            return True
+        
+        # Decode config value from base64 and compare with filesystem value
+        try:
+            decoded_config_value = base64.b64decode(config_value)
+            if decoded_config_value != fs_value:
+                print(f"[*] Property {prop} has changed, restart required")
+                return True
+        except Exception as e:
+            print(f"[!] Failed to decode property {prop}: {e}", file=sys.stderr)
+            return True
+    
+    # No changes detected
+    print("[*] No configuration changes detected")
+    return False
+
+
 # Plugin commands
 @plugin.command("init")
 def handle_init(input_data: PluginInput) -> PluginOutput:
@@ -98,23 +130,27 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
                 local_state=local_state
             )
 
-        cpu_type = detect_cpu_type()
-        delete_iptables_rules()
-        patch_yaml_config(cpu_type)
-        set_subroot_env()
-        patch_lxc_config(cpu_type)
-        update_pccs_url()
-        setup_iptables(local_tunnel_ip)
         container = LXCContainer(PKI_SERVICE_NAME)
         
         # Start or restart LXC container
         if container.is_running():
-            print(f"[*] Restarting LXC container {PKI_SERVICE_NAME}")
-            
-            exit_code = container.stop(graceful_timeout=30, command_timeout=60)
-            if exit_code != 0:
-                raise Exception(f"Failed to stop container with exit code {exit_code}")
+            if initialized != "true" or is_restart_required(authority_config):
+                print(f"[*] Restarting LXC container {PKI_SERVICE_NAME}")
+                
+                exit_code = container.stop(graceful_timeout=30, command_timeout=60)
+                if exit_code != 0:
+                    raise Exception(f"Failed to stop container with exit code {exit_code}")
+            else:
+                print(f"[*] Container {PKI_SERVICE_NAME} is already running, no restart required")
+                return PluginOutput(status="completed", local_state=local_state)
         
+        cpu_type = detect_cpu_type()
+        patch_yaml_config(cpu_type, vm_mode)
+        set_subroot_env()
+        patch_lxc_config(cpu_type)
+        update_pccs_url()
+        setup_iptables(local_tunnel_ip)
+
         if initialized == "true":
             for prop in AUTHORITY_SERVICE_PROPERTIES:
                 prop_name = f"{AUTHORITY_SERVICE_PREFIX}{prop}"

@@ -24,6 +24,7 @@ PKI_SERVICE_EXTERNAL_PORT = "8443"
 CONTAINER_IP = "10.0.3.100"
 WIREGUARD_INTERFACE = "wg0"
 STORAGE_PATH = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/swarm-storage")
+IPTABLES_RULE_COMMENT = f"{PKI_SERVICE_NAME}-rule"
 
 
 class VMMode(Enum):
@@ -234,10 +235,8 @@ def detect_vm_mode() -> VMMode:
         return VMMode.SWARM_NORMAL
 
 
-def patch_yaml_config(cpu_type: str):
+def patch_yaml_config(cpu_type: str, vm_mode: VMMode):
     """Set own challenge type in LXC container configuration."""
-    vm_mode = detect_vm_mode()
-    
     if vm_mode == VMMode.LEGACY:
         template_name = "lxc-legacy-vm-template.yaml"
         print(f"Detected {vm_mode.value} mode, using legacy template")
@@ -405,41 +404,8 @@ def enable_route_localnet(bridge_name: str):
         print(f"Enabled route_localnet for {bridge_name}")
 
 
-def add_iptables_rule(host_ip: str, port: str):
-    """Add iptables DNAT rule if it doesn't exist."""
-    # Check if rule exists
-    check_result = subprocess.run(
-        [
-            "iptables", "-t", "nat", "-C", "PREROUTING",
-            "-p", "tcp",
-            "-d", host_ip,
-            "--dport", port,
-            "-j", "DNAT",
-            "--to-destination", f"127.0.0.1:{port}"
-        ],
-        capture_output=True
-    )
-    
-    if check_result.returncode == 0:
-        print(f"iptables DNAT rule already exists for {host_ip}:{port}")
-    else:
-        subprocess.run(
-            [
-                "iptables", "-t", "nat", "-A", "PREROUTING",
-                "-p", "tcp",
-                "-d", host_ip,
-                "--dport", port,
-                "-j", "DNAT",
-                "--to-destination", f"127.0.0.1:{port}"
-            ],
-            check=True
-        )
-        print(f"iptables DNAT rule added: {host_ip}:{port} -> 127.0.0.1:{port}")
-
 def delete_iptables_rules():
     """Delete all iptables NAT rules for PKI container."""
-    host_ip = get_bridge_ip(BRIDGE_NAME)
-    
     # Delete rules from all chains: PREROUTING, OUTPUT, POSTROUTING
     for chain in ["PREROUTING", "OUTPUT", "POSTROUTING"]:
         result = subprocess.run(
@@ -450,11 +416,23 @@ def delete_iptables_rules():
         rules = result.stdout.splitlines()
         
         for rule in rules:
-            # Delete rules that contain host_ip or CONTAINER_IP
-            if host_ip in rule or CONTAINER_IP in rule:
+            # Delete rules that contain our comment
+            if IPTABLES_RULE_COMMENT in rule:
                 delete_rule = rule.replace("-A", "-D", 1)
                 subprocess.run(["iptables", "-t", "nat"] + delete_rule.split()[1:], check=True)
                 print(f"Deleted iptables rule: {delete_rule}")
+
+
+def ensure_iptables_rule(check_args: List[str], add_args: List[str], description: str):
+    print(f"[*] Checking iptables rule: {description}")
+    
+    check_result = subprocess.run(check_args, capture_output=True)
+    
+    if check_result.returncode == 0:
+        print(f"[*] Rule already exists")
+    else:
+        subprocess.run(add_args, check=True)
+        print(f"[*] Rule added")
 
 
 def setup_iptables(wg_ip):
@@ -463,44 +441,91 @@ def setup_iptables(wg_ip):
     
     enable_route_localnet(BRIDGE_NAME)
     
-    add_iptables_rule(host_ip, PCCS_PORT)
+    # Rule 1: PCCS DNAT
+    ensure_iptables_rule(
+        check_args=[
+            "iptables", "-t", "nat", "-C", "PREROUTING",
+            "-p", "tcp",
+            "-d", host_ip,
+            "--dport", PCCS_PORT,
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "DNAT",
+            "--to-destination", f"127.0.0.1:{PCCS_PORT}"
+        ],
+        add_args=[
+            "iptables", "-t", "nat", "-A", "PREROUTING",
+            "-p", "tcp",
+            "-d", host_ip,
+            "--dport", PCCS_PORT,
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "DNAT",
+            "--to-destination", f"127.0.0.1:{PCCS_PORT}"
+        ],
+        description=f"PCCS DNAT {host_ip}:{PCCS_PORT} -> 127.0.0.1:{PCCS_PORT}"
+    )
 
-    subprocess.run(
-        [
+    # Rule 2: WireGuard PREROUTING
+    ensure_iptables_rule(
+        check_args=[
+            "iptables", "-t", "nat", "-C", "PREROUTING",
+            "-i", WIREGUARD_INTERFACE,
+            "-p", "tcp",
+            "--dport", PKI_SERVICE_EXTERNAL_PORT,
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "DNAT",
+            "--to-destination", f"{CONTAINER_IP}:443"
+        ],
+        add_args=[
             "iptables", "-t", "nat", "-A", "PREROUTING",
             "-i", WIREGUARD_INTERFACE,
             "-p", "tcp",
             "--dport", PKI_SERVICE_EXTERNAL_PORT,
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
             "-j", "DNAT",
             "--to-destination", f"{CONTAINER_IP}:443"
         ],
-        check=True
+        description=f"PREROUTING WireGuard {PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443"
     )
-    print(f"Added iptables rule: PREROUTING WireGuard {PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443")
     
-    subprocess.run(
-        [
+    # Rule 3: OUTPUT
+    ensure_iptables_rule(
+        check_args=[
+            "iptables", "-t", "nat", "-C", "OUTPUT",
+            "-d", wg_ip,
+            "-p", "tcp",
+            "--dport", PKI_SERVICE_EXTERNAL_PORT,
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "DNAT",
+            "--to-destination", f"{CONTAINER_IP}:443"
+        ],
+        add_args=[
             "iptables", "-t", "nat", "-A", "OUTPUT",
             "-d", wg_ip,
             "-p", "tcp",
             "--dport", PKI_SERVICE_EXTERNAL_PORT,
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
             "-j", "DNAT",
             "--to-destination", f"{CONTAINER_IP}:443"
         ],
-        check=True
+        description=f"OUTPUT {wg_ip}:{PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443"
     )
-    print(f"Added iptables rule: OUTPUT {wg_ip}:{PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443")
     
-    subprocess.run(
-        [
-            "iptables", "-t", "nat", "-A", "POSTROUTING",
+    # Rule 4: MASQUERADE
+    ensure_iptables_rule(
+        check_args=[
+            "iptables", "-t", "nat", "-C", "POSTROUTING",
             "-s", f"{CONTAINER_IP}/32",
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
             "-j", "MASQUERADE"
         ],
-        check=True
+        add_args=[
+            "iptables", "-t", "nat", "-A", "POSTROUTING",
+            "-s", f"{CONTAINER_IP}/32",
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "MASQUERADE"
+        ],
+        description=f"POSTROUTING MASQUERADE for {CONTAINER_IP}/32"
     )
-    print(f"Added iptables rule: POSTROUTING MASQUERADE for {CONTAINER_IP}/32")
-
 
 
 def update_pccs_url():
