@@ -25,6 +25,7 @@ if ! grep -q 'sp-debug=true' /proc/cmdline; then
     # @TODO this will ignore NetworkPolicies in k8s, refactor in future
     iptables -I INPUT -s 10.43.0.0/16 -j ACCEPT
     iptables -I INPUT -s 10.42.0.0/16 -j ACCEPT
+    iptables -I INPUT -s 10.13.0.0/16 -j ACCEPT
 
     # Allow DHCP for LXC containers (client:68 -> server:67)
     iptables -A INPUT -i lxcbr0 -p udp --sport 68 --dport 67 -j ACCEPT
