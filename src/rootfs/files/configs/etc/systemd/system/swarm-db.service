@@ -1,8 +1,7 @@
 [Unit]
 Description=Swarm DB service
-After=network-online.target local-fs.target state_disk_mount.service
-Wants=network-online.target state_disk_mount.service
-Requires=state_disk_mount.service
+After=network-online.target local-fs.target
+Wants=network-online.target
 RequiresMountsFor=/var /var/lib /var/lib/swarm-db
 ConditionPathExists=/usr/local/bin/swarm-db-linux-amd64
 ConditionPathExists=/sp/swarm/node-db.yaml

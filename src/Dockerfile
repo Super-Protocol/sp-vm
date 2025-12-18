@@ -21,10 +21,12 @@ ADD https://www.kernel.org/pub/linux/utils/util-linux/v${util_linux_version}/uti
 RUN tar -C /tmp -xvf/tmp/util-linux-${util_linux_version}.tar.gz
 WORKDIR /tmp/util-linux-${util_linux_version}
 RUN ./configure --disable-shared --enable-static --disable-liblastlog2 --without-tinfo --without-ncurses --disable-ipv6 --disable-pylibmount
-RUN make -j blkid LDFLAGS="--static"
-RUN strip blkid
+RUN make -j blkid wipefs lsblk LDFLAGS="--static"
+RUN strip blkid wipefs lsblk
 RUN mkdir -p /initramfs-root/sbin
 RUN cp /tmp/util-linux-${util_linux_version}/blkid /initramfs-root/sbin/blkid
+RUN cp /tmp/util-linux-${util_linux_version}/wipefs /initramfs-root/sbin/wipefs
+RUN cp /tmp/util-linux-${util_linux_version}/lsblk /initramfs-root/sbin/lsblk
 ### End util_linux ###
 
 ### Start lvm2 ###
@@ -54,6 +56,7 @@ RUN CFLAGS="-I/initramfs-root/include" CXXFLAGS="-I/initramfs-root/include" LDFL
 RUN make -j
 RUN make install
 RUN strip /initramfs-root/sbin/veritysetup.static
+RUN strip /initramfs-root/sbin/cryptsetup.static
 ### End cryptsetup ###
 
 ### Start gen_init_cpio ###
@@ -68,11 +71,29 @@ RUN make -j gen_init_cpio
 RUN install gen_init_cpio /usr/sbin/
 ### End gen_init_cpio ###
 
+### Start e2fsprogs ###
+FROM ubuntu:24.04 AS e2fsprogs_builder
+RUN apt-get update && apt-get install -y wget gcc make build-essential
+ARG e2fsprogs_version=1.47.3
+ADD https://github.com/tytso/e2fsprogs/archive/refs/tags/v${e2fsprogs_version}.tar.gz /tmp/e2fsprogs-${e2fsprogs_version}.tar.gz
+RUN tar -C /tmp -xvf/tmp/e2fsprogs-${e2fsprogs_version}.tar.gz
+WORKDIR /tmp/e2fsprogs-${e2fsprogs_version}
+RUN ./configure CFLAGS='-g -O2 -static' LDFLAGS='-static'
+RUN make -j
+RUN mkdir -p /initramfs-root/sbin
+RUN cp /tmp/e2fsprogs-${e2fsprogs_version}/misc/mke2fs /initramfs-root/sbin/mkfs.ext4
+RUN strip /initramfs-root/sbin/mkfs.ext4
+### End e2fsprogs ###
+
 ### Start initramfs ###
 FROM gen_init_cpio_builder AS initramfs_builder
 COPY --from=busybox_builder /initramfs-root/sbin/busybox /initramfs-root/sbin/
 COPY --from=util_linux_builder /initramfs-root/sbin/blkid /initramfs-root/sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/lsblk /initramfs-root/sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/wipefs /initramfs-root/sbin/
 COPY --from=cryptsetup_builder /initramfs-root/sbin/veritysetup.static /initramfs-root/sbin/
+COPY --from=cryptsetup_builder /initramfs-root/sbin/cryptsetup.static /initramfs-root/sbin/
+COPY --from=e2fsprogs_builder /initramfs-root/sbin/mkfs.ext4 /initramfs-root/sbin/
 ADD initramfs/files/initramfs.list /initramfs-root/initramfs.list
 ADD initramfs/files/init.sh /initramfs-root/sbin/init.sh
 RUN gen_init_cpio /initramfs-root/initramfs.list | gzip -9 -n > /initramfs-root/initramfs.cpio.gz
@@ -185,9 +206,6 @@ ADD rootfs/files/configs/tdx-attest.conf ${OUTPUTDIR}/etc/
 ADD rootfs/files/configs/chrony/chrony.conf ${OUTPUTDIR}/etc/chrony/
 ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
 
-ADD rootfs/files/configs/state_disk_mount/state_disk_mount.service ${OUTPUTDIR}/etc/systemd/system/
-ADD rootfs/files/configs/state_disk_mount/state_disk_mount.sh ${OUTPUTDIR}/usr/local/bin/
-RUN ln -s /etc/systemd/system/state_disk_mount.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/state_disk_mount.service"
 RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
 RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
@@ -291,6 +309,12 @@ ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
 
+# swarm-cloud-api runtime wrappers (Node.js entrypoints)
+RUN mkdir -p ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api
+ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api
+ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/schema-sync ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
+RUN chmod +x ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
+
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
 ADD rootfs/files/configs/pccs-init/ /buildroot/files/configs/pccs-init/
@@ -303,6 +327,8 @@ RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/sy
 # Custom swarm services
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
 COPY services/apps/ ${OUTPUTDIR}/etc/swarm-services/
+# provision plugins from original swarm-cloud repo
+# COPY repos/swarm-cloud/services/swarm-cloud-api ${OUTPUTDIR}/etc/swarm-services/swarm-cloud-api
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
@@ -323,6 +349,23 @@ RUN --security=insecure bash /buildroot/files/scripts/install_nats.sh
 # disable autostart without requiring systemd during build (ensure no enable symlinks for nats)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/nats-server.service \
     && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/nats-server.service || true
+# CockroachDB (install cockroach binary into VM rootfs)
+ADD rootfs/files/scripts/install_cockroachdb.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_cockroachdb.sh
+# Knot DNS (install knot into VM rootfs)
+ADD rootfs/files/scripts/install_knot.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_knot.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for knot)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/knot.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/knot.service || true
+# OpenResty (install into VM rootfs so provisioner only configures and manages it)
+ADD rootfs/files/scripts/install_openresty.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_openresty.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for openresty)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/openresty.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/openresty.service || true
+RUN mkdir -p ${OUTPUTDIR}/etc/resty-auto-ssl/storage \
+    && chown -R www-data:www-data ${OUTPUTDIR}/etc/resty-auto-ssl
 # disable autostart without requiring systemd during build (remove enable symlinks)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
     &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service

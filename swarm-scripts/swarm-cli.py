@@ -193,12 +193,38 @@ def create_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) 
   run_sql(engine, insert_sql, params)
   print(f"ClusterServices '{id_value}' upserted.")
 
+
+def create_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  """
+  Insert or keep a SwarmSecret.
+  Semantics are like INSERT IGNORE: we do not overwrite existing secrets.
+  """
+  id_value = args.id or args.positional_id
+  value = args.value
+
+  if not id_value or value is None:
+    print("SwarmSecrets requires id (positional or --id) and --value.", file=sys.stderr)
+    sys.exit(1)
+
+  insert_sql = (
+    "INSERT INTO SwarmSecrets (id, value)\n"
+    "VALUES (:id, :value)\n"
+    "ON DUPLICATE KEY UPDATE\n"
+    "  value = value;\n"
+  )
+  params = {
+    "id": id_value,
+    "value": value,
+  }
+  run_sql(engine, insert_sql, params)
+  print(f"SwarmSecrets '{id_value}' upserted (existing values preserved).")
+
 def parse_args(argv: List[str]) -> argparse.Namespace:
   parser = argparse.ArgumentParser(
     description="Simple CLI to manage Swarm DB entities."
   )
   parser.add_argument("action", choices=["create"])
-  parser.add_argument("entity", choices=["ClusterPolicies", "ClusterServices"])
+  parser.add_argument("entity", choices=["ClusterPolicies", "ClusterServices", "SwarmSecrets"])
   # Positional optional id (first non-key=value), like the original script
   parser.add_argument("positional_id", nargs="?", help="Optional positional id")
 
@@ -216,6 +242,9 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
   parser.add_argument("--version", default=None)
   parser.add_argument("--location")
   parser.add_argument("--omit-command-init", dest="omit_command_init", action="store_true")
+
+  # SwarmSecrets options
+  parser.add_argument("--value")
 
   ns = parser.parse_args(argv)
   # If a positional id was provided, prefer it unless --id was set
@@ -251,6 +280,8 @@ def main(argv: List[str]) -> None:
     create_cluster_policies(args, db, engine)
   elif key == "create:ClusterServices":
     create_cluster_services(args, db, engine)
+  elif key == "create:SwarmSecrets":
+    create_swarm_secrets(args, db, engine)
   else:
     print(f"Unsupported command: {args.action} {args.entity}", file=sys.stderr)
     sys.exit(1)
