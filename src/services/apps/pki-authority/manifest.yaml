@@ -17,6 +17,18 @@ stateExpr:
 
     ($pkiClusterNodes | map(.node)) as $pkiNodeIds |
 
+    # Find Redis cluster
+    (
+      $swarmdb.clusters[] |
+      select(.cluster_policy == "redis" and .deleted_ts == null)
+    ) as $redisCluster |
+
+    # Get Redis cluster nodes
+    ([$swarmdb.clusternodes[] | select(.cluster == $redisCluster.id and .deleted_ts == null)]) as $redisClusterNodes |
+
+    ($redisClusterNodes | map(.node)) as $redisNodeIds |
+
+    # Find WireGuard cluster that contains PKI nodes
     (
       $swarmdb.clusters[] |
       select(.cluster_policy == "wireguard" and .deleted_ts == null) |
@@ -39,6 +51,20 @@ stateExpr:
         $pkiClusterNodes[] |
         {id, node_id: .node, cluster}
       ] | sort_by(.id, .node_id, .cluster),
+
+      redisCluster: {
+        id: $redisCluster.id
+      },
+
+      redisNodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith($redisCluster.id)) and
+          .deleted_ts == null and
+          .name == "redis_node_ready"
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
 
       wgCluster: {
         id: $wgCluster.id

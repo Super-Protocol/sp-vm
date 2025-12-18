@@ -15,6 +15,7 @@ import ssl
 from pathlib import Path
 from typing import List, Optional
 from enum import Enum
+from datetime import datetime
 
 PKI_SERVICE_NAME = "pki-authority"
 SERVICE_INSIDE_CONTAINER = "tee-pki"
@@ -25,6 +26,20 @@ CONTAINER_IP = "10.0.3.100"
 WIREGUARD_INTERFACE = "wg0"
 STORAGE_PATH = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/swarm-storage")
 IPTABLES_RULE_COMMENT = f"{PKI_SERVICE_NAME}-rule"
+
+
+class LogLevel(Enum):
+    """Log levels for structured logging."""
+    INFO = "INFO"
+    WARN = "WARN"
+    ERROR = "ERROR"
+    DEBUG = "DEBUG"
+
+
+def log(level: LogLevel, message: str):
+    """Log message with timestamp, service name and level."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] [{PKI_SERVICE_NAME}] [{level.value}] {message}", file=sys.stderr)
 
 
 class VMMode(Enum):
@@ -41,7 +56,7 @@ class LXCContainer:
     
     def start(self, timeout: int = 30) -> int:
         """Start LXC container. Returns exit code."""
-        print(f"[*] Starting LXC container {self.container_name}")
+        log(LogLevel.INFO, f"Starting LXC container {self.container_name}")
         result = subprocess.run(
             ["lxc-start", "-n", self.container_name],
             capture_output=True,
@@ -52,7 +67,7 @@ class LXCContainer:
     
     def stop(self, graceful_timeout: int = 30, command_timeout: int = 60) -> int:
         """Stop LXC container gracefully. Returns exit code."""
-        print(f"[*] Stopping LXC container {self.container_name} gracefully")
+        log(LogLevel.INFO, f"Stopping LXC container {self.container_name} gracefully")
         result = subprocess.run(
             ["lxc-stop", "-n", self.container_name, "-t", str(graceful_timeout)],
             capture_output=True,
@@ -63,7 +78,7 @@ class LXCContainer:
     
     def destroy(self) -> int:
         """Destroy LXC container. Returns exit code."""
-        print(f"[*] Destroying LXC container {self.container_name}")
+        log(LogLevel.INFO, f"Destroying LXC container {self.container_name}")
         result = subprocess.run(
             ["lxc-destroy", "-n", self.container_name, "-f"],
             capture_output=True,
@@ -72,7 +87,7 @@ class LXCContainer:
         )
         
         if result.returncode != 0:
-            print(f"[!] Failed to destroy container: {result.stderr}", file=sys.stderr)
+            log(LogLevel.ERROR, f"Failed to destroy container: {result.stderr}")
         
         return result.returncode
     
@@ -85,11 +100,11 @@ class LXCContainer:
                 text=True
             )
             if self.container_name not in result.stdout:
-                print(f"[*] LXC container {self.container_name} is not running")
+                log(LogLevel.INFO, f"LXC container {self.container_name} is not running")
                 return False
             return True
         except Exception as e:
-            print(f"[!] Failed to check LXC container status: {e}", file=sys.stderr)
+            log(LogLevel.ERROR, f"Failed to check LXC container status: {e}")
             return False
     
     def get_ip(self) -> Optional[str]:
@@ -103,7 +118,7 @@ class LXCContainer:
             container_ip = result.stdout.strip() if result.stdout.strip() else None
             return container_ip
         except Exception as e:
-            print(f"[!] Failed to get container IP: {e}", file=sys.stderr)
+            log(LogLevel.ERROR, f"Failed to get container IP: {e}")
             return None
     
     def create(self, archive_path: str = "/etc/super/containers/pki-authority/pki-authority.tar") -> bool:
@@ -116,10 +131,10 @@ class LXCContainer:
         )
         
         if result.returncode == 0:
-            print(f"Container '{self.container_name}' already exists.")
+            log(LogLevel.INFO, f"Container '{self.container_name}' already exists.")
             return True
         else:
-            print(f"Container '{self.container_name}' not found. Creating...")
+            log(LogLevel.INFO, f"Container '{self.container_name}' not found. Creating...")
             try:
                 subprocess.run(
                     [
@@ -131,10 +146,10 @@ class LXCContainer:
                     ],
                     check=True
                 )
-                print(f"Container '{self.container_name}' created.")
+                log(LogLevel.INFO, f"Container '{self.container_name}' created.")
                 return True
             except subprocess.CalledProcessError as e:
-                print(f"[!] Failed to create container: {e}", file=sys.stderr)
+                log(LogLevel.ERROR, f"Failed to create container: {e}")
                 return False
     
     def is_service_healthy(self, min_uptime: int = 120, healthcheck_url: str = "/healthcheck") -> bool:
@@ -149,7 +164,7 @@ class LXCContainer:
             status = result.stdout.strip()
             
             if status not in ["active", "activating"]:
-                print(f"[*] Service {SERVICE_INSIDE_CONTAINER} status: {status}")
+                log(LogLevel.INFO, f"Service {SERVICE_INSIDE_CONTAINER} status: {status}")
                 return False
             
             # 2. If service is active, check how long it's been running
@@ -193,19 +208,19 @@ class LXCContainer:
                                                 if response.status == 200:
                                                     return True
                                                 else:
-                                                    print(f"[*] Healthcheck returned status: {response.status}")
+                                                    log(LogLevel.INFO, f"Healthcheck returned status: {response.status}")
                                                     return False
                                         except Exception as e:
-                                            print(f"[*] Healthcheck failed: {e}")
+                                            log(LogLevel.INFO, f"Healthcheck failed: {e}")
                                             return False
                             except Exception as e:
-                                print(f"[*] Failed to parse service uptime: {e}")
+                                log(LogLevel.INFO, f"Failed to parse service uptime: {e}")
             
             # Service is active or activating (but not ready for healthcheck yet)
             return True
             
         except Exception as e:
-            print(f"[!] Failed to check service health: {e}", file=sys.stderr)
+            log(LogLevel.ERROR, f"Failed to check service health: {e}")
             return False
 
 
@@ -239,16 +254,16 @@ def patch_yaml_config(cpu_type: str, vm_mode: VMMode):
     """Set own challenge type in LXC container configuration."""
     if vm_mode == VMMode.LEGACY:
         template_name = "lxc-legacy-vm-template.yaml"
-        print(f"Detected {vm_mode.value} mode, using legacy template")
+        log(LogLevel.INFO, f"Detected {vm_mode.value} mode, using legacy template")
     else:
         template_name = "lxc-swarm-template.yaml"
-        print(f"Detected {vm_mode.value} mode, using swarm template")
+        log(LogLevel.INFO, f"Detected {vm_mode.value} mode, using swarm template")
     
     src_yaml = Path(f"/etc/super/containers/pki-authority/{template_name}")
     dst_yaml = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/conf/lxc.yaml")
     
     if not src_yaml.exists():
-        print(f"Error: {src_yaml} not found.")
+        log(LogLevel.ERROR, f"Error: {src_yaml} not found.")
         sys.exit(1)
     
     # Load YAML, modify, and save
@@ -271,7 +286,7 @@ def patch_yaml_config(cpu_type: str, vm_mode: VMMode):
         
         mode_value = "init" if vm_mode == VMMode.SWARM_INIT else "normal"
         config["pki"]["mode"]["attestationServiceSource"]["mode"] = mode_value
-        print(f"Set attestationServiceSource mode to: {mode_value}")
+        log(LogLevel.INFO, f"Set attestationServiceSource mode to: {mode_value}")
     
     # Ensure destination directory exists
     dst_yaml.parent.mkdir(parents=True, exist_ok=True)
@@ -280,7 +295,7 @@ def patch_yaml_config(cpu_type: str, vm_mode: VMMode):
     with open(dst_yaml, "w") as f:
         yaml.dump(config, f, default_flow_style=False)
     
-    print(f"Patched {dst_yaml} with type: {cpu_type}")
+    log(LogLevel.INFO, f"Patched {dst_yaml} with type: {cpu_type}")
 
 
 def set_subroot_env():
@@ -297,7 +312,7 @@ def set_subroot_env():
     dst_subroot_env = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/subroot.env")
     
     if not src_subroot_env.exists():
-        print(f"Info: {src_subroot_env} not found; skipping creation of {dst_subroot_env}")
+        log(LogLevel.INFO, f"Info: {src_subroot_env} not found; skipping creation of {dst_subroot_env}")
         return
     
     # Remove destination first to ensure a clean recreate
@@ -320,7 +335,7 @@ def set_subroot_env():
     
     # Set permissions
     dst_subroot_env.chmod(0o644)
-    print(f"Created {dst_subroot_env} with trusted variables.")
+    log(LogLevel.INFO, f"Created {dst_subroot_env} with trusted variables.")
 
 
 def patch_lxc_config(cpu_type: str):
@@ -372,13 +387,13 @@ def get_bridge_ip(bridge_name: str) -> str:
     )
     
     if result.returncode != 0:
-        print(f"Error: Could not determine IP address for bridge {bridge_name}")
+        log(LogLevel.ERROR, f"Error: Could not determine IP address for bridge {bridge_name}")
         sys.exit(1)
     
     # Parse IP address from output
     match = re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+)', result.stdout)
     if not match:
-        print(f"Error: Could not determine IP address for bridge {bridge_name}")
+        log(LogLevel.ERROR, f"Error: Could not determine IP address for bridge {bridge_name}")
         sys.exit(1)
     
     return match.group(1)
@@ -395,13 +410,13 @@ def enable_route_localnet(bridge_name: str):
     )
     
     if result.returncode == 0 and result.stdout.strip() == "1":
-        print(f"route_localnet already enabled for {bridge_name}")
+        log(LogLevel.INFO, f"route_localnet already enabled for {bridge_name}")
     else:
         subprocess.run(
             ["sysctl", "-w", f"{sysctl_key}=1"],
             check=True
         )
-        print(f"Enabled route_localnet for {bridge_name}")
+        log(LogLevel.INFO, f"Enabled route_localnet for {bridge_name}")
 
 
 def delete_iptables_rules():
@@ -420,19 +435,19 @@ def delete_iptables_rules():
             if IPTABLES_RULE_COMMENT in rule:
                 delete_rule = rule.replace("-A", "-D", 1)
                 subprocess.run(["iptables", "-t", "nat"] + delete_rule.split()[1:], check=True)
-                print(f"Deleted iptables rule: {delete_rule}")
+                log(LogLevel.INFO, f"Deleted iptables rule: {delete_rule}")
 
 
 def ensure_iptables_rule(check_args: List[str], add_args: List[str], description: str):
-    print(f"[*] Checking iptables rule: {description}")
+    log(LogLevel.INFO, f"Checking iptables rule: {description}")
     
     check_result = subprocess.run(check_args, capture_output=True)
     
     if check_result.returncode == 0:
-        print(f"[*] Rule already exists")
+        log(LogLevel.INFO, f"Rule already exists")
     else:
         subprocess.run(add_args, check=True)
-        print(f"[*] Rule added")
+        log(LogLevel.INFO, f"Rule added")
 
 
 def setup_iptables(wg_ip):
@@ -538,7 +553,7 @@ def update_pccs_url():
     pccs_url = f"https://{host_ip}:{PCCS_PORT}/sgx/certification/v4/"
     
     if not qcnl_conf.exists():
-        print(f"Error: {qcnl_conf} not found")
+        log(LogLevel.ERROR, f"Error: {qcnl_conf} not found")
         sys.exit(1)
     
     if not qcnl_conf_bak.exists():
@@ -558,7 +573,7 @@ def update_pccs_url():
     with open(qcnl_conf, "w") as f:
         f.write(content)
     
-    print(f"Updated PCCS URL in {qcnl_conf} to {pccs_url}")
+    log(LogLevel.INFO, f"Updated PCCS URL in {qcnl_conf} to {pccs_url}")
 
 
 def init_container():
@@ -585,3 +600,4 @@ def read_property_from_fs(file_name: str) -> tuple[bool, bytes]:
         if content:
             return (True, content)
     return (False, b"")
+
