@@ -196,6 +196,8 @@ RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
 
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
+# ensure system boots into multi-user.target instead of graphical.target
+RUN ln -sf "/lib/systemd/system/multi-user.target" "${OUTPUTDIR}/etc/systemd/system/default.target"
 
 RUN cp "${OUTPUTDIR}/usr/share/systemd/tmp.mount" "${OUTPUTDIR}/etc/systemd/system/tmp.mount";
 
