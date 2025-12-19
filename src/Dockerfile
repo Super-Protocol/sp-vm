@@ -376,7 +376,7 @@ COPY --from=ovmf_builder_tdx /buildroot/edk2_build/Build/OvmfX64/RELEASE_GCC5/FV
 COPY --from=kernel_builder /output/boot/vmlinuz-6.12.13-nvidia-gpu-confidential /output/vmlinuz
 ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/generate_vm_json.sh
-### End vm_json_builder ###
+### End vm_json_cloud_builder ###
 
 ### Start sp_vm_cloud ###
 FROM scratch AS sp_vm_cloud

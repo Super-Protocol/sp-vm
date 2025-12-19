@@ -1,6 +1,11 @@
 name: Build SuperProtocol OS image
 on:
   workflow_call:
+    inputs:
+      build-type:
+        required: false
+        type: string
+        default: 'main'
   workflow_dispatch:
     inputs:
       runs-on:
@@ -110,7 +115,7 @@ jobs:
                   echo "File $FILE not found";
                   exit 1;
               fi
-              echo "Uploading $file to ${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/"
+              echo "Uploading $FILE to ${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/"
               rclone copy \
                   --multi-thread-streams 8 \
                   --s3-provider Storj \
