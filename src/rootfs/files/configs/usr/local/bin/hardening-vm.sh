@@ -19,7 +19,7 @@ if ! grep -q 'sp-debug=true' /proc/cmdline; then
     iptables -A INPUT -p udp --sport 53 -j ACCEPT
 
     # Allow API server (TCP 443 for HTTPS)
-    # iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+    iptables -A INPUT -p tcp --dport 443 -j ACCEPT
 
     # Allow incoming traffic in the cluster network
     # @TODO this will ignore NetworkPolicies in k8s, refactor in future
