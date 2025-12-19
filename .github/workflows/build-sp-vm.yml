@@ -34,6 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          token: ${{ secrets.SWARM_CLOUD_SWARM_DB_REPO_RO }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
