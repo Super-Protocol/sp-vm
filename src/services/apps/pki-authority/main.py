@@ -112,7 +112,8 @@ class ApplyHandler:
         route_config = {
             "targets": targets,
             "policy": "rr",
-            "preserve_host": False
+            "preserve_host": False,
+            "passthrough": True
         }
         route_json = json.dumps(route_config)
         route_key = "routes:super-develop-tdx.superprotocol.dev"
