@@ -1,6 +1,11 @@
 name: Build SuperProtocol OS image
 on:
   workflow_call:
+    inputs:
+      build-type:
+        required: false
+        type: string
+        default: 'main'
   workflow_dispatch:
     inputs:
       runs-on:
@@ -11,7 +16,13 @@ on:
         - self-hosted
         - sp-vm-runner-2
         - ubuntu-latest
-
+      build-type:
+        required: true
+        type: choice
+        description: type of build to run
+        options:
+          - main
+          - cloud
 jobs:
   build-asset:
     runs-on: ${{ inputs.runs-on }}
@@ -26,7 +37,12 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Set SP_VM_IMAGE_VERSION variable
-        run: echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}" >> $GITHUB_ENV
+        run: |
+          if [[ "${{ inputs.build-type }}" == "cloud" ]]; then
+            echo "SP_VM_IMAGE_VERSION=cloud-build-${{ github.run_number }}" >> "$GITHUB_ENV"
+          else
+            echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}" >> "$GITHUB_ENV"
+          fi
 
       - name: Setup builder
         run: |
@@ -40,6 +56,7 @@ jobs:
               --buildkitd-flags '--allow-insecure-entitlement security.insecure';
 
       - name: Build sp-vm image
+        if: ${{ inputs.build-type == 'main' }}
         run: |
           docker buildx build \
               -t sp-vm \
@@ -49,7 +66,20 @@ jobs:
               --build-arg "SP_VM_IMAGE_VERSION=$SP_VM_IMAGE_VERSION" \
               --build-arg "S3_BUCKET=$S3_BUCKET";
 
+      - name: Build sp-vm cloud image
+        if: ${{ inputs.build-type == 'cloud' }}
+        run: |
+          docker buildx build \
+              -t sp-vm \
+              --allow security.insecure \
+              src \
+              --output type=local,dest=./out-cloud \
+              --build-arg "SP_VM_IMAGE_VERSION=$SP_VM_IMAGE_VERSION" \
+              --build-arg "S3_BUCKET=$S3_BUCKET" \
+              --target sp_vm_cloud;
+
       - name: Upload files to Storj
+        if: ${{ inputs.build-type == 'main' }}
         working-directory: out
         run: |
           function upload_file() {
@@ -59,6 +89,33 @@ jobs:
                   exit 1;
               fi
               echo "Uploading $file to ${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/"
+              rclone copy \
+                  --multi-thread-streams 8 \
+                  --s3-provider Storj \
+                  --s3-endpoint=gateway.storjshare.io \
+                  "--s3-access-key-id=${{ secrets.S3_ACCESS_KEY }}" \
+                  "--s3-secret-access-key=${{ secrets.S3_SECRET_KEY }}" \
+                  "$FILE" \
+                  ":s3:${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/";
+          }
+          upload_file "sp-vm-${SP_VM_IMAGE_VERSION}.img";
+          upload_file "OVMF.fd";
+          upload_file "OVMF_AMD.fd";
+          upload_file "vm.json";
+          upload_file "vmlinuz";
+          upload_file "rootfs_hash.txt";
+
+      - name: Upload cloud files to Storj
+        if: ${{ inputs.build-type == 'cloud' }}
+        working-directory: out-cloud
+        run: |
+          function upload_file() {
+              local FILE="${1:=""}";
+              if [[ -z "$FILE" ]] || [[ ! -f "$FILE" ]]; then
+                  echo "File $FILE not found";
+                  exit 1;
+              fi
+              echo "Uploading $FILE to ${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/"
               rclone copy \
                   --multi-thread-streams 8 \
                   --s3-provider Storj \
