@@ -471,6 +471,23 @@ ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/generate_vm_json.sh
 ### End vm_json_builder ###
 
+### Start vm_json_cloud_builder ###
+FROM ubuntu:24.04 AS vm_json_cloud_builder
+ARG SP_VM_IMAGE_VERSION
+ARG S3_BUCKET
+COPY --from=image_builder /output /output
+COPY --from=ovmf_builder_sev /buildroot/ovmf/Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd /output/OVMF_AMD.fd
+COPY --from=ovmf_builder_tdx /buildroot/edk2_build/Build/OvmfX64/RELEASE_GCC5/FV/OVMF.fd /output/OVMF.fd
+COPY --from=kernel_builder /output/boot/vmlinuz-6.12.13-nvidia-gpu-confidential /output/vmlinuz
+ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
+RUN /buildroot/files/scripts/generate_vm_json.sh
+### End vm_json_cloud_builder ###
+
+### Start sp_vm_cloud ###
+FROM scratch AS sp_vm_cloud
+COPY --from=vm_json_cloud_builder /output /
+### End sp_vm_cloud ###
+
 ### Start sp_vm ###
 FROM scratch AS sp_vm
 COPY --from=vm_json_builder /output /
