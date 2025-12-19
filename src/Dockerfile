@@ -307,6 +307,13 @@ COPY repos/swarm-cloud/apps/swarm-node-e2e/fixtures/schema.yaml ${OUTPUTDIR}/etc
 ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/install_nodejs.sh
 
+# Services Downloader: stage files and install
+ADD rootfs/files/configs/usr/local/lib/services-downloader ${OUTPUTDIR}/usr/local/lib/services-downloader
+ADD rootfs/files/scripts/install_services_downloader.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/install_services_downloader.sh
+ADD rootfs/files/configs/usr/local/bin/sp-services-downloader ${OUTPUTDIR}/usr/local/bin/sp-services-downloader
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/sp-services-downloader
+
 # install pnpm and build Node.js applications inside rootfs via script
 ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
