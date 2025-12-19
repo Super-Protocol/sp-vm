@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-dir="/sp/swarm/services"
+dir="/etc/swarm-service-launchers"
 
 if [ ! -d "$dir" ]; then
   exit 0
