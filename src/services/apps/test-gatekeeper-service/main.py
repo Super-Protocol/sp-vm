@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -45,6 +46,75 @@ def run_downloader(target_dir: Path) -> tuple[bool, str | None]:
         return True, None
     except Exception as e:
         return False, f"failed to run downloader: {e}"
+
+
+def ensure_gatekeeper_certs_from_yaml() -> tuple[bool, str | None]:
+    """Extract key/cert from YAML to SSL_* paths, mirroring 68.setup-test-gatekeeper-service.sh.
+    TODD: Delete this logic after implementing subroot certificate validation.
+
+    - YAML path defaults to /sp/swarm/gatekeeper-keys.yaml (can be overridden by YAML_PATH env)
+    - Outputs go to SSL_KEY_PATH and SSL_CERT_PATH (existing env defaults already set above)
+    - If YAML does not exist, skip without error (as in the shell script)
+    - Validates presence of PEM headers and sets file permissions
+    """
+    yaml_path = Path(os.environ.get("YAML_PATH", "/sp/swarm/gatekeeper-keys.yaml"))
+    key_out = Path(SSL_KEY_PATH)
+    cert_out = Path(SSL_CERT_PATH)
+
+    if not yaml_path.exists():
+        print(f"[INFO] YAML not found: {yaml_path} — skipping cert extraction", file=sys.stderr)
+        return True, None
+
+    # Ensure target directory exists
+    cert_out.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Truncate output files
+        key_out.write_text("", encoding="utf-8")
+        cert_out.write_text("", encoding="utf-8")
+
+        mode = None  # "key" | "cert" | None
+        with yaml_path.open("r", encoding="utf-8") as f:
+            for raw in f:
+                line = raw.rstrip("\n")
+                stripped = line.strip()
+                if stripped.startswith("key:") and stripped.endswith("|"):
+                    mode = "key"
+                    continue
+                if stripped.startswith("cert:") and stripped.endswith("|"):
+                    mode = "cert"
+                    continue
+
+                if mode == "key":
+                    # Mirror awk: strip leading whitespace and append line
+                    out_line = line.lstrip()
+                    with key_out.open("a", encoding="utf-8") as ko:
+                        ko.write(out_line + "\n")
+                elif mode == "cert":
+                    out_line = line.lstrip()
+                    with cert_out.open("a", encoding="utf-8") as co:
+                        co.write(out_line + "\n")
+
+        # Basic validation
+        if "BEGIN PRIVATE KEY" not in key_out.read_text(encoding="utf-8"):
+            return False, f"key block not found in {yaml_path}"
+        if "BEGIN CERTIFICATE" not in cert_out.read_text(encoding="utf-8"):
+            return False, f"cert block not found in {yaml_path}"
+
+        # Set permissions
+        key_out.chmod(0o600)
+        cert_out.chmod(0o644)
+        try:
+            shutil.chown(str(key_out), user="root", group="root")
+            shutil.chown(str(cert_out), user="root", group="root")
+        except Exception:
+            # Non-fatal if unable to chown (e.g., not running as root)
+            pass
+
+        print(f"[OK] Wrote key to {key_out} and cert to {cert_out}")
+        return True, None
+    except Exception as e:
+        return False, f"failed to extract gatekeeper certs: {e}"
 
 
 def write_systemd_service() -> None:
@@ -121,6 +191,11 @@ def wait_for_port_ready(timeout_sec: int = 30) -> bool:
 def handle_init(input_data: PluginInput) -> PluginOutput:
     """Download the gatekeeper service via services-downloader."""
     local_state = input_data.local_state or {}
+
+    # Ensure TLS key/cert are present (optional if YAML not found)
+    ok, err = ensure_gatekeeper_certs_from_yaml()
+    if not ok:
+        return PluginOutput(status="error", error_message=err or "certificate extraction failed", local_state=local_state)
 
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
     ok, err = run_downloader(TARGET_DIR)
