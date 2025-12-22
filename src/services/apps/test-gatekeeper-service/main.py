@@ -13,7 +13,8 @@ from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 
 SERVICE_NAME = "test-gatekeeper-service"
 APP_PORT = int(os.environ.get("PORT", "8081"))
-TARGET_DIR = Path(f"/usr/local/lib/{SERVICE_NAME}")
+# Download and run from /etc/test-gatekeeper-service (override via TARGET_DIR env if needed)
+TARGET_DIR = Path(os.environ.get("TARGET_DIR", f"/etc/{SERVICE_NAME}"))
 LAUNCHER_BIN = TARGET_DIR / "bin" / SERVICE_NAME
 SYSTEMD_SERVICE_NAME = SERVICE_NAME
 SYSTEMD_SERVICE_PATH = Path(f"/etc/systemd/system/{SYSTEMD_SERVICE_NAME}.service")
@@ -38,6 +39,7 @@ def run_downloader(target_dir: Path) -> tuple[bool, str | None]:
         "--ssl-cert-path", SSL_CERT_PATH,
         "--ssl-key-path", SSL_KEY_PATH,
         "--environment", GK_ENV,
+        "--unpack",
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -60,6 +62,10 @@ def ensure_gatekeeper_certs_from_yaml() -> tuple[bool, str | None]:
     yaml_path = Path(os.environ.get("YAML_PATH", "/sp/swarm/gatekeeper-keys.yaml"))
     key_out = Path(SSL_KEY_PATH)
     cert_out = Path(SSL_CERT_PATH)
+
+    # If outputs already exist, do nothing
+    if key_out.exists() and cert_out.exists():
+        return True, None
 
     if not yaml_path.exists():
         print(f"[INFO] YAML not found: {yaml_path} — skipping cert extraction", file=sys.stderr)

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 const fs = require('fs/promises');
+const os = require('os');
+const path = require('path');
 const { downloadResource, resourceExists } = require('./downloader');
 const { getResourceFromGatekeeper } = require('./gatekeeper-client');
 const { unpackTarGz } = require('./unarchiver');
@@ -11,7 +13,7 @@ Services Downloader CLI
 
 Usage:
   sp-services-downloader --resource-name <name> --branch-name <branch> --target-dir <dir>
-    --ssl-cert-path <path> --ssl-key-path <path> [--environment <env>] [--threads <n>] [--timeout <ms>] [--unpack-tar-to <dir>]
+    --ssl-cert-path <path> --ssl-key-path <path> [--environment <env>] [--threads <n>] [--timeout <ms>] [--unpack]
 
 Required arguments:
   --resource-name        Logical resource name (used for locking)
@@ -24,6 +26,7 @@ Optional arguments:
   --environment          Gatekeeper environment (default: mainnet)
   --threads              Parallel threads for download
   --timeout              Request timeout to Gatekeeper in ms (default: 30000)
+  --unpack               Download to temp and unpack into target-dir
   --help                 Show this help
 
 Examples:
@@ -85,7 +88,7 @@ async function main() {
     });
 
     const threads = args.threads ? Number(args.threads) : undefined;
-    const unpackTarTo = args['unpack-tar-to'];
+    const unpack = !!args['unpack'];
 
     // Acquire per-resource lock
     const release = await acquireResourceLock(resourceName, branchName);
@@ -95,31 +98,37 @@ async function main() {
       // Skip if already present
       if (await resourceExists(targetDir)) {
         console.info(`[INFO] skip: target already populated -> ${targetDir}`);
-        if (unpackTarTo) {
-          console.info(`[INFO] unpack requested on existing target -> ${unpackTarTo}`);
-          await unpackTarGz(targetDir, unpackTarTo);
-        }
         process.stdout.write(
           JSON.stringify({ ok: true, hash: 'unknown', size: 0, targetDir }) + '\n',
         );
         return;
       }
 
+      let downloadDir = targetDir;
+      if (unpack) {
+        const tempPrefix = path.join(os.tmpdir(), 'sp-services-downloader-');
+        const tempDir = await fs.mkdtemp(tempPrefix);
+        console.info(`[INFO] unpack enabled: downloading archive to temp -> ${tempDir}`);
+        downloadDir = tempDir;
+      }
+
       const result = await downloadResource({
         resourceName,
         branchName,
-        targetDir,
+        targetDir: downloadDir,
         resource,
         encryption,
         threads,
       });
 
-      if (unpackTarTo) {
-        console.info(`[INFO] unpack requested -> ${unpackTarTo}`);
-        await unpackTarGz(result.targetDir, unpackTarTo);
+      if (unpack) {
+        console.info(`[INFO] unpacking from temp to target -> ${targetDir}`);
+        await unpackTarGz(downloadDir, targetDir);
       }
 
-      process.stdout.write(JSON.stringify({ ok: true, ...result }) + '\n');
+      process.stdout.write(
+        JSON.stringify({ ok: true, hash: result.hash, size: result.size, targetDir }) + '\n',
+      );
     } finally {
       await release();
       console.info(`[INFO] lock released for ${resourceName}/${branchName}`);
