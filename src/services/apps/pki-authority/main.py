@@ -3,13 +3,12 @@
 import sys
 import time
 import json
-import subprocess
 from pathlib import Path
-from datetime import datetime
-from enum import Enum
 
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 import base64
+from redis import RedisCluster
+from redis.cluster import ClusterNode
 
 # Import helpers
 sys.path.insert(0, str(Path(__file__).parent))
@@ -18,7 +17,6 @@ from helpers import (
     detect_cpu_type,
     detect_vm_mode,
     patch_yaml_config,
-    set_subroot_env,
     patch_lxc_config,
     setup_iptables,
     update_pccs_url,
@@ -31,6 +29,7 @@ from helpers import (
     read_property_from_fs,
     LogLevel,
     log,
+    get_pki_domain,
 )
 
 # Configuration
@@ -44,7 +43,8 @@ class ApplyHandler:
     AUTHORITY_SERVICE_PREFIX = "pki_authority_"
     AUTHORITY_SERVICE_PROPERTIES = ["auth_token", "basic_certificate", "basic_privateKey", "lite_certificate", "lite_privateKey"]
     PROP_INITIALIZED = f"{AUTHORITY_SERVICE_PREFIX}initialized"
-    PROP_REGISTERED_ENDPOINTS=f"{AUTHORITY_SERVICE_PREFIX}registered_endpoints"
+    PROP_REGISTERED_ENDPOINTS = f"{AUTHORITY_SERVICE_PREFIX}registered_endpoints"
+    PROP_PKI_DOMAIN = f"{AUTHORITY_SERVICE_PREFIX}pki_domain"
     
     def __init__(self, input_data: PluginInput):
         self.input_data = input_data
@@ -59,12 +59,15 @@ class ApplyHandler:
         self.authority_props = self.state_json.get("authorityServiceProperties", [])
         self.authority_config = {prop["name"]: prop["value"] for prop in self.authority_props}
         
+        self.pki_domain = self.authority_config.get(self.PROP_PKI_DOMAIN, "")
+        
         # Output parameters
         self.status = None
         self.error_message = None
         self.cluster_properties = {}
     
     def get_redis_tunnel_ips(self) -> list[str]:
+        """Get list of Redis node tunnel IPs."""
         redis_node_props = self.state_json.get("redisNodeProperties", [])
         wg_props = self.state_json.get("wgNodeProperties", [])
 
@@ -77,6 +80,14 @@ class ApplyHandler:
                     redis_hosts.append(tunnel_ip)
 
         return sorted(set(redis_hosts))
+    
+    def get_redis_connection_info(self) -> list[tuple[str, int]]:
+        """Get Redis cluster connection endpoints.
+        
+        Returns list of (host, port) tuples for Redis nodes.
+        """
+        redis_tunnel_ips = self.get_redis_tunnel_ips()
+        return [(ip, 6379) for ip in redis_tunnel_ips]
     
     
     def create_gateway_endpoints(self):
@@ -99,10 +110,10 @@ class ApplyHandler:
         
         log(LogLevel.INFO, f"Gateway endpoints changed: registered={registered_endpoints}, current={current_endpoints}")
         
-        # Get list of all Redis nodes with IP addresses
-        redis_tunnel_ips = self.get_redis_tunnel_ips()
+        # Get Redis connection info
+        redis_endpoints = self.get_redis_connection_info()
         
-        if not redis_tunnel_ips and current_endpoints:
+        if not redis_endpoints and current_endpoints:
             self.status = "postponed"
             self.error_message = "No Redis nodes available to configure gateway routes"
             return
@@ -116,35 +127,31 @@ class ApplyHandler:
             "passthrough": True
         }
         route_json = json.dumps(route_config)
-        route_key = "routes:super-develop-tdx.superprotocol.dev"
+        route_key = f"routes:{self.pki_domain}"
         
-        last_redis_error = None
-        for redis_ip in redis_tunnel_ips:
-            try:
-                log(LogLevel.INFO, f"Attempting to set gateway route in Redis at {redis_ip}:6379")
-                result = subprocess.run(
-                    ["redis-cli", "-h", redis_ip, "-p", "6379", "SET", route_key, route_json],
-                    capture_output=True,
-                    text=True,
-                    timeout=15
-                )
-                
-                if result.returncode == 0 and result.stdout.strip() == "OK":
-                    log(LogLevel.INFO, f"Successfully set gateway route in Redis at {redis_ip}:6379")
-                    if self.cluster_properties is None:
-                        self.cluster_properties = {}
-                    self.cluster_properties[self.PROP_REGISTERED_ENDPOINTS] = ";".join(current_endpoints)
-                    return
-                else:
-                    last_redis_error = f"Failed to set route in Redis at {redis_ip}: {result.stderr}"
-            except subprocess.TimeoutExpired:
-                last_redis_error = f"Timeout connecting to Redis at {redis_ip}"
-            except Exception as e:
-                last_redis_error = f"Exception setting route in Redis at {redis_ip}: {e}"
+        startup_nodes = [ClusterNode(host, port) for host, port in redis_endpoints]
         
-        self.status = "error"
-        self.error_message = last_redis_error
-        log(LogLevel.ERROR, last_redis_error)
+        try:
+            redis_client = RedisCluster(
+                startup_nodes=startup_nodes,
+                decode_responses=True,
+                skip_full_coverage_check=True,
+                socket_connect_timeout=5,
+            )
+            redis_client.ping()
+            
+            redis_client.set(route_key, route_json)
+            log(LogLevel.INFO, f"Successfully set gateway route {route_key} in Redis Cluster")
+            
+            if self.cluster_properties is None:
+                self.cluster_properties = {}
+            self.cluster_properties[self.PROP_REGISTERED_ENDPOINTS] = ";".join(current_endpoints)
+            
+        except Exception as e:
+            error_msg = f"Failed to set route in Redis Cluster: {str(e)}"
+            self.status = "error"
+            self.error_message = error_msg
+            log(LogLevel.ERROR, error_msg)
 
     def create_output(self) -> PluginOutput:
         if self.status == "completed":
@@ -168,7 +175,7 @@ class ApplyHandler:
             self.status = "error"
             self.error_message = "Invalid state format"
             return self.create_output()
-
+        
         local_tunnel_ip = get_node_tunnel_ip(self.local_node_id, self.wg_props)
         if not local_tunnel_ip:
             self.status = "error"
@@ -190,12 +197,14 @@ class ApplyHandler:
                     if not prop_value:
                         missing.append(prop_name)
                 
+                if not self.pki_domain:
+                    self.pki_domain = get_pki_domain()
+                    missing.append(self.PROP_PKI_DOMAIN)
+
                 if missing:
                     error_msg = f"Service marked as initialized but missing properties: {', '.join(missing)}"
                     log(LogLevel.ERROR, error_msg)
-                    self.status = "error"
-                    self.error_message = error_msg
-                    return self.create_output()
+                    initialized = "false"
             
             if vm_mode == VMMode.SWARM_NORMAL and initialized != "true":
                 self.status = "postponed"
@@ -216,8 +225,9 @@ class ApplyHandler:
                     return self.create_output()
             
             cpu_type = detect_cpu_type()
-            patch_yaml_config(cpu_type, vm_mode)
-            set_subroot_env()
+            if not self.pki_domain:
+                self.pki_domain = get_pki_domain()
+            patch_yaml_config(cpu_type, vm_mode, self.pki_domain)
             patch_lxc_config(cpu_type)
             update_pccs_url()
             setup_iptables(local_tunnel_ip)
@@ -254,8 +264,7 @@ class ApplyHandler:
                     # Check if all properties collected
                     if not missing_properties:
                         log(LogLevel.INFO, "All property files have been generated by tee-pki service")
-                        
-                        # Add initialized flag
+                        collected_properties[self.PROP_PKI_DOMAIN] =  self.pki_domain
                         collected_properties[self.PROP_INITIALIZED] = "true"
                         
                         self.status = "completed"
