@@ -36,8 +36,8 @@ from helpers import (
 plugin = ProvisionPlugin()
 
 
-class ApplyHandler:
-    """Handler for apply command logic with unified exit point."""
+class EventHandler:
+    """Handler for plugin events with unified exit point.""""
     
     # Authority service property prefix and names
     AUTHORITY_SERVICE_PREFIX = "pki_authority_"
@@ -322,6 +322,66 @@ class ApplyHandler:
         # No changes detected
         log(LogLevel.INFO, "No configuration changes detected")
         return False
+    
+    def delete_route_from_redis(self) -> None:
+        """Delete the PKI Authority route from Redis Cluster.
+        
+        Raises:
+            Exception: If deletion fails
+        """
+        redis_endpoints = self.get_redis_connection_info()
+        
+        if not redis_endpoints:
+            log(LogLevel.WARN, "No Redis endpoints available, skipping route deletion")
+            return
+        
+        route_key = f"routes:{self.pki_domain}"
+        startup_nodes = [ClusterNode(host, port) for host, port in redis_endpoints]
+        
+        redis_client = RedisCluster(
+            startup_nodes=startup_nodes,
+            decode_responses=True,
+            skip_full_coverage_check=True,
+            socket_connect_timeout=5,
+        )
+        redis_client.delete(route_key)
+        log(LogLevel.INFO, f"Deleted route {route_key} from Redis Cluster")
+    
+    def destroy(self) -> PluginOutput:
+        """Destroy PKI Authority service and clean up."""
+        try:
+            container = LXCContainer(PKI_SERVICE_NAME)
+            
+            # Stop container if running
+            if container.is_running():
+                exit_code = container.stop(graceful_timeout=30, command_timeout=60)
+                if exit_code != 0:
+                    log(LogLevel.WARN, "Failed to stop container gracefully")
+            
+            # Destroy container
+            exit_code = container.destroy()
+            if exit_code != 0:
+                error_msg = f"Failed to destroy container with exit code {exit_code}"
+                return PluginOutput(status="error", error_message=error_msg, local_state=self.local_state)
+            
+            delete_iptables_rules()
+            
+            # If this is the last node and domain is configured, delete route from Redis
+            if len(self.pki_cluster_nodes) <= 1 and self.pki_domain:
+                try:
+                    log(LogLevel.INFO, "This is the last PKI Authority node, deleting route from Redis")
+                    self.delete_route_from_redis()
+                except Exception as e:
+                    log(LogLevel.WARN, f"Failed to delete route from Redis: {e}")
+                    # Don't fail the destroy operation if route deletion fails
+
+            log(LogLevel.INFO, "PKI Authority destroyed")
+            return PluginOutput(status="completed", local_state=self.local_state)
+
+        except Exception as e:
+            error_msg = f"Destroy failed: {str(e)}"
+            log(LogLevel.ERROR, error_msg)
+            return PluginOutput(status="error", error_message=error_msg, local_state=self.local_state)
 
 
 # Plugin commands
@@ -342,7 +402,7 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
 @plugin.command("apply")
 def handle_apply(input_data: PluginInput) -> PluginOutput:
     """Apply PKI Authority configuration and start service."""
-    handler = ApplyHandler(input_data)
+    handler = EventHandler(input_data)
     return handler.apply()
 
 
@@ -378,32 +438,8 @@ def handle_finalize(input_data: PluginInput) -> PluginOutput:
 @plugin.command("destroy")
 def handle_destroy(input_data: PluginInput) -> PluginOutput:
     """Destroy PKI Authority service and clean up."""
-    local_state = input_data.local_state or {}
-
-    try:
-        container = LXCContainer(PKI_SERVICE_NAME)
-        
-        # Stop container if running
-        if container.is_running():
-            exit_code = container.stop(graceful_timeout=30, command_timeout=60)
-            if exit_code != 0:
-                log(LogLevel.WARN, "Failed to stop container gracefully")
-        
-        # Destroy container
-        exit_code = container.destroy()
-        if exit_code != 0:
-            error_msg = f"Failed to destroy container with exit code {exit_code}"
-            return PluginOutput(status="error", error_message=error_msg, local_state=local_state)
-        
-        delete_iptables_rules()
-
-        log(LogLevel.INFO, "PKI Authority destroyed")
-        return PluginOutput(status="completed", local_state=local_state)
-
-    except Exception as e:
-        error_msg = f"Destroy failed: {str(e)}"
-        log(LogLevel.ERROR, error_msg)
-        return PluginOutput(status="error", error_message=error_msg, local_state=local_state)
+    handler = EventHandler(input_data)
+    return handler.destroy()
 
 
 if __name__ == "__main__":
