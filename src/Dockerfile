@@ -329,6 +329,7 @@ RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/sy
 # Custom swarm services
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
 COPY services/apps/ ${OUTPUTDIR}/etc/swarm-services/
+COPY swarm-scripts ${OUTPUTDIR}/etc/swarm-service-launchers/
 # provision plugins from original swarm-cloud repo
 # COPY repos/swarm-cloud/services/swarm-cloud-api ${OUTPUTDIR}/etc/swarm-services/swarm-cloud-api
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-services/*/main.py

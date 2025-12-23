@@ -35,12 +35,24 @@ if [ ! -f "$MANIFEST_PATH" ]; then
   exit 1
 fi
 
-echo "Creating/Updating ClusterPolicies '$CLUSTER_POLICY'..."
-DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-  python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=1 --maxClusters=1
+echo "Ensuring ClusterPolicy '$CLUSTER_POLICY'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicies "$CLUSTER_POLICY" >/dev/null 2>&1; then
+  echo "ClusterPolicy '$CLUSTER_POLICY' already exists, skipping creation."
+else
+  echo "Creating ClusterPolicy '$CLUSTER_POLICY'..."
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=1 --maxClusters=1
+fi
 
-echo "Creating/Updating ClusterServices '$SERVICE_PK'..."
-DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-  python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SERVICE_PK" --name="$SERVICE_NAME" --cluster_policy="$CLUSTER_POLICY" --version="$SERVICE_VERSION" --location="$LOCATION_PATH"
+echo "Ensuring ClusterService '$SERVICE_PK'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  python3 "$(dirname "$0")/swarm-cli.py" get ClusterServices "$SERVICE_PK" >/dev/null 2>&1; then
+  echo "ClusterService '$SERVICE_PK' already exists, skipping creation."
+else
+  echo "Creating ClusterService '$SERVICE_PK'..."
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SERVICE_PK" --name="$SERVICE_NAME" --cluster_policy="$CLUSTER_POLICY" --version="$SERVICE_VERSION" --location="$LOCATION_PATH"
+fi
 
 echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."
