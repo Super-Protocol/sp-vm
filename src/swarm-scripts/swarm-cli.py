@@ -2,6 +2,7 @@
 
 import argparse
 import base64
+import json
 import os
 import re
 import shutil
@@ -219,11 +220,90 @@ def create_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> 
   run_sql(engine, insert_sql, params)
   print(f"SwarmSecrets '{id_value}' upserted (existing values preserved).")
 
+
+def get_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  """
+  Fetch a ClusterPolicy by id.
+  - Exit code 0: policy exists, JSON is printed to stdout.
+  - Exit code 1: policy not found.
+  - Exit code 2: query failed.
+  """
+  policy_id = args.id or args.positional_id
+  if not policy_id:
+    print("ClusterPolicies get requires id (positional or --id).", file=sys.stderr)
+    sys.exit(2)
+
+  sql = (
+    "SELECT id, minSize, maxSize, maxClusters "
+    "FROM ClusterPolicies WHERE id = :id LIMIT 1"
+  )
+  try:
+    with engine.connect() as conn:
+      row = conn.execute(text(sql), {"id": policy_id}).mappings().first()
+  except Exception as exc:
+    print(f"MySQL query failed: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+  if row is None:
+    # Not found — suitable for 'existence' checks in shell scripts.
+    sys.exit(1)
+
+  print(json.dumps(dict(row)))
+
+
+def get_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  """
+  Fetch a ClusterService.
+  Lookup order:
+    - if id/positional_id is provided, search by id;
+    - else, if both --cluster_policy and --name are provided, search by them.
+  - Exit code 0: service exists, JSON is printed to stdout.
+  - Exit code 1: service not found.
+  - Exit code 2: query failed / invalid arguments.
+  """
+  service_id = args.id or args.positional_id
+  cluster_policy = args.cluster_policy
+  name = args.name
+
+  if service_id:
+    sql = (
+      "SELECT id, cluster_policy, name, version, location "
+      "FROM ClusterServices WHERE id = :id LIMIT 1"
+    )
+    params = {"id": service_id}
+  elif cluster_policy and name:
+    sql = (
+      "SELECT id, cluster_policy, name, version, location "
+      "FROM ClusterServices "
+      "WHERE cluster_policy = :cluster_policy AND name = :name "
+      "LIMIT 1"
+    )
+    params = {"cluster_policy": cluster_policy, "name": name}
+  else:
+    print(
+      "ClusterServices get requires either id (positional/--id) "
+      "or both --cluster_policy and --name.",
+      file=sys.stderr,
+    )
+    sys.exit(2)
+
+  try:
+    with engine.connect() as conn:
+      row = conn.execute(text(sql), params).mappings().first()
+  except Exception as exc:
+    print(f"MySQL query failed: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+  if row is None:
+    sys.exit(1)
+
+  print(json.dumps(dict(row)))
+
 def parse_args(argv: List[str]) -> argparse.Namespace:
   parser = argparse.ArgumentParser(
     description="Simple CLI to manage Swarm DB entities."
   )
-  parser.add_argument("action", choices=["create"])
+  parser.add_argument("action", choices=["create", "get"])
   parser.add_argument("entity", choices=["ClusterPolicies", "ClusterServices", "SwarmSecrets"])
   # Positional optional id (first non-key=value), like the original script
   parser.add_argument("positional_id", nargs="?", help="Optional positional id")
@@ -282,6 +362,10 @@ def main(argv: List[str]) -> None:
     create_cluster_services(args, db, engine)
   elif key == "create:SwarmSecrets":
     create_swarm_secrets(args, db, engine)
+  elif key == "get:ClusterPolicies":
+    get_cluster_policies(args, db, engine)
+  elif key == "get:ClusterServices":
+    get_cluster_services(args, db, engine)
   else:
     print(f"Unsupported command: {args.action} {args.entity}", file=sys.stderr)
     sys.exit(1)
