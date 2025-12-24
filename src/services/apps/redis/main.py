@@ -174,7 +174,9 @@ def write_redis_config(local_node_id: str, local_tunnel_ip: str, cluster_nodes: 
         "dbfilename dump.rdb",
         f"dir {REDIS_DATA_DIR}",
         "daemonize no",
-        "supervised systemd",
+        # We run Redis under a regular systemd service without Type=notify, so disable systemd supervision
+        # to avoid noisy "NOTIFY_SOCKET not found" warnings in the logs.
+        "supervised no",
         "loglevel notice",
         "logfile /var/log/redis/redis-server.log",
     ]
