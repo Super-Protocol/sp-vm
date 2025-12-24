@@ -37,7 +37,6 @@ plugin = ProvisionPlugin()
 
 
 class EventHandler:
-    """Handler for plugin events with unified exit point.""""
     
     # Authority service property prefix and names
     AUTHORITY_SERVICE_PREFIX = "pki_authority_"
@@ -368,12 +367,8 @@ class EventHandler:
             
             # If this is the last node and domain is configured, delete route from Redis
             if len(self.pki_cluster_nodes) <= 1 and self.pki_domain:
-                try:
-                    log(LogLevel.INFO, "This is the last PKI Authority node, deleting route from Redis")
-                    self.delete_route_from_redis()
-                except Exception as e:
-                    log(LogLevel.WARN, f"Failed to delete route from Redis: {e}")
-                    # Don't fail the destroy operation if route deletion fails
+                log(LogLevel.INFO, "This is the last PKI Authority node, deleting route from Redis")
+                self.delete_route_from_redis()
 
             log(LogLevel.INFO, "PKI Authority destroyed")
             return PluginOutput(status="completed", local_state=self.local_state)

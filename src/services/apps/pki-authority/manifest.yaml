@@ -32,9 +32,10 @@ stateExpr:
     (
       $swarmdb.clusters[] |
       select(.cluster_policy == "wireguard" and .deleted_ts == null) |
+      . as $currentCluster |
       select(
         (
-          [$swarmdb.clusternodes[] | select(.deleted_ts == null and (.node | IN($pkiNodeIds[])))] |
+          [$swarmdb.clusternodes[] | select(.cluster == $currentCluster.id and .deleted_ts == null and (.node | IN($pkiNodeIds[])))] |
           length > 0
         )
       )
