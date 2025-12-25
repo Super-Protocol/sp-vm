@@ -256,7 +256,8 @@ def write_knot_config(
     is_catalog_master: bool,
     tsig_key_name: str,
     tsig_key_secret: str,
-    catalog_master_ip: str = None
+    catalog_master_ip: str = None,
+    node_addrs: list | None = None,
 ):
     """Write Knot DNS configuration file with RFC 2136, TSIG, and catalog zones support.
 
@@ -281,6 +282,11 @@ def write_knot_config(
                       check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass  # Non-critical if chown fails
+
+    # Determine external IP for this node (for listening on public interface)
+    external_ip = None
+    if node_addrs:
+        external_ip = get_node_addr(local_node_id, node_addrs)
 
     # Build list of remote server IPs (all nodes except local)
     remote_ips = []
@@ -384,10 +390,22 @@ zone:
     catalog-template: slave
 """
 
+    # Build server listen directives:
+    # - always listen on WireGuard tunnel IP (for intra-cluster traffic)
+    # - always listen on loopback
+    # - if external_ip is available, listen on it as well (for external clients)
+    listen_lines = [
+        f"    listen: {local_tunnel_ip}@{KNOT_PORT}",
+        f"    listen: 127.0.0.1@{KNOT_PORT}",
+    ]
+    if external_ip:
+        listen_lines.append(f"    listen: {external_ip}@{KNOT_PORT}")
+    listen_block = "\n".join(listen_lines)
+
     cfg_content = f"""# Knot DNS Configuration with TSIG, RFC 2136, and Catalog Zones
 
 server:
-    listen: 0.0.0.0@{KNOT_PORT}
+{listen_block}
     rundir: "/run/knot"
     user: knot:knot
     pidfile: "/run/knot/knot.pid"
@@ -1197,14 +1215,15 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
     # Write Knot configuration
     try:
         write_knot_config(
-            local_node_id,
-            local_tunnel_ip,
-            cluster_nodes,
-            wg_props,
-            is_catalog_master,
-            tsig_key_name,
-            tsig_key_secret,
-            catalog_master_ip
+            local_node_id=local_node_id,
+            local_tunnel_ip=local_tunnel_ip,
+            cluster_nodes=cluster_nodes,
+            wg_props=wg_props,
+            is_catalog_master=is_catalog_master,
+            tsig_key_name=tsig_key_name,
+            tsig_key_secret=tsig_key_secret,
+            catalog_master_ip=catalog_master_ip,
+            node_addrs=node_addrs,
         )
     except Exception as e:
         return PluginOutput(status='error', error_message=f'Failed to write config: {str(e)}', local_state=local_state)
