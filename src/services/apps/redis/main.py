@@ -243,6 +243,43 @@ def create_redis_cluster(cluster_nodes: list, wg_props: list) -> bool:
             print(f"[!] Need at least 1 nodes for Redis cluster, got {len(node_endpoints)}", file=sys.stderr)
             return False
 
+        # Special case: single-node cluster.
+        # redis-cli --cluster create requires at least 3 master nodes, so
+        # for a single node we initialize the cluster manually by assigning all slots 0..16383
+        # to that node. This gives us a "1-node cluster" with state=ok and
+        # readiness for further expansion.
+        if len(node_endpoints) == 1:
+            host, port_str = node_endpoints[0].split(":", 1)
+            cmd = [
+                REDIS_CLI,
+                "-h",
+                host,
+                "-p",
+                port_str,
+                "cluster",
+                "addslots",
+                *[str(i) for i in range(16384)],
+            ]
+
+            print(f"[*] Initializing single-node Redis cluster with command: redis-cli -h {host} -p {port_str} cluster addslots 0..16383", file=sys.stderr)
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+
+            if result.returncode != 0:
+                print(f"[!] Single-node cluster initialization failed with return code {result.returncode}", file=sys.stderr)
+                print(f"[!] STDOUT: {result.stdout}", file=sys.stderr)
+                print(f"[!] STDERR: {result.stderr}", file=sys.stderr)
+                return False
+
+            print(f"[*] Single-node Redis cluster initialized successfully", file=sys.stderr)
+            print(f"[*] Initialization output: {result.stdout}", file=sys.stderr)
+            return True
+
         # Create cluster with replicas
         # For 3 nodes: 3 masters, 0 replicas
         # For 6+ nodes: masters with replicas
