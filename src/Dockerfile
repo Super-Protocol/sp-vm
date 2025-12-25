@@ -334,6 +334,7 @@ COPY swarm-scripts ${OUTPUTDIR}/etc/swarm-service-launchers/
 # provision plugins from original swarm-cloud repo
 # COPY repos/swarm-cloud/services/swarm-cloud-api ${OUTPUTDIR}/etc/swarm-services/swarm-cloud-api
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-services/*/main.py
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
