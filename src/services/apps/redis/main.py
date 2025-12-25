@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import hashlib
 import time
+import pwd
 from pathlib import Path
 
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
