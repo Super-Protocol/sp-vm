@@ -373,7 +373,7 @@ def generate_nginx_config(redis_hosts: list[str]) -> str:
     """Generate Nginx configuration content."""
     redis_host_list = ", ".join([f'"{host}:6379"' for host in redis_hosts])
 
-    config = f"""# Nginx/OpenResty configuration for Gateway with AutoSSL and Redis routing
+    config = f"""# Nginx/OpenResty configuration for Gateway with AutoSSL, SSL Passthrough and Redis routing
 
 user www-data;
 worker_processes auto;
@@ -381,6 +381,144 @@ pid /usr/local/openresty/nginx/logs/nginx.pid;
 
 events {{
     worker_connections 1024;
+}}
+
+# Stream block for SSL passthrough routing (port 443)
+stream {{
+    # Logging
+    log_format basic '$remote_addr [$time_local] '
+                     '$protocol $status $bytes_sent $bytes_received '
+                     '$session_time';
+    
+    access_log /var/log/openresty/stream-access.log basic;
+    error_log /var/log/openresty/stream-error.log info;
+
+    # Shared memory zones
+    lua_shared_dict stream_route_cache 10m;
+    lua_shared_dict stream_rr_counters 10m;
+
+    # Redis hosts
+    init_by_lua_block {{
+        stream_redis_hosts = {{{redis_host_list}}}
+    }}
+
+    # SSL preread to get SNI hostname
+    ssl_preread on;
+
+    server {{
+        listen 443;
+        
+        # Variable for dynamic upstream
+        set $upstream_target "";
+        
+        # Lua code to route based on passthrough flag
+        preread_by_lua_block {{
+            local redis = require "resty.redis"
+            local cjson = require "cjson"
+            local domain = ngx.var.ssl_preread_server_name
+            
+            if not domain or domain == "" then
+                -- No SNI, close connection
+                return ngx.exit(421)
+            end
+
+            -- Try to get route from cache
+            local cache = ngx.shared.stream_route_cache
+            local cached_route = cache:get(domain)
+
+            if not cached_route then
+                -- Query Redis for route
+                local red = redis:new()
+                red:set_timeout(1000)
+
+                local route_data = nil
+                for _, host in ipairs(stream_redis_hosts) do
+                    local ok, err = red:connect(host:match("([^:]+)"), tonumber(host:match(":(%d+)")) or 6379)
+                    if ok then
+                        local route, err = red:get("routes:" .. domain)
+                        if route and route ~= ngx.null then
+                            route_data = route
+                            red:close()
+                            break
+                        end
+                        red:close()
+                    end
+                end
+
+                if not route_data then
+                    -- No route found, close connection
+                    return ngx.exit(421)
+                end
+
+                -- Cache for 30 seconds
+                cache:set(domain, route_data, 30)
+                cached_route = route_data
+            end
+
+            -- Parse route configuration
+            local route = cjson.decode(cached_route)
+            local passthrough = route.passthrough or false
+
+            if not passthrough then
+                -- SSL termination mode: proxy to local HTTP server
+                ngx.var.upstream_target = "127.0.0.1:8443"
+                return
+            end
+
+            -- Passthrough mode: select backend target
+            local targets = route.targets or {{}}
+
+            if #targets == 0 then
+                return ngx.exit(421)
+            end
+
+            -- Select target based on policy
+            local policy = route.policy or "rr"
+            local target_url
+
+            if policy == "rr" then
+                -- Round-robin
+                local counters = ngx.shared.stream_rr_counters
+                local counter = counters:get(domain) or 0
+                local idx = (counter % #targets) + 1
+                target_url = targets[idx].url
+                counters:incr(domain, 1, 0)
+
+            elseif policy == "ip_hash" then
+                -- IP hash
+                local ip = ngx.var.remote_addr
+                local hash = ngx.crc32_long(ip)
+                local idx = (hash % #targets) + 1
+                target_url = targets[idx].url
+
+            else
+                -- Default to first target
+                target_url = targets[1].url
+            end
+
+            -- Extract host and port from URL
+            -- Format: https://host:port or http://host:port
+            local backend_host, backend_port = target_url:match("^https?://([^:/]+):?(%d*)/?")
+            
+            if not backend_host then
+                return ngx.exit(421)
+            end
+            
+            -- Default port to 443 if not specified and using https
+            if not backend_port or backend_port == "" then
+                if target_url:match("^https://") then
+                    backend_port = "443"
+                else
+                    backend_port = "80"
+                end
+            end
+
+            ngx.var.upstream_target = backend_host .. ":" .. backend_port
+        }}
+
+        proxy_pass $upstream_target;
+        proxy_connect_timeout 5s;
+    }}
 }}
 
 http {{
@@ -465,9 +603,9 @@ http {{
         }}
     }}
 
-    # HTTPS server (port 443)
+    # HTTPS server (port 8443 - for SSL termination via stream proxy)
     server {{
-        listen 443 ssl;
+        listen 127.0.0.1:8443 ssl;
         server_name _;
 
         # Declare variable for use in proxy_pass
