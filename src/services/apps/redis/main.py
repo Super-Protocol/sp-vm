@@ -527,35 +527,38 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
                 local_state=local_state
             )
 
-    # If this is the leader node and cluster is not initialized, initialize it
-    if is_leader and not cluster_initialized:
-        # Check if all nodes are ready before creating cluster
+    # Cluster leader is responsible for creating/reconciling the Redis cluster (idempotent).
+    # This allows new nodes to be automatically added as replicas even after
+    # the initial initialization (when redis_cluster_initialized is already "true").
+    if is_leader:
+        # This node has already started Redis and can be treated as "ready".
+        leader_node_properties = {"redis_node_ready": "true"}
+
+        # Wait until all nodes have their local Redis up (mark themselves with redis_node_ready=true).
         if not check_all_nodes_redis_ready(cluster_nodes, redis_props):
-            # Mark this node as ready and wait for others
-            node_properties = {"redis_node_ready": "true"}
             return PluginOutput(
                 status='postponed',
-                error_message='Waiting for all nodes to have Redis ready before creating cluster',
-                node_properties=node_properties,
+                error_message='Waiting for all nodes to have Redis ready before creating/updating cluster',
+                node_properties=leader_node_properties,
                 local_state=local_state
             )
 
-        # All nodes are ready, create cluster
+        # All nodes are ready — create/update the cluster.
+        # create_redis_cluster is written to be idempotent: on repeated invocations
+        # it does not break an already initialized cluster and only adds
+        # missing nodes as replicas.
         if create_redis_cluster(cluster_nodes, wg_props):
-            # Mark cluster as initialized
-            node_properties = {
-                "redis_cluster_initialized": "true",
-                "redis_node_ready": "true"
-            }
+            leader_node_properties["redis_cluster_initialized"] = "true"
             return PluginOutput(
                 status='completed',
-                node_properties=node_properties,
+                node_properties=leader_node_properties,
                 local_state=local_state
             )
         else:
             return PluginOutput(
                 status='postponed',
-                error_message='Failed to create Redis cluster',
+                error_message='Failed to create or reconcile Redis cluster',
+                node_properties=leader_node_properties,
                 local_state=local_state
             )
 
@@ -571,9 +574,14 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
                 local_state=local_state
             )
         else:
+            # Local Redis is already running, but the node is not yet part of the cluster.
+            # We still mark it as "ready" so that the leader can see all ready nodes
+            # and add them to the cluster on the next reconciliation run.
+            node_properties = {"redis_node_ready": "true"}
             return PluginOutput(
                 status='postponed',
                 error_message=f'Node not in cluster yet: {error}',
+                node_properties=node_properties,
                 local_state=local_state
             )
 
