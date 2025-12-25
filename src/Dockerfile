@@ -169,6 +169,10 @@ ARG VERSION_CODENAME=noble
 ARG OUTPUTROOT=/output
 ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
 
+ENV SWARM_CLOUD_API_INSTALL_DIR=/usr/local/lib/swarm-cloud \
+    SWARM_CLOUD_API_CONFIG_DIR=/etc/swarm-cloud-api \
+    SWARM_CLOUD_API_BIN=/usr/local/bin/swarm-cloud-api.sh
+
 WORKDIR /buildroot
 
 ADD general/files/scripts/log.sh /buildroot/files/scripts/
