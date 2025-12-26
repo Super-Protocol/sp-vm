@@ -1,0 +1,17 @@
+[Unit]
+Description=Download and stage Swarm services pack (run once)
+After=network-online.target swarm-services.service
+Wants=network-online.target swarm-services.service
+Requires=swarm-services.service
+ConditionPathExists=!/etc/sp-swarm-services/.downloaded
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/download-sp-swarm-services.sh
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=5min
+
+[Install]
+WantedBy=multi-user.target
