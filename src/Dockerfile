@@ -322,7 +322,7 @@ ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTD
 ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/schema-sync ${OUTPUTDIR}/usr/local/lib/swarm-cloud/schema-sync
 RUN chmod +x \
     ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api \
-    ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
+    ${OUTPUTDIR}/usr/local/lib/swarm-cloud/schema-sync
 
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
