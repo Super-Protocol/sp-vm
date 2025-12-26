@@ -336,7 +336,7 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
         )
 
     # Allow single-node CockroachDB cluster (suitable for dev/single-node setups).
-    # Swarm clustering policy still controls desired min/max size; here мы не блокируем запуск при len(cluster_nodes) == 1.
+    # Swarm clustering policy still controls desired min/max size; here we are not blocking with len(cluster_nodes) == 1.
     if len(cluster_nodes) < 1:
         return PluginOutput(
             status='postponed',
