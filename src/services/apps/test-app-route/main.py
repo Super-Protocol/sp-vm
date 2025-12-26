@@ -58,6 +58,21 @@ def get_redis_connection_info(state_json: dict) -> List[Tuple[str, int]]:
     return endpoints
 
 
+def is_redis_cluster_initialized(state_json: dict) -> bool:
+    """Check whether Redis cluster has been initialized by Redis service plugin.
+
+    Looks for redis_cluster_initialized == "true" in redisNodeProperties.
+    """
+    redis_props = state_json.get("redisNodeProperties", [])
+    for prop in redis_props:
+        if (
+            prop.get("name") == "redis_cluster_initialized"
+            and prop.get("value") == "true"
+        ):
+            return True
+    return False
+
+
 def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
     """Create or update the OpenResty route in Redis Cluster.
 
@@ -66,6 +81,10 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
       we find its WireGuard tunnel IP via wgNodeProperties.
     - Each such IP becomes a backend URL http://<ip>:APP_PORT.
     """
+    # Ensure Redis cluster is fully initialized (all slots assigned, cluster_state=ok)
+    if not is_redis_cluster_initialized(state_json):
+        return False, "Redis cluster is not initialized yet"
+
     endpoints = get_redis_connection_info(state_json)
     if not endpoints:
         return False, "No Redis endpoints available"
@@ -213,6 +232,14 @@ def handle_health(input_data: PluginInput) -> PluginOutput:
     if not is_local_node_leader(local_node_id, state_json):
         # Non-leader nodes do not manage this route
         return PluginOutput(status="completed", local_state=local_state)
+
+    # Route health makes sense only after Redis cluster is fully initialized
+    if not is_redis_cluster_initialized(state_json):
+        return PluginOutput(
+            status="postponed",
+            error_message="Redis cluster is not initialized yet",
+            local_state=local_state,
+        )
 
     try:
         import redis

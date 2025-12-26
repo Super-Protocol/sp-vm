@@ -64,6 +64,18 @@ def get_knot_tunnel_ips(state_json: dict) -> list[str]:
     return sorted(set(knot_hosts))
 
 
+def get_knot_leader_tunnel_ip(state_json: dict) -> str | None:
+    """Get tunnel IP of Knot cluster leader node."""
+    knot_cluster = state_json.get("knotCluster", {})
+    leader_node_id = knot_cluster.get("leader_node")
+
+    if not leader_node_id:
+        return None
+
+    wg_props = state_json.get("wgNodeProperties", [])
+    return get_node_tunnel_ip(leader_node_id, wg_props)
+
+
 def get_node_addr(node_id: str, node_addrs: list) -> str | None:
     """Get physical address for a node."""
     for node in node_addrs:
@@ -183,7 +195,7 @@ def get_knot_tsig_key(state_json: dict) -> tuple[str, str] | None:
 
 
 def update_gateway_dns_records(
-    knot_tunnel_ips: list[str],
+    knot_leader_tunnel_ip: str,
     cluster_nodes: list,
     node_addrs: list,
     global_id: str,
@@ -193,7 +205,7 @@ def update_gateway_dns_records(
 ) -> bool:
     """Update A records for gw.<swarm_id>.<base_domain> in Knot DNS via DNS UPDATE."""
     # Full zone name: <global_id>.<base_domain>
-    full_zone_name = f"{global_id}.{base_domain}"
+    full_zone_name = f"dyn.{global_id}.{base_domain}"
     gw_hostname = f"gw.{full_zone_name}"
 
     # Collect A records for all openresty nodes
@@ -208,15 +220,15 @@ def update_gateway_dns_records(
         print(f"[!] No A records to set for {gw_hostname}", file=sys.stderr)
         return False
 
-    if not knot_tunnel_ips:
-        print(f"[!] No Knot DNS servers available", file=sys.stderr)
+    if not knot_leader_tunnel_ip:
+        print(f"[!] No Knot DNS leader tunnel IP available", file=sys.stderr)
         return False
 
-    # Send DNS UPDATE to first available Knot server
-    knot_server = knot_tunnel_ips[0]
+    # Send DNS UPDATE to Knot leader node
+    print(f"[*] Sending DNS UPDATE to Knot leader: {knot_leader_tunnel_ip}", file=sys.stderr)
 
     return send_dns_update(
-        knot_server=knot_server,
+        knot_server=knot_leader_tunnel_ip,
         zone_name=full_zone_name,
         hostname=gw_hostname,
         record_type="A",
@@ -814,19 +826,28 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
         global_id = state_json.get("globalId")
         base_domain = get_secret_from_swarmdb(state_json, "base_domain")
 
+        print(f"[DEBUG] global_id={global_id}, base_domain={base_domain}", file=sys.stderr)
+
         if global_id and base_domain:
-            # Get Knot DNS tunnel IPs
-            knot_tunnel_ips = get_knot_tunnel_ips(state_json)
+            # Get Knot DNS leader tunnel IP
+            knot_leader_tunnel_ip = get_knot_leader_tunnel_ip(state_json)
+            print(f"[DEBUG] Knot leader tunnel IP: {knot_leader_tunnel_ip}", file=sys.stderr)
 
             # Get TSIG key from Knot cluster properties
             tsig_result = get_knot_tsig_key(state_json)
+            print(f"[DEBUG] TSIG key available: {tsig_result is not None}", file=sys.stderr)
 
-            if knot_tunnel_ips and tsig_result:
+            if knot_leader_tunnel_ip and tsig_result:
                 tsig_key_name, tsig_key_secret = tsig_result
+                print(f"[DEBUG] TSIG key name: {tsig_key_name}", file=sys.stderr)
+
+                # Collect A records info for logging
+                a_records_count = len([n for n in cluster_nodes if get_node_addr(n.get("node_id"), node_addrs)])
+                print(f"[DEBUG] Will register {a_records_count} A records for gateway", file=sys.stderr)
 
                 # Update DNS records for gw.<swarm_id>.<base_domain>
                 dns_updated = update_gateway_dns_records(
-                    knot_tunnel_ips,
+                    knot_leader_tunnel_ip,
                     cluster_nodes,
                     node_addrs,
                     global_id,
@@ -839,14 +860,34 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
                     print(f"[*] Gateway DNS records updated successfully", file=sys.stderr)
                     node_properties["openresty_dns_updated"] = "true"
                 else:
-                    print(f"[!] Failed to update gateway DNS records", file=sys.stderr)
+                    print(f"[!] Failed to update gateway DNS records, will retry", file=sys.stderr)
+                    return PluginOutput(
+                        status='postponed',
+                        error_message='Failed to update gateway DNS records in Knot',
+                        local_state=new_local_state
+                    )
             else:
-                if not knot_tunnel_ips:
-                    print(f"[!] No Knot DNS servers available, skipping DNS update", file=sys.stderr)
+                if not knot_leader_tunnel_ip:
+                    knot_cluster = state_json.get("knotCluster", {})
+                    leader_node_id = knot_cluster.get("leader_node")
+                    print(f"[!] No Knot DNS leader tunnel IP available", file=sys.stderr)
+                    print(f"[DEBUG] Knot cluster: {knot_cluster}", file=sys.stderr)
+                    print(f"[DEBUG] Knot leader_node_id: {leader_node_id}", file=sys.stderr)
+                    wg_props_count = len(state_json.get("wgNodeProperties", []))
+                    print(f"[DEBUG] WireGuard properties count: {wg_props_count}", file=sys.stderr)
                 if not tsig_result:
-                    print(f"[!] No TSIG key available from Knot cluster, skipping DNS update", file=sys.stderr)
+                    cluster_props = state_json.get("knotClusterProperties", [])
+                    print(f"[!] No TSIG key available from Knot cluster", file=sys.stderr)
+                    print(f"[DEBUG] Knot cluster properties count: {len(cluster_props)}", file=sys.stderr)
+                    for prop in cluster_props:
+                        print(f"[DEBUG]   - {prop.get('name')}: {'<set>' if prop.get('value') else '<empty>'}", file=sys.stderr)
         else:
-            print(f"[!] Missing global_id or base_domain, skipping DNS update", file=sys.stderr)
+            if not global_id:
+                print(f"[!] Missing global_id, skipping DNS update", file=sys.stderr)
+            if not base_domain:
+                secrets = state_json.get("swarmSecrets", [])
+                print(f"[!] Missing base_domain, skipping DNS update", file=sys.stderr)
+                print(f"[DEBUG] Available secrets: {[s.get('id') for s in secrets]}", file=sys.stderr)
 
     return PluginOutput(
         status='completed',
@@ -858,6 +899,7 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
 @plugin.command('health')
 def handle_health(input_data: PluginInput) -> PluginOutput:
     """Check OpenResty health."""
+    local_node_id = input_data.local_node_id
     state_json = input_data.state or {}
     local_state = input_data.local_state or {}
 
@@ -885,8 +927,44 @@ def handle_health(input_data: PluginInput) -> PluginOutput:
             # Don't fail health check, just log that config needs update
             # The next apply will handle the update
 
-    # Health check complete - DNS verification would require querying Knot directly
-    # which is beyond the scope of this health check
+    # If this is the leader node, check if DNS records were successfully updated
+    leader_node_id = get_leader_node(state_json)
+    is_leader = (leader_node_id == local_node_id)
+
+    print(f"[DEBUG] Health check: is_leader={is_leader}, leader_node_id={leader_node_id}, local_node_id={local_node_id}", file=sys.stderr)
+
+    if is_leader:
+        # Check if DNS update was successful (should be marked by apply)
+        openresty_props = state_json.get("openrestyNodeProperties", [])
+        dns_updated = False
+
+        print(f"[DEBUG] Checking openresty_dns_updated property in {len(openresty_props)} properties", file=sys.stderr)
+
+        for prop in openresty_props:
+            if prop.get("node_id") == local_node_id:
+                print(f"[DEBUG] Found property for local node: {prop.get('name')}={prop.get('value')}", file=sys.stderr)
+            if (prop.get("node_id") == local_node_id and
+                prop.get("name") == "openresty_dns_updated" and
+                prop.get("value") == "true"):
+                dns_updated = True
+                break
+
+        if not dns_updated:
+            # DNS records haven't been updated yet
+            global_id = state_json.get("globalId")
+            base_domain = get_secret_from_swarmdb(state_json, "base_domain")
+
+            print(f"[DEBUG] DNS update flag not set: global_id={global_id}, base_domain={base_domain}", file=sys.stderr)
+
+            if global_id and base_domain:
+                print(f"[!] Gateway DNS records not yet updated, waiting for apply", file=sys.stderr)
+                return PluginOutput(
+                    status='postponed',
+                    error_message='Gateway DNS records not yet updated',
+                    local_state=local_state
+                )
+        else:
+            print(f"[*] Gateway DNS records are up-to-date", file=sys.stderr)
 
     return PluginOutput(status='completed', local_state=local_state)
 

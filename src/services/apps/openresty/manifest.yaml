@@ -39,14 +39,13 @@ stateExpr:
 
     ($redisClusterNodes | map(.node)) as $redisNodeIds |
 
-    # Find WireGuard cluster that contains any of Redis or Knot nodes
-    ($redisNodeIds + $knotNodeIds) as $depNodeIds |
+    # Find WireGuard cluster that contains Redis and Knot nodes
     (
       $swarmdb.clusters[] |
       select(.cluster_policy == "wireguard" and .deleted_ts == null) |
       select(
         (
-          [$swarmdb.clusternodes[] | select(.deleted_ts == null and (.node | IN($depNodeIds[])))] |
+          [$swarmdb.clusternodes[] | select(.deleted_ts == null and (.node | IN(($redisNodeIds + $knotNodeIds)[])))] |
           length > 0
         )
       )
@@ -75,7 +74,8 @@ stateExpr:
       ] | sort_by(.cluster_node, .name, .value, .node_id),
 
       knotCluster: {
-        id: $knotCluster.id
+        id: $knotCluster.id,
+        leader_node: $knotCluster.leader_node
       },
 
       knotNodeProperties: [

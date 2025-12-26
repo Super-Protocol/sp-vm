@@ -6,7 +6,6 @@ import shutil
 import subprocess
 import hashlib
 import time
-import pwd
 from pathlib import Path
 
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
@@ -14,6 +13,7 @@ from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 # Configuration
 REDIS_VERSION = os.environ.get("REDIS_VERSION", "7.0")
 REDIS_PORT = 6379
+REDIS_CLUSTER_BUS_PORT = 16379
 REDIS_CONFIG_DIR = Path("/etc/redis")
 REDIS_CONFIG_FILE = REDIS_CONFIG_DIR / "redis.conf"
 REDIS_DATA_DIR = Path("/var/lib/redis")
@@ -117,39 +117,9 @@ def install_redis():
         print(f"[!] Failed to install Redis: {e}", file=sys.stderr)
         raise
 
-def ensure_redis_directories():
-    """Ensure Redis data and log directories exist with correct ownership."""
-    REDIS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    REDIS_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    log_dir = Path("/var/log/redis")
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Try to set ownership to the redis user if it exists
-    try:
-        redis_user = pwd.getpwnam("redis")
-        uid = redis_user.pw_uid
-        gid = redis_user.pw_gid
-    except KeyError:
-        uid = gid = None
-
-    if uid is not None:
-        for path in (REDIS_DATA_DIR, log_dir):
-            try:
-                os.chown(path, uid, gid)
-            except PermissionError:
-                # If we cannot change ownership, continue with defaults
-                pass
-
-    # Ensure restrictive permissions on data dir
-    try:
-        REDIS_DATA_DIR.chmod(0o750)
-    except PermissionError:
-        pass
 
 def write_redis_config(local_node_id: str, local_tunnel_ip: str, cluster_nodes: list, wg_props: list):
     """Write Redis cluster configuration file."""
-    ensure_redis_directories()
-
     REDIS_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     REDIS_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -228,157 +198,52 @@ def is_redis_running() -> tuple[bool, str | None]:
 
 
 def create_redis_cluster(cluster_nodes: list, wg_props: list) -> bool:
-    """Ensure all Redis nodes form a single replicated cluster with one master shard.
-
-    Behaviour:
-    - 1 node  -> initialize a single-node cluster (all slots 0..16383 on that node).
-    - N>1     -> same single-node cluster on the first node, all other nodes join
-                as replicas of this master (no sharding, no additional masters).
-    """
+    """Create Redis cluster using redis-cli."""
     try:
-        # Build list of (node_id, tunnel_ip) for all nodes that have WireGuard IPs
-        node_endpoints: list[tuple[str, str]] = []
+        # Build list of node endpoints
+        node_endpoints = []
         for node in cluster_nodes:
-            node_id = node.get("node_id")
-            tunnel_ip = get_node_tunnel_ip(node_id, wg_props)
+            tunnel_ip = get_node_tunnel_ip(node.get("node_id"), wg_props)
             if tunnel_ip:
-                node_endpoints.append((node_id, tunnel_ip))
+                node_endpoints.append(f"{tunnel_ip}:{REDIS_PORT}")
 
-        if not node_endpoints:
-            print(f"[!] Need at least 1 node for Redis cluster, got 0", file=sys.stderr)
+        if len(node_endpoints) < 3:
+            print(f"[!] Need at least 3 nodes for Redis cluster, got {len(node_endpoints)}", file=sys.stderr)
             return False
 
-        # Use a stable ordering (by node_id) so that the primary master is deterministic.
-        node_endpoints.sort(key=lambda x: x[0])
+        # Create cluster with replicas
+        # For 3 nodes: 3 masters, 0 replicas
+        # For 6+ nodes: masters with replicas
+        replicas = max(0, (len(node_endpoints) // 3) - 1)
 
-        primary_id, primary_ip = node_endpoints[0]
+        cmd = [
+            REDIS_CLI,
+            "--cluster", "create",
+            *node_endpoints,
+            "--cluster-replicas", str(replicas),
+            "--cluster-yes"
+        ]
 
-        # Helper: check if the given endpoint already has a healthy cluster_state=ok.
-        def _cluster_state_ok(ip: str) -> bool:
-            try:
-                result = subprocess.run(
-                    [REDIS_CLI, "-h", ip, "-p", str(REDIS_PORT), "cluster", "info"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-                if result.returncode != 0:
-                    return False
-                for line in result.stdout.splitlines():
-                    if line.startswith("cluster_state:"):
-                        state = line.split(":", 1)[1].strip()
-                        return state == "ok"
-                return False
-            except Exception as e:
-                print(f"[!] Failed to read cluster info from {ip}: {e}", file=sys.stderr)
-                return False
+        print(f"[*] Creating Redis cluster with command: {' '.join(cmd)}", file=sys.stderr)
 
-        # Step 1: ensure the primary master has a valid single-node cluster with all slots.
-        if _cluster_state_ok(primary_ip):
-            print(f"[*] Primary Redis node {primary_ip} already has cluster_state=ok", file=sys.stderr)
-        else:
-            cmd = [
-                REDIS_CLI,
-                "-h",
-                primary_ip,
-                "-p",
-                str(REDIS_PORT),
-                "cluster",
-                "addslots",
-                *[str(i) for i in range(16384)],
-            ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
 
-            print(
-                f"[*] Initializing single-node Redis cluster on primary {primary_ip} with command: "
-                f"redis-cli -h {primary_ip} -p {REDIS_PORT} cluster addslots 0..16383",
-                file=sys.stderr,
-            )
+        if result.returncode != 0:
+            print(f"[!] Cluster creation failed with return code {result.returncode}", file=sys.stderr)
+            print(f"[!] STDOUT: {result.stdout}", file=sys.stderr)
+            print(f"[!] STDERR: {result.stderr}", file=sys.stderr)
+            return False
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-
-            if result.returncode != 0:
-                # If slots are already assigned, Redis may return "ERR Slot X is already busy".
-                stderr_lower = (result.stderr or "").lower()
-                stdout_lower = (result.stdout or "").lower()
-                if "already busy" in stderr_lower or "already busy" in stdout_lower:
-                    if _cluster_state_ok(primary_ip):
-                        print(f"[*] Primary {primary_ip} already has all slots assigned and cluster_state=ok", file=sys.stderr)
-                    else:
-                        print(f"[!] Primary {primary_ip} has slots but cluster_state is not ok", file=sys.stderr)
-                        print(f"[!] STDOUT: {result.stdout}", file=sys.stderr)
-                        print(f"[!] STDERR: {result.stderr}", file=sys.stderr)
-                        return False
-                else:
-                    print(f"[!] Single-node cluster initialization failed with return code {result.returncode}", file=sys.stderr)
-                    print(f"[!] STDOUT: {result.stdout}", file=sys.stderr)
-                    print(f"[!] STDERR: {result.stderr}", file=sys.stderr)
-                    return False
-            else:
-                print(f"[*] Single-node Redis cluster initialized successfully on {primary_ip}", file=sys.stderr)
-                print(f"[*] Initialization output: {result.stdout}", file=sys.stderr)
-
-        # If there's only one node, we're done.
-        if len(node_endpoints) == 1:
-            return True
-
-        # Step 2: make all other nodes replicas of the primary master.
-        for replica_id, replica_ip in node_endpoints[1:]:
-            # If replica is already part of the cluster and cluster_state is ok, skip.
-            if _cluster_state_ok(replica_ip):
-                print(f"[*] Replica candidate {replica_ip} already has cluster_state=ok, skipping add-node", file=sys.stderr)
-                continue
-
-            cmd = [
-                REDIS_CLI,
-                "--cluster",
-                "add-node",
-                f"{replica_ip}:{REDIS_PORT}",
-                f"{primary_ip}:{REDIS_PORT}",
-                "--cluster-slave",
-            ]
-
-            print(
-                f"[*] Adding replica node {replica_ip} to Redis cluster via primary {primary_ip} "
-                f"with command: {' '.join(cmd)}",
-                file=sys.stderr,
-            )
-
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-
-            if result.returncode != 0:
-                stdout_lower = (result.stdout or "").lower()
-                stderr_lower = (result.stderr or "").lower()
-
-                already_joined_markers = [
-                    "already part of cluster",
-                    "already known",
-                    "already existing node",
-                ]
-                if any(m in stdout_lower or m in stderr_lower for m in already_joined_markers):
-                    print(f"[*] Node {replica_ip} already part of the cluster, treating as success", file=sys.stderr)
-                    continue
-
-                print(f"[!] Failed to add replica node {replica_ip} to cluster (rc={result.returncode})", file=sys.stderr)
-                print(f"[!] STDOUT: {result.stdout}", file=sys.stderr)
-                print(f"[!] STDERR: {result.stderr}", file=sys.stderr)
-                return False
-
-            print(f"[*] Replica node {replica_ip} added to Redis cluster successfully", file=sys.stderr)
-            print(f"[*] add-node output: {result.stdout}", file=sys.stderr)
-
+        print(f"[*] Redis cluster created successfully", file=sys.stderr)
+        print(f"[*] Creation output: {result.stdout}", file=sys.stderr)
         return True
     except Exception as e:
-        print(f"[!] Failed to create or reconcile Redis cluster: {e}", file=sys.stderr)
+        print(f"[!] Failed to create Redis cluster: {e}", file=sys.stderr)
         import traceback
         print(f"[!] Traceback: {traceback.format_exc()}", file=sys.stderr)
         return False
@@ -453,11 +318,11 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
             local_state=local_state
         )
 
-    # Need at least 1 node for Redis cluster
-    if len(cluster_nodes) < 1:
+    # Need at least 3 nodes for Redis cluster
+    if len(cluster_nodes) < 3:
         return PluginOutput(
             status='postponed',
-            error_message=f'Redis cluster requires at least 1 node, currently have {len(cluster_nodes)}',
+            error_message=f'Redis cluster requires at least 3 nodes, currently have {len(cluster_nodes)}',
             local_state=local_state
         )
 
@@ -527,38 +392,35 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
                 local_state=local_state
             )
 
-    # Cluster leader is responsible for creating/reconciling the Redis cluster (idempotent).
-    # This allows new nodes to be automatically added as replicas even after
-    # the initial initialization (when redis_cluster_initialized is already "true").
-    if is_leader:
-        # This node has already started Redis and can be treated as "ready".
-        leader_node_properties = {"redis_node_ready": "true"}
-
-        # Wait until all nodes have their local Redis up (mark themselves with redis_node_ready=true).
+    # If this is the leader node and cluster is not initialized, initialize it
+    if is_leader and not cluster_initialized:
+        # Check if all nodes are ready before creating cluster
         if not check_all_nodes_redis_ready(cluster_nodes, redis_props):
+            # Mark this node as ready and wait for others
+            node_properties = {"redis_node_ready": "true"}
             return PluginOutput(
                 status='postponed',
-                error_message='Waiting for all nodes to have Redis ready before creating/updating cluster',
-                node_properties=leader_node_properties,
+                error_message='Waiting for all nodes to have Redis ready before creating cluster',
+                node_properties=node_properties,
                 local_state=local_state
             )
 
-        # All nodes are ready — create/update the cluster.
-        # create_redis_cluster is written to be idempotent: on repeated invocations
-        # it does not break an already initialized cluster and only adds
-        # missing nodes as replicas.
+        # All nodes are ready, create cluster
         if create_redis_cluster(cluster_nodes, wg_props):
-            leader_node_properties["redis_cluster_initialized"] = "true"
+            # Mark cluster as initialized
+            node_properties = {
+                "redis_cluster_initialized": "true",
+                "redis_node_ready": "true"
+            }
             return PluginOutput(
                 status='completed',
-                node_properties=leader_node_properties,
+                node_properties=node_properties,
                 local_state=local_state
             )
         else:
             return PluginOutput(
                 status='postponed',
-                error_message='Failed to create or reconcile Redis cluster',
-                node_properties=leader_node_properties,
+                error_message='Failed to create Redis cluster',
                 local_state=local_state
             )
 
@@ -574,14 +436,9 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
                 local_state=local_state
             )
         else:
-            # Local Redis is already running, but the node is not yet part of the cluster.
-            # We still mark it as "ready" so that the leader can see all ready nodes
-            # and add them to the cluster on the next reconciliation run.
-            node_properties = {"redis_node_ready": "true"}
             return PluginOutput(
                 status='postponed',
                 error_message=f'Node not in cluster yet: {error}',
-                node_properties=node_properties,
                 local_state=local_state
             )
 
@@ -651,7 +508,11 @@ def handle_finalize(input_data: PluginInput) -> PluginOutput:
     """Finalize before node removal (graceful shutdown)."""
     local_state = input_data.local_state or {}
 
-    # TODO: Implement graceful node removal from cluster if needed.
+    # TODO: Implement graceful node removal from cluster if needed
+    # This could involve:
+    # - Resharding data away from this node
+    # - Removing node from cluster
+    # - Waiting for data migration
 
     return PluginOutput(status='completed', local_state=local_state)
 

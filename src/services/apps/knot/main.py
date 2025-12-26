@@ -17,8 +17,9 @@ from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 KNOT_VERSION = os.environ.get("KNOT_VERSION", "3.5.1")
 KNOT_CONFIG_DIR = Path("/etc/knot")
 KNOT_CONFIG_FILE = KNOT_CONFIG_DIR / "knot.conf"
-KNOT_ZONES_DIR = KNOT_CONFIG_DIR / "zones"
+KNOT_ZONES_CONFIG_FILE = KNOT_CONFIG_DIR / "zones.conf"
 KNOT_DATA_DIR = Path("/var/lib/knot")
+KNOT_ZONES_DIR = KNOT_DATA_DIR / "zones"
 KNOT_CLI = "knotc"
 KNOT_PORT = 53
 
@@ -124,7 +125,7 @@ def generate_tsig_key() -> tuple[str, str] | None:
         (key_name, key_secret) tuple or None on failure
     """
     try:
-        key_name = "swarm-update-key"
+        key_name = "swarm-update-key."
 
         # Generate TSIG key using keymgr or manually
         # Format: keymgr will generate hmac-sha256 key
@@ -255,7 +256,8 @@ def write_knot_config(
     is_catalog_master: bool,
     tsig_key_name: str,
     tsig_key_secret: str,
-    catalog_master_ip: str = None
+    catalog_master_ip: str = None,
+    node_addrs: list | None = None,
 ):
     """Write Knot DNS configuration file with RFC 2136, TSIG, and catalog zones support.
 
@@ -269,9 +271,22 @@ def write_knot_config(
         tsig_key_secret: TSIG key secret (base64)
         catalog_master_ip: IP of catalog master (for non-master nodes)
     """
+    # Create directories with proper ownership for knot user
     KNOT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    KNOT_ZONES_DIR.mkdir(parents=True, exist_ok=True)
     KNOT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    KNOT_ZONES_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Ensure knot user can write to data directories
+    try:
+        subprocess.run(["chown", "-R", "knot:knot", str(KNOT_DATA_DIR)],
+                      check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass  # Non-critical if chown fails
+
+    # Determine external IP for this node (for listening on public interface)
+    external_ip = None
+    if node_addrs:
+        external_ip = get_node_addr(local_node_id, node_addrs)
 
     # Build list of remote server IPs (all nodes except local)
     remote_ips = []
@@ -283,14 +298,22 @@ def write_knot_config(
         if tunnel_ip:
             remote_ips.append(tunnel_ip)
 
-    # Remote servers configuration for catalog zone members
+    # Remote servers configuration
     remote_section = ""
-    if remote_ips:
-        remote_lines = "\n".join([
-            f"  - id: node_{i}\n    address: {ip}@{KNOT_PORT}\n    key: {tsig_key_name}"
-            for i, ip in enumerate(remote_ips)
-        ])
-        remote_section = f"remote:\n{remote_lines}\n"
+    if not is_catalog_master and catalog_master_ip:
+        # Member nodes: only need remote for catalog master
+        remote_section = f"""remote:
+  - id: catalog_master
+    address: {catalog_master_ip}@{KNOT_PORT}
+    key: {tsig_key_name}
+"""
+    elif is_catalog_master and remote_ips:
+        # Master node: remotes with TSIG for NOTIFY/AXFR/IXFR
+        remote_lines = []
+        for i, ip in enumerate(remote_ips):
+            # Remote with TSIG (for NOTIFY and AXFR/IXFR)
+            remote_lines.append(f"  - id: node_{i}\n    address: {ip}@{KNOT_PORT}\n    key: {tsig_key_name}")
+        remote_section = f"remote:\n" + "\n".join(remote_lines) + "\n"
 
     # Catalog zone configuration
     catalog_zone_name = "swarm-catalog"
@@ -298,72 +321,91 @@ def write_knot_config(
 
     if is_catalog_master:
         # Master node: catalog-generate
-        # Defines:
-        #   - template 'catalog'  : generates the catalog zone itself
-        #   - template 'member'   : member zones that will be listed in the catalog
+        # Build notify list for catalog zone (all member nodes with TSIG)
+        notify_list = ", ".join([f"node_{i}" for i in range(len(remote_ips))]) if remote_ips else ""
+        notify_section = f"notify: [{notify_list}]" if notify_list else ""
+
         catalog_config = f"""
 # Catalog zone (master node)
 template:
-  - id: catalog
-    storage: "{KNOT_ZONES_DIR}"
-    semantic-checks: on
-    catalog-role: generate
-    catalog-zone: {catalog_zone_name}
-
-  - id: member
-    storage: "{KNOT_ZONES_DIR}"
-    semantic-checks: on
-    catalog-role: member
-    catalog-zone: {catalog_zone_name}
-
   - id: default
     storage: "{KNOT_ZONES_DIR}"
     semantic-checks: on
     acl: [tsig_update_acl]
 
+  - id: member
+    storage: "{KNOT_ZONES_DIR}"
+    semantic-checks: on
+    acl: [tsig_update_acl]
+    catalog-role: member
+    catalog-zone: {catalog_zone_name}.
+
+  - id: dynamic
+    storage: "{KNOT_ZONES_DIR}"
+    semantic-checks: on
+    acl: [tsig_update_acl, tsig_transfer_acl]
+    {notify_section}
+
 zone:
   - domain: {catalog_zone_name}
     storage: "{KNOT_ZONES_DIR}"
-    file: "{catalog_zone_name}.zone"
+    catalog-role: generate
+    {notify_section}
 """
     else:
         # Member node: catalog-interpret
-        # Defines:
-        #   - template 'catalog'  : interprets catalog zone from master
-        #   - template 'member'   : kept for symmetry, though member nodes don't
-        #                           create zones themselves (they receive them
-        #                           via catalog).
         catalog_config = f"""
 # Catalog zone (member node)
 template:
-  - id: catalog
-    storage: "{KNOT_ZONES_DIR}"
-    semantic-checks: on
-    catalog-role: interpret
-    catalog-zone: {catalog_zone_name}
-
-  - id: member
-    storage: "{KNOT_ZONES_DIR}"
-    semantic-checks: on
-
   - id: default
     storage: "{KNOT_ZONES_DIR}"
     semantic-checks: on
     acl: [tsig_update_acl]
 
+  - id: member
+    storage: "{KNOT_ZONES_DIR}"
+    semantic-checks: on
+    acl: [tsig_update_acl]
+    catalog-role: member
+    catalog-zone: {catalog_zone_name}.
+
+  - id: dynamic
+    storage: "{KNOT_ZONES_DIR}"
+    semantic-checks: on
+    master: catalog_master
+    acl: [notify_from_master]
+
+  - id: slave
+    storage: "{KNOT_ZONES_DIR}"
+    semantic-checks: on
+    master: catalog_master
+    acl: [notify_from_master]
+
 zone:
   - domain: {catalog_zone_name}
     storage: "{KNOT_ZONES_DIR}"
-    master: node_0
-    acl: [notify_from_master]
+    master: catalog_master
+    acl: [notify_from_master, tsig_update_acl]
+    catalog-role: interpret
+    catalog-template: slave
 """
+
+    # Build server listen directives:
+    # - always listen on WireGuard tunnel IP (for intra-cluster traffic)
+    # - always listen on loopback
+    # - if external_ip is available, listen on it as well (for external clients)
+    listen_lines = [
+        f"    listen: {local_tunnel_ip}@{KNOT_PORT}",
+        f"    listen: 127.0.0.1@{KNOT_PORT}",
+    ]
+    if external_ip:
+        listen_lines.append(f"    listen: {external_ip}@{KNOT_PORT}")
+    listen_block = "\n".join(listen_lines)
 
     cfg_content = f"""# Knot DNS Configuration with TSIG, RFC 2136, and Catalog Zones
 
-# Listen only on the WireGuard tunnel IP for this node to avoid
-# conflicts with other local DNS services (e.g. systemd-resolved).
 server:
-    listen: {local_tunnel_ip}@{KNOT_PORT}
+{listen_block}
     rundir: "/run/knot"
     user: knot:knot
     pidfile: "/run/knot/knot.pid"
@@ -378,13 +420,17 @@ database:
 key:
   - id: {tsig_key_name}
     algorithm: hmac-sha256
-    secret: {tsig_key_secret}
+    secret: "{tsig_key_secret}"
 
 {remote_section}
 acl:
   - id: tsig_update_acl
     key: {tsig_key_name}
     action: update
+
+  - id: tsig_transfer_acl
+    key: {tsig_key_name}
+    action: transfer
 
   - id: notify_from_master
     key: {tsig_key_name}
@@ -393,12 +439,107 @@ acl:
 {catalog_config}
 
 # User zones will be added to catalog automatically
+
+# Include zones configuration file for dynamic zone management
+include: {KNOT_ZONES_CONFIG_FILE}
 """
 
     KNOT_CONFIG_FILE.write_text(cfg_content)
     print(f"[*] Wrote Knot config to {KNOT_CONFIG_FILE}", file=sys.stderr)
     print(f"[*] Role: {'CATALOG MASTER' if is_catalog_master else 'CATALOG MEMBER'}", file=sys.stderr)
     print(f"[*] TSIG key: {tsig_key_name}", file=sys.stderr)
+
+    # Create empty zones.conf if it doesn't exist
+    if not KNOT_ZONES_CONFIG_FILE.exists():
+        KNOT_ZONES_CONFIG_FILE.write_text("# Dynamic zones configuration\n# This file is managed automatically\n")
+        print(f"[*] Created zones config file: {KNOT_ZONES_CONFIG_FILE}", file=sys.stderr)
+
+
+def add_zone_to_zones_conf(zone_name: str, template: str) -> bool:
+    """Add zone to zones.conf file (persistent configuration).
+
+    Args:
+        zone_name: Full zone name (e.g., "example.swarm.anthrax63.fun")
+        template: Template name (e.g., "member", "dynamic")
+
+    Returns:
+        True if zone was added successfully, False otherwise
+    """
+    try:
+        # Ensure config directory exists
+        KNOT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Read existing zones.conf
+        if KNOT_ZONES_CONFIG_FILE.exists():
+            existing_content = KNOT_ZONES_CONFIG_FILE.read_text()
+        else:
+            existing_content = "# Dynamic zones configuration\n# This file is managed automatically\n"
+
+        # Check if zone already exists in config
+        if f"domain: {zone_name}" in existing_content:
+            print(f"[*] Zone {zone_name} already exists in zones.conf", file=sys.stderr)
+            return True
+
+        # Add zone configuration
+        zone_config = f"""
+zone:
+  - domain: {zone_name}
+    template: {template}
+"""
+
+        # Append to zones.conf
+        with open(KNOT_ZONES_CONFIG_FILE, "a") as f:
+            f.write(zone_config)
+
+        print(f"[*] Added zone {zone_name} (template: {template}) to zones.conf", file=sys.stderr)
+        return True
+
+    except Exception as e:
+        print(f"[!] Failed to add zone to zones.conf: {e}", file=sys.stderr)
+        import traceback
+        print(f"[!] Traceback: {traceback.format_exc()}", file=sys.stderr)
+        return False
+
+
+def remove_zone_from_zones_conf(zone_name: str) -> bool:
+    """Remove zone from zones.conf file.
+
+    Args:
+        zone_name: Full zone name to remove
+
+    Returns:
+        True if zone was removed successfully, False otherwise
+    """
+    try:
+        if not KNOT_ZONES_CONFIG_FILE.exists():
+            return True
+
+        # Read existing zones.conf
+        content = KNOT_ZONES_CONFIG_FILE.read_text()
+        lines = content.split('\n')
+
+        # Filter out the zone block
+        new_lines = []
+        skip_until_next_zone = False
+        for line in lines:
+            if f"domain: {zone_name}" in line:
+                skip_until_next_zone = True
+                continue
+            if skip_until_next_zone:
+                if line.startswith('zone:') or (line.strip() and not line.startswith(' ')):
+                    skip_until_next_zone = False
+                else:
+                    continue
+            new_lines.append(line)
+
+        # Write back
+        KNOT_ZONES_CONFIG_FILE.write_text('\n'.join(new_lines))
+        print(f"[*] Removed zone {zone_name} from zones.conf", file=sys.stderr)
+        return True
+
+    except Exception as e:
+        print(f"[!] Failed to remove zone from zones.conf: {e}", file=sys.stderr)
+        return False
 
 
 def is_knot_running() -> tuple[bool, str | None]:
@@ -446,6 +587,10 @@ def wait_for_knot_ready(timeout_sec: int = 30) -> bool:
 def create_catalog_zone_file(catalog_zone_name: str = "swarm-catalog") -> bool:
     """Create initial catalog zone file for master node.
 
+    Note: For catalog-role: generate, this file is not strictly required.
+    Knot will manage the catalog zone content automatically. We create it
+    only to avoid potential issues during initial setup.
+
     Args:
         catalog_zone_name: Name of catalog zone
 
@@ -453,6 +598,9 @@ def create_catalog_zone_file(catalog_zone_name: str = "swarm-catalog") -> bool:
         True if created successfully, False otherwise
     """
     try:
+        # Ensure zones directory exists
+        KNOT_ZONES_DIR.mkdir(parents=True, exist_ok=True)
+
         catalog_file = KNOT_ZONES_DIR / f"{catalog_zone_name}.zone"
 
         # Don't recreate if already exists
@@ -494,8 +642,183 @@ ns1 A   127.0.0.1
         return False
 
 
-def create_zone_in_knot(zone_name: str, is_catalog_master: bool) -> bool:
-    """Create zone in Knot DNS via knotc (only on catalog master).
+def create_user_zone_file(zone_name: str, cluster_nodes: list = None, node_addrs: list = None) -> bool:
+    """Create minimal zone file for user zone.
+
+    This is required even with zonefile-load: none to provide initial
+    zone content on first load. After initial load, Knot will use journal.
+
+    Args:
+        zone_name: Full zone name (e.g., "example.swarm.anthrax63.fun")
+        cluster_nodes: List of cluster nodes (optional, for NS records)
+        node_addrs: List of node addresses (optional, for glue A records)
+
+    Returns:
+        True if created successfully, False otherwise
+    """
+    try:
+        # Ensure zones directory exists
+        KNOT_ZONES_DIR.mkdir(parents=True, exist_ok=True)
+
+        zone_file = KNOT_ZONES_DIR / f"{zone_name}.zone"
+
+        # Don't recreate if already exists
+        if zone_file.exists():
+            print(f"[*] Zone file already exists: {zone_file}", file=sys.stderr)
+            return True
+
+        # Build NS and glue A records
+        ns_records = []
+        glue_records = []
+
+        if cluster_nodes and node_addrs:
+            # Create NS records for each cluster node with public IPs
+            for i, node in enumerate(cluster_nodes, start=1):
+                node_id = node.get("node_id")
+                node_addr = get_node_addr(node_id, node_addrs)
+
+                if node_addr:
+                    # Use MD5 hash for consistent NS hostnames
+                    node_hash = node_id_to_ns_name(node_id)
+                    ns_hostname = f"ns{i}"
+                    ns_records.append(f"@   NS  {ns_hostname}.{zone_name}.")
+                    glue_records.append(f"{ns_hostname} A   {node_addr}")
+
+        # Fallback to single localhost record if no cluster info provided
+        if not ns_records:
+            ns_records.append(f"@   NS  ns1.{zone_name}.")
+            glue_records.append("ns1 A   127.0.0.1")
+
+        ns_section = "\n".join(ns_records)
+        glue_section = "\n".join(glue_records)
+
+        # Create minimal zone file with SOA and NS records
+        zone_content = f"""$ORIGIN {zone_name}.
+$TTL 300
+
+@   SOA ns1.{zone_name}. admin.{zone_name}. (
+        1          ; serial
+        3600       ; refresh
+        1800       ; retry
+        604800     ; expire
+        300 )      ; minimum
+
+{ns_section}
+{glue_section}
+
+; This zone is managed via catalog zones and dynamic updates
+"""
+        zone_file.write_text(zone_content)
+        print(f"[*] Created user zone file: {zone_file}", file=sys.stderr)
+        if cluster_nodes and node_addrs:
+            print(f"[*] Added {len(ns_records)} NS records with public IPs", file=sys.stderr)
+
+        # Set proper ownership
+        subprocess.run(
+            ["chown", "knot:knot", str(zone_file)],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        return True
+
+    except Exception as e:
+        print(f"[!] Failed to create user zone file: {e}", file=sys.stderr)
+        import traceback
+        print(f"[!] Traceback: {traceback.format_exc()}", file=sys.stderr)
+        return False
+
+
+def create_dynamic_zone_in_knot(zone_name: str, is_catalog_master: bool, cluster_nodes: list = None, node_addrs: list = None) -> bool:
+    """Create dynamic zone for RFC2136 UPDATE with master-slave replication.
+
+    Master node: Creates master zone that accepts RFC2136 UPDATE and sends NOTIFY to slaves.
+    Member nodes: Creates slave zone that syncs from master via AXFR/IXFR.
+
+    This ensures all nodes have the same DNS records after UPDATE on master.
+
+    Args:
+        zone_name: Full dynamic zone name (e.g., "dyn.abc123.swarm.anthrax63.fun")
+        is_catalog_master: Whether this node is the catalog master
+        cluster_nodes: List of cluster nodes (for NS records)
+        node_addrs: List of node addresses (for glue A records)
+
+    Returns:
+        True if zone was created or already exists, False on error
+    """
+    try:
+        # Check if zone already exists
+        result = subprocess.run(
+            [KNOT_CLI, "zone-status", zone_name],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        if result.returncode == 0:
+            print(f"[*] Dynamic zone {zone_name} already exists in Knot", file=sys.stderr)
+            return True
+
+        # Create dynamic zone (template differs for master vs member nodes)
+        if is_catalog_master:
+            print(f"[*] Creating dynamic zone {zone_name} as MASTER (accepts UPDATE, sends NOTIFY)", file=sys.stderr)
+        else:
+            print(f"[*] Creating dynamic zone {zone_name} as SLAVE (syncs from master)", file=sys.stderr)
+
+        # Create minimal zone file
+        if not create_user_zone_file(zone_name, cluster_nodes, node_addrs):
+            print(f"[!] Failed to create zone file for {zone_name}", file=sys.stderr)
+            return False
+
+        # Add zone to zones.conf (persistent configuration)
+        if not add_zone_to_zones_conf(zone_name, "dynamic"):
+            print(f"[!] Failed to add zone to zones.conf", file=sys.stderr)
+            return False
+
+        # Reload Knot to apply changes
+        result = subprocess.run(
+            [KNOT_CLI, "reload"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode != 0:
+            print(f"[!] Failed to reload Knot: {result.stderr}", file=sys.stderr)
+            return False
+
+        # Wait a bit for zone to load
+        time.sleep(1)
+
+        # Verify zone is loaded
+        result = subprocess.run(
+            [KNOT_CLI, "zone-status", zone_name],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        if result.returncode == 0:
+            print(f"[*] Successfully created dynamic zone {zone_name} (accepts RFC2136 UPDATE)", file=sys.stderr)
+            return True
+        else:
+            print(f"[!] Zone {zone_name} added to config but not loaded yet", file=sys.stderr)
+            print(f"[!] Zone status: {result.stderr}", file=sys.stderr)
+            # Return True anyway, it may load on next reload
+            return True
+
+    except subprocess.TimeoutExpired:
+        print(f"[!] Timeout while creating dynamic zone {zone_name}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"[!] Failed to create dynamic zone {zone_name}: {e}", file=sys.stderr)
+        import traceback
+        print(f"[!] Traceback: {traceback.format_exc()}", file=sys.stderr)
+        return False
+
+
+def create_zone_in_knot(zone_name: str, is_catalog_master: bool, cluster_nodes: list = None, node_addrs: list = None) -> bool:
+    """Create zone in Knot DNS via zones.conf (only on catalog master).
 
     With catalog zones, zones should only be created on the master node.
     They will automatically propagate to member nodes via catalog zone.
@@ -503,24 +826,13 @@ def create_zone_in_knot(zone_name: str, is_catalog_master: bool) -> bool:
     Args:
         zone_name: Full zone name (e.g., "g5ebqqpj740uhqtu.swarm.anthrax63.fun")
         is_catalog_master: Whether this node is the catalog master
+        cluster_nodes: List of cluster nodes (for NS records)
+        node_addrs: List of node addresses (for glue A records)
 
     Returns:
         True if zone was created or already exists, False on error
     """
     try:
-        # Proactively abort any previous unfinished config transaction to avoid
-        # "requested resource is busy" errors on conf-begin/commit.
-        try:
-            subprocess.run(
-                [KNOT_CLI, "conf-abort"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-        except Exception:
-            # It's fine if there was no active transaction.
-            pass
-
         # Check if zone already exists
         result = subprocess.run(
             [KNOT_CLI, "zone-status", zone_name],
@@ -541,105 +853,54 @@ def create_zone_in_knot(zone_name: str, is_catalog_master: bool) -> bool:
         # Zone doesn't exist, create it on master
         print(f"[*] Creating zone {zone_name} on catalog master", file=sys.stderr)
 
-        # Configure zone
-        result = subprocess.run(
-            [KNOT_CLI, "conf-begin"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode != 0:
-            print(f"[!] Failed to begin config transaction: {result.stderr}", file=sys.stderr)
+        # Create minimal zone file first
+        if not create_user_zone_file(zone_name, cluster_nodes, node_addrs):
+            print(f"[!] Failed to create zone file for {zone_name}", file=sys.stderr)
             return False
 
-        # Set zone with catalog *member* template so that Knot treats this zone
-        # as a catalog member, not as another catalog generator. Newer Knot
-        # versions enforce that 'catalog-role' must match 'catalog-zone', so
-        # using the dedicated 'member' template avoids
-        # "('catalog-role' must correspond to configured 'catalog-zone')" errors.
-        result = subprocess.run(
-            [KNOT_CLI, "conf-set", f"zone[{zone_name}]"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode != 0:
-            subprocess.run([KNOT_CLI, "conf-abort"], capture_output=True)
-            print(f"[!] Failed to set zone: {result.stderr}", file=sys.stderr)
+        # Add zone to zones.conf (persistent configuration)
+        if not add_zone_to_zones_conf(zone_name, "member"):
+            print(f"[!] Failed to add zone to zones.conf", file=sys.stderr)
             return False
 
-        # Attach the member template so the zone is included in the catalog
-        result = subprocess.run(
-            [KNOT_CLI, "conf-set", f"zone[{zone_name}].template", "member"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode != 0:
-            subprocess.run([KNOT_CLI, "conf-abort"], capture_output=True)
-            print(f"[!] Failed to set template: {result.stderr}", file=sys.stderr)
-            return False
-
-        # Commit configuration, retrying a few times if Knot reports that the
-        # configuration database is currently busy with another operation.
-        commit_attempts = 3
-        last_err = ""
-        for attempt in range(1, commit_attempts + 1):
-            result = subprocess.run(
-                [KNOT_CLI, "conf-commit"],
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
-
-            if result.returncode == 0:
-                break
-
-            last_err = (result.stderr or result.stdout or "").strip()
-            print(f"[!] conf-commit attempt {attempt} for zone {zone_name} failed: {last_err}", file=sys.stderr)
-
-            if "requested resource is busy" in last_err.lower() and attempt < commit_attempts:
-                # Give Knot a moment to finish the other operation and retry.
-                time.sleep(2)
-                continue
-
-            # Any other error (or last attempt with busy) – abort and fail.
-            subprocess.run([KNOT_CLI, "conf-abort"], capture_output=True, text=True)
-            return False
-
-        if result.returncode != 0:
-            subprocess.run([KNOT_CLI, "conf-abort"], capture_output=True, text=True)
-            print(f"[!] Failed to commit config for zone {zone_name} after {commit_attempts} attempts: {last_err}", file=sys.stderr)
-            return False
-
-        # Reload Knot to apply changes. On some systems the control socket can
-        # be briefly unavailable and 'knotc reload' may fail with
-        # "failed to control (connection reset)" even though the configuration
-        # was committed successfully. Treat such transient control errors as
-        # non-fatal: the zone is already in the configuration DB and will be
-        # loaded on the next successful reload or server restart.
+        # Reload Knot to apply changes
         result = subprocess.run(
             [KNOT_CLI, "reload"],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=10
         )
         if result.returncode != 0:
-            err = (result.stderr or result.stdout or "").strip()
-            print(f"[!] Failed to reload Knot: {err}", file=sys.stderr)
-            if "failed to control" in err.lower() or "connection reset" in err.lower():
-                print(f"[*] Treating reload control error as non-fatal for zone {zone_name}", file=sys.stderr)
-            else:
-                return False
+            print(f"[!] Failed to reload Knot: {result.stderr}", file=sys.stderr)
+            return False
 
-        print(f"[*] Successfully created zone {zone_name} on catalog master (will sync to members)", file=sys.stderr)
-        return True
+        # Wait a bit for zone to load
+        time.sleep(1)
+
+        # Verify zone is loaded
+        result = subprocess.run(
+            [KNOT_CLI, "zone-status", zone_name],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        if result.returncode == 0:
+            print(f"[*] Successfully created zone {zone_name} on catalog master (will sync to members)", file=sys.stderr)
+            return True
+        else:
+            print(f"[!] Zone {zone_name} added to config but not loaded yet", file=sys.stderr)
+            print(f"[!] Zone status: {result.stderr}", file=sys.stderr)
+            # Return True anyway, it may load on next reload or via catalog
+            return True
 
     except subprocess.TimeoutExpired:
         print(f"[!] Timeout while creating zone {zone_name}", file=sys.stderr)
         return False
     except Exception as e:
         print(f"[!] Failed to create zone {zone_name}: {e}", file=sys.stderr)
+        import traceback
+        print(f"[!] Traceback: {traceback.format_exc()}", file=sys.stderr)
         return False
 
 
@@ -939,17 +1200,30 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
                 local_state=local_state
             )
 
+    # Create catalog zone file BEFORE writing config (master node only)
+    # Note: For catalog-role: generate, the file is not strictly required,
+    # but we create it to avoid any potential issues
+    if is_catalog_master:
+        catalog_created = create_catalog_zone_file()
+        if not catalog_created:
+            return PluginOutput(
+                status='postponed',
+                error_message='Failed to create catalog zone file',
+                local_state=local_state
+            )
+
     # Write Knot configuration
     try:
         write_knot_config(
-            local_node_id,
-            local_tunnel_ip,
-            cluster_nodes,
-            wg_props,
-            is_catalog_master,
-            tsig_key_name,
-            tsig_key_secret,
-            catalog_master_ip
+            local_node_id=local_node_id,
+            local_tunnel_ip=local_tunnel_ip,
+            cluster_nodes=cluster_nodes,
+            wg_props=wg_props,
+            is_catalog_master=is_catalog_master,
+            tsig_key_name=tsig_key_name,
+            tsig_key_secret=tsig_key_secret,
+            catalog_master_ip=catalog_master_ip,
+            node_addrs=node_addrs,
         )
     except Exception as e:
         return PluginOutput(status='error', error_message=f'Failed to write config: {str(e)}', local_state=local_state)
@@ -974,16 +1248,6 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
             error_message='Knot DNS did not become ready within timeout',
             local_state=local_state
         )
-
-    # Create catalog zone file (master node only)
-    if is_catalog_master:
-        catalog_created = create_catalog_zone_file()
-        if not catalog_created:
-            return PluginOutput(
-                status='postponed',
-                error_message='Failed to create catalog zone file',
-                local_state=local_state
-            )
 
     # Mark node as ready
     node_properties = {"knot_node_ready": "true"}
@@ -1051,14 +1315,29 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
                         local_state=local_state
                     )
 
-    # Create zone in Knot (only on catalog master, will sync to members)
+    # Create zones in Knot (only on catalog master, will sync to members)
     delegated_zone = f"{global_id}.{base_domain}"
-    zone_created = create_zone_in_knot(delegated_zone, is_catalog_master)
+
+    # 1. Create base zone in catalog (read-only)
+    zone_created = create_zone_in_knot(delegated_zone, is_catalog_master, cluster_nodes, node_addrs)
     if not zone_created:
-        print(f"[!] Failed to create zone {delegated_zone} in Knot, will retry", file=sys.stderr)
+        print(f"[!] Failed to create base zone {delegated_zone} in Knot, will retry", file=sys.stderr)
         return PluginOutput(
             status='postponed',
             error_message=f'Failed to create zone {delegated_zone} in Knot',
+            node_properties=node_properties,
+            cluster_properties=cluster_properties if cluster_properties else None,
+            local_state=local_state
+        )
+
+    # 2. Create dynamic zone for RFC2136 UPDATE (NOT in catalog)
+    dynamic_zone = f"dyn.{delegated_zone}"
+    dynamic_zone_created = create_dynamic_zone_in_knot(dynamic_zone, is_catalog_master, cluster_nodes, node_addrs)
+    if not dynamic_zone_created:
+        print(f"[!] Failed to create dynamic zone {dynamic_zone} in Knot, will retry", file=sys.stderr)
+        return PluginOutput(
+            status='postponed',
+            error_message=f'Failed to create dynamic zone {dynamic_zone} in Knot',
             node_properties=node_properties,
             cluster_properties=cluster_properties if cluster_properties else None,
             local_state=local_state
