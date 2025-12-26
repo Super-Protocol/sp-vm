@@ -4,8 +4,6 @@ set -euo pipefail
 
 cd /usr/local/lib/swarm-cloud
 
-mkdir -p /etc/swarm-cloud-api
-
 if command -v node >/dev/null 2>&1; then
   if [[ -f "./apps/swarm-cloud-api/dist/main.js" ]]; then
     exec node ./apps/swarm-cloud-api/dist/main.js

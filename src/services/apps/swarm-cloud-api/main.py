@@ -549,6 +549,12 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
     except Exception as e:
         return PluginOutput(status='error', error_message=str(e), local_state=input_data.local_state)
 
+    # Create systemd service
+    try:
+        create_systemd_service()
+    except Exception as e:
+        return PluginOutput(status='error', error_message=f'Failed to create service: {str(e)}', local_state=local_state)
+
 
 def initialize_schema_if_needed(local_node_id: str, state_json: dict) -> tuple[bool, str | None]:
     """Initialize database schema if not already done.
@@ -678,12 +684,6 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
         create_config_file(local_node_id, state_json)
     except Exception as e:
         return PluginOutput(status='error', error_message=f'Failed to create config: {str(e)}', local_state=local_state)
-
-    # Create systemd service
-    try:
-        create_systemd_service()
-    except Exception as e:
-        return PluginOutput(status='error', error_message=f'Failed to create service: {str(e)}', local_state=local_state)
 
     # Start swarm-cloud-api
     try:
