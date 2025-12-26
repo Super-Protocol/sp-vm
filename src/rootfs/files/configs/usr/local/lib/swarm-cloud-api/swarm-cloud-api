@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+
+cd /usr/local/lib/swarm-cloud-api
+exec node ./main.js "$@"

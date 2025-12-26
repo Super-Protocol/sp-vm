@@ -1,0 +1,5 @@
+#!/bin/bash
+set -euo pipefail
+
+cd /opt/swarm-cloud-api
+exec node ./cli/schema-sync.js "$@"
