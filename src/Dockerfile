@@ -169,10 +169,6 @@ ARG VERSION_CODENAME=noble
 ARG OUTPUTROOT=/output
 ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
 
-ENV SWARM_CLOUD_API_INSTALL_DIR=/usr/local/lib/swarm-cloud \
-    SWARM_CLOUD_API_CONFIG_DIR=/etc/swarm-cloud-api \
-    SWARM_CLOUD_API_BIN=/usr/local/bin/swarm-cloud-api.sh
-
 WORKDIR /buildroot
 
 ADD general/files/scripts/log.sh /buildroot/files/scripts/
@@ -315,6 +311,9 @@ RUN --security=insecure /buildroot/files/scripts/install_nodejs.sh
 ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
+
+# make /opt/swarm-cloud-api point to built swarm-cloud artifacts
+RUN mkdir -p ${OUTPUTDIR}/opt && ln -s /usr/local/lib/swarm-cloud ${OUTPUTDIR}/opt/swarm-cloud-api
 
 # swarm-cloud-api runtime wrappers (Node.js entrypoints)
 RUN mkdir -p ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api

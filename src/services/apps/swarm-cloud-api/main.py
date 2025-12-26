@@ -11,10 +11,10 @@ from pathlib import Path
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 
 # Configuration
-API_INSTALL_DIR = Path(os.environ.get("SWARM_CLOUD_API_INSTALL_DIR", "/opt/swarm-cloud-api"))
-API_CONFIG_DIR = Path(os.environ.get("SWARM_CLOUD_API_CONFIG_DIR", "/etc/swarm-cloud-api"))
+API_INSTALL_DIR = Path("/opt/swarm-cloud-api")
+API_CONFIG_DIR = Path("/etc/swarm-cloud-api")
 API_CONFIG_FILE = API_CONFIG_DIR / "config.yaml"
-API_BIN = Path(os.environ.get("SWARM_CLOUD_API_BIN", str(API_INSTALL_DIR / "swarm-cloud-api")))
+API_BIN = API_INSTALL_DIR / "swarm-cloud-api"
 API_PORT = 3000
 
 # Plugin setup
