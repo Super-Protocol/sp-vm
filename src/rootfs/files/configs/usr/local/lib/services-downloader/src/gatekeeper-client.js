@@ -8,6 +8,7 @@ const getResourceFromGatekeeper = async (params) => {
   const agent = new https.Agent({
     key: sslKeyPem,
     cert: sslCertPem,
+    rejectUnauthorized: true,
   });
 
   const buf = await new Promise((resolve, reject) => {

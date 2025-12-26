@@ -1,4 +1,0 @@
-#!/bin/bash
-set -euo pipefail
-
-exec /usr/bin/env node /usr/local/lib/services-downloader/src/index.js "$@"
