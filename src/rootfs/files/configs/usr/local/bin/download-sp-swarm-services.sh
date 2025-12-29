@@ -5,7 +5,7 @@ set -euo pipefail
 # - If /sp/swarm/gatekeeper-keys.yaml exists, extract TLS key/cert to
 #   /etc/super/certs/gatekeeper.key and /etc/super/certs/gatekeeper.crt
 # - Read BRANCH from sp-swarm-services.yaml (fallback to $BRANCH_NAME or "main")
-# - Invoke sp-services-downloader to fetch resource "sp-swarm-services" and --unpack
+# - Invoke Node CLI to fetch resource "sp-swarm-services" and --unpack
 # - Merge content of /etc/sp-swarm-services/swarm-service-pluggins/ into /etc
 
 YAML_PATH="${YAML_PATH:-/sp/swarm/gatekeeper-keys.yaml}" # for cert extraction
@@ -100,8 +100,8 @@ main() {
 	local branch
 	branch="$(parse_branch_name)"
 
-	log "Running services-downloader for $RESOURCE_NAME (branch=$branch)"
-	if ! sp-services-downloader \
+	log "Running Node services-downloader for $RESOURCE_NAME (branch=$branch)"
+	if ! /usr/bin/env node /usr/local/lib/services-downloader/src/index.js \
 			--resource-name "$RESOURCE_NAME" \
 			--branch-name "$branch" \
 			--target-dir "$TARGET_DIR" \
