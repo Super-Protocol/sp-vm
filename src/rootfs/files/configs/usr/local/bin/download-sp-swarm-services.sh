@@ -20,6 +20,8 @@ log() {
 	printf "[download-sp-swarm-services] %s\n" "$*";
 }
 
+
+## TODO: temporary solution. Need to use subroot cert and key
 ensure_gatekeeper_certs_from_yaml() {
 	# If outputs already exist, skip
 	if [[ -f "$SSL_KEY_PATH" && -f "$SSL_CERT_PATH" ]]; then
@@ -36,16 +38,26 @@ ensure_gatekeeper_certs_from_yaml() {
 	: > "$SSL_KEY_PATH"
 	: > "$SSL_CERT_PATH"
 
-	# Extract blocks under 'key: |' and 'cert: |', mirroring Python logic from main.py
+	# Extract blocks under 'key: |' and 'cert: |', capturing PEM content only
 	awk -v key_out="$SSL_KEY_PATH" -v cert_out="$SSL_CERT_PATH" '
 		BEGIN { mode = "" }
 		/^[[:space:]]*key:[[:space:]]*\|[[:space:]]*$/  { mode="key";  next }
 		/^[[:space:]]*cert:[[:space:]]*\|[[:space:]]*$/ { mode="cert"; next }
+		# Stop capturing when a new top-level key appears
+		/^[[:alnum:]_\-]+:[[:space:]]*$/ { mode = "" }
 		{
 			if (mode == "key")  { sub(/^\s+/, ""); print $0 >> key_out }
 			else if (mode == "cert") { sub(/^\s+/, ""); print $0 >> cert_out }
 		}
 	' "$YAML_PATH"
+
+	# Normalize line endings and trim any preamble before BEGIN lines
+	# Remove CRs
+	sed -i 's/\r$//' "$SSL_KEY_PATH" || true
+	sed -i 's/\r$//' "$SSL_CERT_PATH" || true
+	# Drop everything before the first BEGIN line
+	awk 'f||/^-{5}BEGIN /{f=1} f{print}' "$SSL_KEY_PATH" >"${SSL_KEY_PATH}.tmp" && mv "${SSL_KEY_PATH}.tmp" "$SSL_KEY_PATH"
+	awk 'f||/^-{5}BEGIN /{f=1} f{print}' "$SSL_CERT_PATH" >"${SSL_CERT_PATH}.tmp" && mv "${SSL_CERT_PATH}.tmp" "$SSL_CERT_PATH"
 
 	if ! grep -q "BEGIN PRIVATE KEY" "$SSL_KEY_PATH"; then
 		log "ERROR: key block not found in $YAML_PATH"; return 1
