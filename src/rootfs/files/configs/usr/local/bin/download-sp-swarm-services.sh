@@ -174,22 +174,19 @@ main() {
 	if ! /usr/bin/env node /usr/local/lib/services-downloader/src/index.js \
 			--resource-name "$RESOURCE_NAME" \
 			--branch-name "$branch" \
-			--target-dir "$TARGET_DIR" \
 			--ssl-cert-path "$SSL_CERT_PATH" \
 			--ssl-key-path "$SSL_KEY_PATH" \
 			--environment "$GK_ENV" \
-			--unpack; then
+			--unpack-with-absolute-path; then
 		log "ERROR: services-downloader failed"; exit 1
 	fi
 
-	# Merge plugins into /etc (preserve structure, include dotfiles)
-	local plugins_dir="$TARGET_DIR/swarm-service-pluggins"
-	if [[ -d "$plugins_dir" ]]; then
-		log "Merging swarm-service-pluggins into /etc"
-		tar -C "$plugins_dir" -cf - . | tar -C /etc -xf -
-	else
-		log "No swarm-service-pluggins directory present; skipping merge"
-	fi
+	# Mark as completed to stop future retries
+	mkdir -p "$TARGET_DIR"
+	touch "$TARGET_DIR/.downloaded"
+	log "Marked as completed: $TARGET_DIR/.downloaded"
+
+	# Plugin merge removed per requirements
 
 	# Restart swarm one-shot services runner to pick up changes
 	if command -v systemctl >/dev/null 2>&1; then
@@ -202,11 +199,6 @@ main() {
 	else
 		log "systemctl not available; skipping restart"
 	fi
-
-	# Mark as completed to stop future retries via timer
-	mkdir -p "$TARGET_DIR"
-	touch "$TARGET_DIR/.downloaded"
-	log "Marked as completed: $TARGET_DIR/.downloaded"
 
 	log "Done"
 }

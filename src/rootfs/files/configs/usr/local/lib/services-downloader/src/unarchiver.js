@@ -50,6 +50,20 @@ function execTarExtract(tarFile, destDir) {
   });
 }
 
+function execTarExtractAbsolute(tarFile) {
+  return new Promise((resolve, reject) => {
+    const lower = tarFile.toLowerCase();
+    const args =
+      lower.endsWith('.tar.gz') || lower.endsWith('.tgz')
+        ? ['-xzf', tarFile, '-C', '/', '-p', '-P']
+        : ['-xf', tarFile, '-C', '/', '-p', '-P'];
+    execFile('tar', args, (err) => {
+      if (err) return reject(err);
+      resolve();
+    });
+  });
+}
+
 async function unpackTarGz(targetDir, unpackTarTo) {
   await ensureDir(unpackTarTo);
   const destHasFiles = await hasFiles(unpackTarTo);
@@ -69,4 +83,15 @@ async function unpackTarGz(targetDir, unpackTarTo) {
   return true;
 }
 
-module.exports = { unpackTarGz };
+async function unpackTarGzAbsolute(targetDir) {
+  const tarFile = await findTarLike(targetDir);
+  if (!tarFile) {
+    console.info(`[INFO] unpack-with-absolute-path skip: no archive found under ${targetDir}`);
+    return false;
+  }
+  await execTarExtractAbsolute(tarFile);
+  console.info(`[INFO] unpack-with-absolute-path: unpacked ${path.basename(tarFile)} to /`);
+  return true;
+}
+
+module.exports = { unpackTarGz, unpackTarGzAbsolute };
