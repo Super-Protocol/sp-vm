@@ -11,6 +11,8 @@ User=root
 ExecStart=/usr/local/bin/download-sp-swarm-services.sh
 RemainAfterExit=yes
 Restart=on-failure
+StandardOutput=append:/var/log/download-sp-swarm-services.log
+StandardError=append:/var/log/download-sp-swarm-services-err.log
 RestartSec=5min
 
 [Install]
