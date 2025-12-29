@@ -105,30 +105,42 @@ async function main() {
       }
 
       let downloadDir = targetDir;
-      if (unpack) {
-        const tempPrefix = path.join(os.tmpdir(), 'sp-services-downloader-');
-        const tempDir = await fs.mkdtemp(tempPrefix);
-        console.info(`[INFO] unpack enabled: downloading archive to temp -> ${tempDir}`);
-        downloadDir = tempDir;
+      let tempDir;
+      try {
+        if (unpack) {
+          const tempPrefix = path.join(os.tmpdir(), 'sp-services-downloader-');
+          tempDir = await fs.mkdtemp(tempPrefix);
+          console.info(`[INFO] unpack enabled: downloading archive to temp -> ${tempDir}`);
+          downloadDir = tempDir;
+        }
+
+        const result = await downloadResource({
+          resourceName,
+          branchName,
+          targetDir: downloadDir,
+          resource,
+          encryption,
+          threads,
+        });
+
+        if (unpack) {
+          console.info(`[INFO] unpacking from temp to target -> ${targetDir}`);
+          await unpackTarGz(downloadDir, targetDir);
+        }
+
+        process.stdout.write(
+          JSON.stringify({ ok: true, hash: result.hash, size: result.size, targetDir }) + '\n',
+        );
+      } finally {
+        if (unpack && tempDir) {
+          try {
+            await fs.rm(tempDir, { recursive: true, force: true });
+            console.info(`[INFO] cleaned temp directory -> ${tempDir}`);
+          } catch (cleanupErr) {
+            console.warn(`[WARN] failed to clean temp directory ${tempDir}: ${cleanupErr.message}`);
+          }
+        }
       }
-
-      const result = await downloadResource({
-        resourceName,
-        branchName,
-        targetDir: downloadDir,
-        resource,
-        encryption,
-        threads,
-      });
-
-      if (unpack) {
-        console.info(`[INFO] unpacking from temp to target -> ${targetDir}`);
-        await unpackTarGz(downloadDir, targetDir);
-      }
-
-      process.stdout.write(
-        JSON.stringify({ ok: true, hash: result.hash, size: result.size, targetDir }) + '\n',
-      );
     } finally {
       await release();
       console.info(`[INFO] lock released for ${resourceName}/${branchName}`);
