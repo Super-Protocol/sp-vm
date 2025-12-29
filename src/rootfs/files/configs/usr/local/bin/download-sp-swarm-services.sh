@@ -17,7 +17,7 @@ TARGET_DIR="${TARGET_DIR:-/etc/sp-swarm-services}"
 RESOURCE_NAME="sp-swarm-services"
 
 log() {
-	printf "[download-sp-swarm-services] %s\n" "$*";
+	printf "[download-sp-swarm-services] %s\n" "$*" >&2;
 }
 
 # Helpers: YAML block extraction and PEM normalization
