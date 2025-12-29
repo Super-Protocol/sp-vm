@@ -20,6 +20,56 @@ log() {
 	printf "[download-sp-swarm-services] %s\n" "$*";
 }
 
+# Helpers: YAML block extraction and PEM normalization
+list_top_keys() {
+		awk 'BEGIN{FS":"} /^[A-Za-z0-9_.-]+:[[:space:]]*/{print $1}' "$YAML_PATH" | sort -u || true
+}
+
+extract_block_from_yaml() {
+		# $1: key name (e.g., key, cert)
+		local keyname="$1"
+		local awk_program
+		read -r -d '' awk_program <<'AWK'
+function ltrim(s){ sub(/^\r?/, "", s); return s }
+BEGIN{ inblk=0; found=0 }
+{
+	sub("\r$", "", $0)
+	if (inblk==0 && $0 ~ "^" KEY "[[:space:]]*:") {
+		idx = index($0, ":")
+		rest = substr($0, idx+1)
+		gsub(/^[[:space:]]+/, "", rest)
+		if (rest ~ /^\|[+-]?([[:space:]]*)?$/ || rest ~ /^$/) {
+			inblk=1; found=1; next
+		} else {
+			inline=rest
+			gsub(/[[:space:]]+$/, "", inline)
+			if (inline ~ /^".*"$/ || inline ~ /^'.*'$/) { inline=substr(inline,2,length(inline)-2); gsub(/\\n/, "\n", inline) }
+			print inline; exit
+		}
+	} else if (inblk==1) {
+		if ($0 ~ /^[A-Za-z0-9_.-]+:[[:space:]]*/) { exit }
+		print $0
+	}
+}
+END { }
+AWK
+		awk -v KEY="$keyname" "$awk_program" "$YAML_PATH"
+}
+
+deindent_block() {
+		awk '
+			{ sub("\r$", "", $0); line=$0; match(line, /^[[:space:]]*/); ind=RLENGTH; if (min=="" || ind<min) min=ind; lines[NR]=line }
+			END { if (min=="") min=0; for (i=1;i<=NR;i++) { if (min>0) print substr(lines[i], min+1); else print lines[i] } }
+		'
+}
+
+trim_to_pem() {
+		awk '
+			BEGIN{begin=0}
+			{ sub("\r$", "", $0); if (begin==0) { if ($0 ~ /^-----BEGIN[[:space:]]/) { begin=1; print $0 } } else { print $0 } }
+		' | awk 'NF>0'
+}
+
 
 ## TODO: temporary solution. Need to use subroot cert and key
 ensure_gatekeeper_certs_from_yaml() {
@@ -35,35 +85,43 @@ ensure_gatekeeper_certs_from_yaml() {
 	fi
 
 	install -d "$(dirname "$SSL_CERT_PATH")"
-	: > "$SSL_KEY_PATH"
-	: > "$SSL_CERT_PATH"
 
-	# Extract blocks under 'key: |' and 'cert: |', capturing PEM content only
-	awk -v key_out="$SSL_KEY_PATH" -v cert_out="$SSL_CERT_PATH" '
-		BEGIN { mode = "" }
-		/^[[:space:]]*key:[[:space:]]*\|[[:space:]]*$/  { mode="key";  next }
-		/^[[:space:]]*cert:[[:space:]]*\|[[:space:]]*$/ { mode="cert"; next }
-		# Stop capturing when a new top-level key appears
-		/^[[:alnum:]_\-]+:[[:space:]]*$/ { mode = "" }
-		{
-			if (mode == "key")  { sub(/^\s+/, ""); print $0 >> key_out }
-			else if (mode == "cert") { sub(/^\s+/, ""); print $0 >> cert_out }
-		}
-	' "$YAML_PATH"
+	# Extract raw content for key and cert from YAML (supports block scalar and inline)
+	local key_content cert_content
+	key_content="$(extract_block_from_yaml key || true)"
+	cert_content="$(extract_block_from_yaml cert || true)"
 
-	# Normalize line endings and trim any preamble before BEGIN lines
-	# Remove CRs
-	sed -i 's/\r$//' "$SSL_KEY_PATH" || true
-	sed -i 's/\r$//' "$SSL_CERT_PATH" || true
-	# Drop everything before the first BEGIN line
-	awk 'f||/^-{5}BEGIN /{f=1} f{print}' "$SSL_KEY_PATH" >"${SSL_KEY_PATH}.tmp" && mv "${SSL_KEY_PATH}.tmp" "$SSL_KEY_PATH"
-	awk 'f||/^-{5}BEGIN /{f=1} f{print}' "$SSL_CERT_PATH" >"${SSL_CERT_PATH}.tmp" && mv "${SSL_CERT_PATH}.tmp" "$SSL_CERT_PATH"
-
-	if ! grep -q "BEGIN PRIVATE KEY" "$SSL_KEY_PATH"; then
-		log "ERROR: key block not found in $YAML_PATH"; return 1
+	if [[ -z "${key_content//[[:space:]]/}" ]]; then
+		log "ERROR: key block not found in $YAML_PATH";
+		log "Top-level keys: $(list_top_keys | tr '\n' ' ')";
+		return 1
 	fi
-	if ! grep -q "BEGIN CERTIFICATE" "$SSL_CERT_PATH"; then
-		log "ERROR: cert block not found in $YAML_PATH"; return 1
+	if [[ -z "${cert_content//[[:space:]]/}" ]]; then
+		log "ERROR: cert block not found in $YAML_PATH";
+		log "Top-level keys: $(list_top_keys | tr '\n' ' ')";
+		return 1
+	fi
+
+	# Normalize: deindent and trim strictly to PEM BEGIN..END
+	printf "%s\n" "$key_content" | deindent_block | trim_to_pem > "$SSL_KEY_PATH"
+	printf "%s\n" "$cert_content" | deindent_block | trim_to_pem > "$SSL_CERT_PATH"
+
+	# Sanity checks
+	if ! grep -q "^-----BEGIN PRIVATE KEY" "$SSL_KEY_PATH"; then
+		log "ERROR: key PEM header not found after extraction"; return 1
+	fi
+	if ! grep -q "^-----BEGIN CERTIFICATE" "$SSL_CERT_PATH"; then
+		log "ERROR: cert PEM header not found after extraction"; return 1
+	fi
+
+	# Optional openssl validation
+	if command -v openssl >/dev/null 2>&1; then
+		if ! openssl pkey -in "$SSL_KEY_PATH" -noout >/dev/null 2>&1; then
+			log "ERROR: openssl failed to parse key: $SSL_KEY_PATH"; return 1
+		fi
+		if ! openssl x509 -in "$SSL_CERT_PATH" -noout >/dev/null 2>&1; then
+			log "ERROR: openssl failed to parse cert: $SSL_CERT_PATH"; return 1
+		fi
 	fi
 
 	chmod 600 "$SSL_KEY_PATH" || true
