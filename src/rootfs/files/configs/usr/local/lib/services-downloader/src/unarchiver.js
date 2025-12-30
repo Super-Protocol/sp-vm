@@ -55,8 +55,8 @@ function execTarExtractAbsolute(tarFile) {
     const lower = tarFile.toLowerCase();
     const args =
       lower.endsWith('.tar.gz') || lower.endsWith('.tgz')
-        ? ['-xzf', tarFile, '-C', '/', '-p', '-P']
-        : ['-xf', tarFile, '-C', '/', '-p', '-P'];
+        ? ['-xzf', tarFile, '-C', '/', '-p', '-P', '-k']
+        : ['-xf', tarFile, '-C', '/', '-p', '-P', '-k'];
     execFile('tar', args, (err) => {
       if (err) return reject(err);
       resolve();
