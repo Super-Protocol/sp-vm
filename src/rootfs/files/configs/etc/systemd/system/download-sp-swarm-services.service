@@ -2,7 +2,6 @@
 Description=Download and stage Swarm services pack (run once)
 After=network-online.target swarm-services.service
 Wants=network-online.target swarm-services.service
-Requires=swarm-services.service
 ConditionPathExists=!/etc/sp-swarm-services/.downloaded
 
 [Service]

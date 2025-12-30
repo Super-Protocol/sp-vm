@@ -1,6 +1,6 @@
 [Unit]
 Description=Run Swarm setup scripts from /etc/swarm-service-launchers
-After=network-online.target swarm-db.service swarm-node.service
+After=network-online.target swarm-db.service swarm-node.service download-sp-swarm-services.service
 Wants=network-online.target
 Requires=swarm-db.service swarm-node.service
 ConditionPathExists=/etc/swarm-service-launchers

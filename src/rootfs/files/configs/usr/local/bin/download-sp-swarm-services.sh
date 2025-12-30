@@ -186,20 +186,6 @@ main() {
 	touch "$TARGET_DIR/.downloaded"
 	log "Marked as completed: $TARGET_DIR/.downloaded"
 
-	# Plugin merge removed per requirements
-
-	# Restart swarm one-shot services runner to pick up changes
-	if command -v systemctl >/dev/null 2>&1; then
-		log "Reloading systemd daemon"
-		systemctl daemon-reload || true
-		log "Restarting swarm-services.service"
-		if ! systemctl restart swarm-services.service; then
-			log "ERROR: failed to restart swarm-services.service"; exit 1
-		fi
-	else
-		log "systemctl not available; skipping restart"
-	fi
-
 	log "Done"
 }
 
