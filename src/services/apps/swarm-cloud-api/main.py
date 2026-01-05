@@ -11,13 +11,10 @@ from pathlib import Path
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 
 # Configuration
-# Both swarm-node and swarm-cloud-api are built from the same monorepo into
-# /usr/local/lib/swarm-cloud, under dist/apps/<app>. We use a small wrapper
-# in /usr/local/bin to start the API with Node.js.
-API_INSTALL_DIR = Path("/usr/local/lib/swarm-cloud")
-API_BIN = Path("/usr/local/bin/swarm-cloud-api.sh")
+API_INSTALL_DIR = Path("/opt/swarm-cloud-api")
 API_CONFIG_DIR = Path("/etc/swarm-cloud-api")
 API_CONFIG_FILE = API_CONFIG_DIR / "config.yaml"
+API_BIN = API_INSTALL_DIR / "swarm-cloud-api"
 API_PORT = 3000
 
 # Plugin setup
@@ -552,6 +549,12 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
     except Exception as e:
         return PluginOutput(status='error', error_message=str(e), local_state=input_data.local_state)
 
+    # Create systemd service
+    try:
+        create_systemd_service()
+    except Exception as e:
+        return PluginOutput(status='error', error_message=f'Failed to create service: {str(e)}', local_state=local_state)
+
 
 def initialize_schema_if_needed(local_node_id: str, state_json: dict) -> tuple[bool, str | None]:
     """Initialize database schema if not already done.
@@ -590,23 +593,16 @@ def initialize_schema_if_needed(local_node_id: str, state_json: dict) -> tuple[b
     env["DB_PASSWORD"] = cockroach_info.get("password", "")
     env["DB_DATABASE"] = cockroach_info["database"]
 
-    # Run schema sync using the bundled CLI from the monorepo dist. We invoke
-    # Node.js directly here instead of relying on a wrapper script so that the
-    # behaviour is deterministic and fully controlled by this plugin.
+    # Run schema sync using the schema-sync executable
     try:
-        # Path to the compiled CLI entrypoint within the shared monorepo
-        schema_sync_script = Path("/usr/local/lib/swarm-cloud/apps/swarm-cloud-api/dist/cli/schema-sync.js")
+        # Path to the schema-sync executable script
+        schema_sync_script = API_INSTALL_DIR / "schema-sync"
         if not schema_sync_script.exists():
-            msg = f"Schema sync CLI not found: {schema_sync_script}"
-            print(f"[!] {msg}", file=sys.stderr)
-            return False, msg
+            return False, f"Schema sync script not found: {schema_sync_script}"
 
-        cmd = ["node", str(schema_sync_script)]
-        print(f"[*] Running schema sync via Node: {' '.join(cmd)}", file=sys.stderr)
-        print(f"[*] Schema DB target: {env['DB_TYPE']}://{env['DB_USERNAME']}@{env['DB_HOST']}:{env['DB_PORT']}/{env['DB_DATABASE']}", file=sys.stderr)
-
+        print(f"[*] Running schema sync script: {schema_sync_script}", file=sys.stderr)
         result = subprocess.run(
-            cmd,
+            [str(schema_sync_script)],
             env=env,
             capture_output=True,
             text=True,
@@ -623,13 +619,9 @@ def initialize_schema_if_needed(local_node_id: str, state_json: dict) -> tuple[b
         return True, None
 
     except subprocess.TimeoutExpired:
-        msg = "Schema sync timed out after 5 minutes"
-        print(f"[!] {msg}", file=sys.stderr)
-        return False, msg
+        return False, "Schema sync timed out after 5 minutes"
     except Exception as e:
-        msg = f"Schema sync error: {str(e)}"
-        print(f"[!] {msg}", file=sys.stderr)
-        return False, msg
+        return False, f"Schema sync error: {str(e)}"
 
 
 @plugin.command('apply')
@@ -692,12 +684,6 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
         create_config_file(local_node_id, state_json)
     except Exception as e:
         return PluginOutput(status='error', error_message=f'Failed to create config: {str(e)}', local_state=local_state)
-
-    # Create systemd service
-    try:
-        create_systemd_service()
-    except Exception as e:
-        return PluginOutput(status='error', error_message=f'Failed to create service: {str(e)}', local_state=local_state)
 
     # Start swarm-cloud-api
     try:

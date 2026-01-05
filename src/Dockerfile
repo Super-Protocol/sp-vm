@@ -311,11 +311,17 @@ ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
 
+# make /opt/swarm-cloud-api point to built swarm-cloud artifacts
+RUN mkdir -p ${OUTPUTDIR}/opt && ln -s /usr/local/lib/swarm-cloud ${OUTPUTDIR}/opt/swarm-cloud-api
+
 # swarm-cloud-api runtime wrappers (Node.js entrypoints)
 RUN mkdir -p ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api
 ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api
-ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/schema-sync ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
-RUN chmod +x ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
+# canonical schema-sync entrypoint used by the provision plugin via /opt/swarm-cloud-api/schema-sync
+ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/schema-sync ${OUTPUTDIR}/usr/local/lib/swarm-cloud/schema-sync
+RUN chmod +x \
+    ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api \
+    ${OUTPUTDIR}/usr/local/lib/swarm-cloud/schema-sync
 
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
@@ -333,6 +339,7 @@ COPY swarm-scripts ${OUTPUTDIR}/etc/swarm-service-launchers/
 # provision plugins from original swarm-cloud repo
 # COPY repos/swarm-cloud/services/swarm-cloud-api ${OUTPUTDIR}/etc/swarm-services/swarm-cloud-api
 RUN chmod +x ${OUTPUTDIR}/etc/swarm-services/*/main.py
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/*/main.py
 
 # tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
