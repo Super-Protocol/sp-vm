@@ -486,8 +486,8 @@ def enable_route_localnet(bridge_name: str):
 
 
 def delete_iptables_rules():
-    """Delete all iptables NAT rules for PKI container."""
-    # Delete rules from all chains: PREROUTING, OUTPUT, POSTROUTING
+    """Delete all iptables rules for PKI container (NAT and filter tables)."""
+    # Delete rules from NAT table chains: PREROUTING, OUTPUT, POSTROUTING
     for chain in ["PREROUTING", "OUTPUT", "POSTROUTING"]:
         result = subprocess.run(
             ["iptables", "-t", "nat", "-S", chain],
@@ -501,7 +501,22 @@ def delete_iptables_rules():
             if IPTABLES_RULE_COMMENT in rule:
                 delete_rule = rule.replace("-A", "-D", 1)
                 subprocess.run(["iptables", "-t", "nat"] + delete_rule.split()[1:], check=True)
-                log(LogLevel.INFO, f"Deleted iptables rule: {delete_rule}")
+                log(LogLevel.INFO, f"Deleted iptables NAT rule: {delete_rule}")
+
+    # Delete rules from filter table (INPUT chain)
+    result = subprocess.run(
+        ["iptables", "-S", "INPUT"],
+        capture_output=True, text=True, check=True
+    )
+
+    rules = result.stdout.splitlines()
+
+    for rule in rules:
+        # Delete rules that contain our comment
+        if IPTABLES_RULE_COMMENT in rule:
+            delete_rule = rule.replace("-A", "-D", 1)
+            subprocess.run(["iptables"] + delete_rule.split()[1:], check=True)
+            log(LogLevel.INFO, f"Deleted iptables INPUT rule: {delete_rule}")
 
 
 def ensure_iptables_rule(check_args: List[str], add_args: List[str], description: str):
@@ -606,6 +621,27 @@ def setup_iptables(wg_ip):
             "-j", "MASQUERADE"
         ],
         description=f"POSTROUTING MASQUERADE for {CONTAINER_IP}/32"
+    )
+
+    # Rule 5: Allow port 8081 on lxcbr0
+    ensure_iptables_rule(
+        check_args=[
+            "iptables", "-C", "INPUT",
+            "-i", "lxcbr0",
+            "-p", "tcp",
+            "--dport", "8081",
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "ACCEPT"
+        ],
+        add_args=[
+            "iptables", "-A", "INPUT",
+            "-i", "lxcbr0",
+            "-p", "tcp",
+            "--dport", "8081",
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "ACCEPT"
+        ],
+        description="Allow TCP port 8081 on lxcbr0"
     )
 
 

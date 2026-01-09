@@ -170,7 +170,7 @@ class EventHandler:
 
         except Exception as error:  # pylint: disable=broad-exception-caught
             error_msg = f"Failed to set route in Redis Cluster: {str(error)}"
-            self.status = "error"
+            self.status = "postponed"
             self.error_message = error_msg
             log(LogLevel.ERROR, error_msg)
 
