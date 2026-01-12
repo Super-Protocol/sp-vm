@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Note:
 # - The redis manifest and main.py are provided by the image at:
-#     /etc/swarm-services/redis/{manifest.yaml, main.py}
+#     /etc/swarm-cloud/services/redis/{manifest.yaml, main.py}
 #   This script only registers service records in SwarmDB.
 # - redis depends on a WireGuard cluster existing and sharing nodes with it.
 #   When bootstrapping WireGuard, prefer ClusterPolicy id 'wireguard' to match redis's stateExpr.
@@ -23,7 +23,7 @@ CLUSTER_POLICY=${CLUSTER_POLICY:-redis}
 CLUSTER_ID=${CLUSTER_ID:-redis}
 
 # Location stored in ClusterServices; must exist on all nodes (baked into image)
-LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
 MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
