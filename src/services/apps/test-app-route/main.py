@@ -59,21 +59,6 @@ def get_redis_connection_info(state_json: dict) -> List[Tuple[str, int]]:
     return endpoints
 
 
-def is_redis_cluster_initialized(state_json: dict) -> bool:
-    """Check whether Redis cluster has been initialized by Redis service plugin.
-
-    Looks for redis_cluster_initialized == "true" in redisNodeProperties.
-    """
-    redis_props = state_json.get("redisNodeProperties", [])
-    for prop in redis_props:
-        if (
-            prop.get("name") == "redis_cluster_initialized"
-            and prop.get("value") == "true"
-        ):
-            return True
-    return False
-
-
 def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
     """Create or update the OpenResty route in Redis Cluster.
 
@@ -82,12 +67,6 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
       we find its WireGuard tunnel IP via wgNodeProperties.
     - Each such IP becomes a backend URL http://<ip>:APP_PORT.
     """
-    # Ensure Redis cluster is fully initialized (all slots assigned, cluster_state=ok)
-    if not is_redis_cluster_initialized(state_json):
-        msg = "Redis cluster is not initialized yet"
-        print(f"[!] {msg}", file=sys.stderr)
-        return False, msg
-
     endpoints = get_redis_connection_info(state_json)
     if not endpoints:
         msg = "No Redis endpoints available"
@@ -199,11 +178,7 @@ def delete_route_from_redis(state_json: dict) -> Tuple[bool, str | None]:
 
 @plugin.command("init")
 def handle_init(input_data: PluginInput) -> PluginOutput:
-    """Wait until Redis cluster is ready (for leader); non-leaders are no-op.
-
-    This gives early feedback in logs if Redis cluster is not yet available,
-    instead of immediately proceeding to apply.
-    """
+    """Wait until Redis is reachable (for leader); non-leaders are no-op."""
     local_state = input_data.local_state or {}
     state_json = input_data.state or {}
 
@@ -219,16 +194,6 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
     # Only leader needs to wait for Redis; other nodes can treat init as no-op.
     if not is_local_node_leader(local_node_id, state_json):
         return PluginOutput(status="completed", local_state=local_state)
-
-    # Check that Redis cluster is initialized from the perspective of swarm-db state.
-    if not is_redis_cluster_initialized(state_json):
-        msg = "Redis cluster is not initialized yet (init)"
-        print(f"[!] {msg}", file=sys.stderr)
-        return PluginOutput(
-            status="postponed",
-            error_message=msg,
-            local_state=local_state,
-        )
 
     endpoints = get_redis_connection_info(state_json)
     if not endpoints:
@@ -351,14 +316,6 @@ def handle_health(input_data: PluginInput) -> PluginOutput:
     if not is_local_node_leader(local_node_id, state_json):
         # Non-leader nodes do not manage this route
         return PluginOutput(status="completed", local_state=local_state)
-
-    # Route health makes sense only after Redis cluster is fully initialized
-    if not is_redis_cluster_initialized(state_json):
-        return PluginOutput(
-            status="postponed",
-            error_message="Redis cluster is not initialized yet",
-            local_state=local_state,
-        )
 
     try:
         import redis
