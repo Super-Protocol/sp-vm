@@ -544,8 +544,6 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
         # Install swarm-cloud-api if not present
         if not is_api_installed():
             install_swarm_cloud_api()
-
-        return PluginOutput(status='completed', local_state=input_data.local_state)
     except Exception as e:
         return PluginOutput(status='error', error_message=str(e), local_state=input_data.local_state)
 
@@ -554,6 +552,8 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
         create_systemd_service()
     except Exception as e:
         return PluginOutput(status='error', error_message=f'Failed to create service: {str(e)}', local_state=local_state)
+    
+    return PluginOutput(status='completed', local_state=input_data.local_state)
 
 
 def initialize_schema_if_needed(local_node_id: str, state_json: dict) -> tuple[bool, str | None]:
