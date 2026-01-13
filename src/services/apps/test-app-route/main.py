@@ -2,6 +2,7 @@
 
 import json
 import sys
+import time
 from typing import List, Tuple, Optional
 
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
@@ -111,34 +112,53 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
 
     startup_nodes = [ClusterNode(host, port) for host, port in endpoints]
 
-    try:
-        r = redis.RedisCluster(
-            startup_nodes=startup_nodes,
-            decode_responses=True,
-            skip_full_coverage_check=True,
-            socket_connect_timeout=5,
-        )
-        r.ping()
+    # A few retries in case the cluster is still converging or there are
+    # short-lived connectivity issues.
+    max_retries = 3
+    retry_delay_sec = 5
+    last_error: str | None = None
 
-        route_config = {
-            "targets": [
-                {"url": f"http://{ip}:{APP_PORT}", "weight": 1}
-                for ip in tunnel_ips
-            ],
-            "policy": "rr",
-            "preserve_host": False,
-        }
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(
+                f"[*] Attempt {attempt}/{max_retries} to set route {ROUTE_KEY} "
+                f"in Redis Cluster via startup_nodes={startup_nodes}",
+                file=sys.stderr,
+            )
 
-        r.set(ROUTE_KEY, json.dumps(route_config))
-        print(
-            f"[*] Set route {ROUTE_KEY} -> {json.dumps(route_config)} in Redis Cluster",
-            file=sys.stderr,
-        )
-        return True, None
-    except Exception as e:
-        error_msg = f"Failed to write route to Redis Cluster: {str(e)}"
-        print(f"[!] {error_msg}", file=sys.stderr)
-        return False, error_msg
+            r = redis.RedisCluster(
+                startup_nodes=startup_nodes,
+                decode_responses=True,
+                skip_full_coverage_check=True,
+                socket_connect_timeout=5,
+            )
+            r.ping()
+
+            route_config = {
+                "targets": [
+                    {"url": f"http://{ip}:{APP_PORT}", "weight": 1}
+                    for ip in tunnel_ips
+                ],
+                "policy": "rr",
+                "preserve_host": False,
+            }
+
+            r.set(ROUTE_KEY, json.dumps(route_config))
+            print(
+                f"[*] Successfully set route {ROUTE_KEY} -> {json.dumps(route_config)} "
+                f"in Redis Cluster on attempt {attempt}",
+                file=sys.stderr,
+            )
+            return True, None
+        except Exception as e:
+            last_error = f"Failed to write route to Redis Cluster on attempt {attempt}: {e}"
+            print(f"[!] {last_error}", file=sys.stderr)
+
+            if attempt < max_retries:
+                time.sleep(retry_delay_sec)
+
+    # All attempts failed
+    return False, last_error or "Failed to write route to Redis Cluster after retries"
 
 
 def delete_route_from_redis(state_json: dict) -> Tuple[bool, str | None]:
