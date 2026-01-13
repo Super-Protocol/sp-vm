@@ -199,9 +199,98 @@ def delete_route_from_redis(state_json: dict) -> Tuple[bool, str | None]:
 
 @plugin.command("init")
 def handle_init(input_data: PluginInput) -> PluginOutput:
-    """No-op init for test-app-route service."""
+    """Wait until Redis cluster is ready (for leader); non-leaders are no-op.
+
+    This gives early feedback in logs if Redis cluster is not yet available,
+    instead of immediately proceeding to apply.
+    """
     local_state = input_data.local_state or {}
-    return PluginOutput(status="completed", local_state=local_state)
+    state_json = input_data.state or {}
+
+    if not isinstance(state_json, dict):
+        return PluginOutput(
+            status="error",
+            error_message="Invalid state format in init",
+            local_state=local_state,
+        )
+
+    local_node_id = input_data.local_node_id
+
+    # Only leader needs to wait for Redis; other nodes can treat init as no-op.
+    if not is_local_node_leader(local_node_id, state_json):
+        return PluginOutput(status="completed", local_state=local_state)
+
+    # Check that Redis cluster is initialized from the perspective of swarm-db state.
+    if not is_redis_cluster_initialized(state_json):
+        msg = "Redis cluster is not initialized yet (init)"
+        print(f"[!] {msg}", file=sys.stderr)
+        return PluginOutput(
+            status="postponed",
+            error_message=msg,
+            local_state=local_state,
+        )
+
+    endpoints = get_redis_connection_info(state_json)
+    if not endpoints:
+        msg = "No Redis endpoints available (init)"
+        print(f"[!] {msg}", file=sys.stderr)
+        return PluginOutput(
+            status="postponed",
+            error_message=msg,
+            local_state=local_state,
+        )
+
+    # Optionally verify that Redis cluster is reachable from at least one endpoint.
+    try:
+        import redis
+        from redis.cluster import ClusterNode
+    except ImportError:
+        msg = "redis-py library not installed (init)"
+        print(f"[!] {msg}", file=sys.stderr)
+        return PluginOutput(
+            status="postponed",
+            error_message=msg,
+            local_state=local_state,
+        )
+
+    startup_nodes = [ClusterNode(host, port) for host, port in endpoints]
+
+    max_retries = 3
+    retry_delay_sec = 5
+    last_error: str | None = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(
+                f"[*] init: attempt {attempt}/{max_retries} to ping Redis Cluster "
+                f"via startup_nodes={startup_nodes}",
+                file=sys.stderr,
+            )
+            r = redis.RedisCluster(
+                startup_nodes=startup_nodes,
+                decode_responses=True,
+                skip_full_coverage_check=True,
+                socket_connect_timeout=5,
+            )
+            r.ping()
+
+            print(
+                f"[*] init: Redis Cluster is reachable on attempt {attempt}",
+                file=sys.stderr,
+            )
+            return PluginOutput(status="completed", local_state=local_state)
+        except Exception as e:
+            last_error = f"init: failed to ping Redis Cluster on attempt {attempt}: {e}"
+            print(f"[!] {last_error}", file=sys.stderr)
+            if attempt < max_retries:
+                time.sleep(retry_delay_sec)
+
+    # If we reach here, Redis cluster is still not reachable — postpone init.
+    return PluginOutput(
+        status="postponed",
+        error_message=last_error or "init: Redis Cluster is not reachable",
+        local_state=local_state,
+    )
 
 
 @plugin.command("apply")
