@@ -120,7 +120,7 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
 
     # A few retries in case the cluster is still converging or there are
     # short-lived connectivity issues.
-    max_retries = 3
+    max_retries = 20
     retry_delay_sec = 5
     last_error: str | None = None
 
