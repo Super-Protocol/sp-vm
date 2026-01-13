@@ -84,11 +84,15 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
     """
     # Ensure Redis cluster is fully initialized (all slots assigned, cluster_state=ok)
     if not is_redis_cluster_initialized(state_json):
-        return False, "Redis cluster is not initialized yet"
+        msg = "Redis cluster is not initialized yet"
+        print(f"[!] {msg}", file=sys.stderr)
+        return False, msg
 
     endpoints = get_redis_connection_info(state_json)
     if not endpoints:
-        return False, "No Redis endpoints available"
+        msg = "No Redis endpoints available"
+        print(f"[!] {msg}", file=sys.stderr)
+        return False, msg
 
     cluster_nodes = state_json.get("clusterNodes", [])
     wg_props = state_json.get("wgNodeProperties", [])
@@ -102,7 +106,9 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
             tunnel_ips.append(ip)
 
     if not tunnel_ips:
-        return False, "No WireGuard tunnel IPs available for test-app nodes"
+        msg = "No WireGuard tunnel IPs available for test-app nodes"
+        print(f"[!] {msg}", file=sys.stderr)
+        return False, msg
 
     try:
         import redis
@@ -221,6 +227,10 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
 
     success, error = ensure_route_in_redis(state_json)
     if not success:
+        # Also log the error locally so it shows up in node logs even if
+        # the executor does not print error_message from PluginOutput.
+        if error:
+            print(f"[!] test-app-route apply: {error}", file=sys.stderr)
         return PluginOutput(
             status="postponed",
             error_message=error or "Failed to configure route in Redis",
