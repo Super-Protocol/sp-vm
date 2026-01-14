@@ -2,6 +2,7 @@
 
 import json
 import sys
+import time
 from typing import List, Tuple, Optional
 
 from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
@@ -58,21 +59,6 @@ def get_redis_connection_info(state_json: dict) -> List[Tuple[str, int]]:
     return endpoints
 
 
-def is_redis_cluster_initialized(state_json: dict) -> bool:
-    """Check whether Redis cluster has been initialized by Redis service plugin.
-
-    Looks for redis_cluster_initialized == "true" in redisNodeProperties.
-    """
-    redis_props = state_json.get("redisNodeProperties", [])
-    for prop in redis_props:
-        if (
-            prop.get("name") == "redis_cluster_initialized"
-            and prop.get("value") == "true"
-        ):
-            return True
-    return False
-
-
 def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
     """Create or update the OpenResty route in Redis Cluster.
 
@@ -81,13 +67,11 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
       we find its WireGuard tunnel IP via wgNodeProperties.
     - Each such IP becomes a backend URL http://<ip>:APP_PORT.
     """
-    # Ensure Redis cluster is fully initialized (all slots assigned, cluster_state=ok)
-    if not is_redis_cluster_initialized(state_json):
-        return False, "Redis cluster is not initialized yet"
-
     endpoints = get_redis_connection_info(state_json)
     if not endpoints:
-        return False, "No Redis endpoints available"
+        msg = "No Redis endpoints available"
+        print(f"[!] {msg}", file=sys.stderr)
+        return False, msg
 
     cluster_nodes = state_json.get("clusterNodes", [])
     wg_props = state_json.get("wgNodeProperties", [])
@@ -101,7 +85,9 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
             tunnel_ips.append(ip)
 
     if not tunnel_ips:
-        return False, "No WireGuard tunnel IPs available for test-app nodes"
+        msg = "No WireGuard tunnel IPs available for test-app nodes"
+        print(f"[!] {msg}", file=sys.stderr)
+        return False, msg
 
     try:
         import redis
@@ -111,34 +97,53 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
 
     startup_nodes = [ClusterNode(host, port) for host, port in endpoints]
 
-    try:
-        r = redis.RedisCluster(
-            startup_nodes=startup_nodes,
-            decode_responses=True,
-            skip_full_coverage_check=True,
-            socket_connect_timeout=5,
-        )
-        r.ping()
+    # A few retries in case the cluster is still converging or there are
+    # short-lived connectivity issues.
+    max_retries = 20
+    retry_delay_sec = 5
+    last_error: str | None = None
 
-        route_config = {
-            "targets": [
-                {"url": f"http://{ip}:{APP_PORT}", "weight": 1}
-                for ip in tunnel_ips
-            ],
-            "policy": "rr",
-            "preserve_host": False,
-        }
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(
+                f"[*] Attempt {attempt}/{max_retries} to set route {ROUTE_KEY} "
+                f"in Redis Cluster via startup_nodes={startup_nodes}",
+                file=sys.stderr,
+            )
 
-        r.set(ROUTE_KEY, json.dumps(route_config))
-        print(
-            f"[*] Set route {ROUTE_KEY} -> {json.dumps(route_config)} in Redis Cluster",
-            file=sys.stderr,
-        )
-        return True, None
-    except Exception as e:
-        error_msg = f"Failed to write route to Redis Cluster: {str(e)}"
-        print(f"[!] {error_msg}", file=sys.stderr)
-        return False, error_msg
+            r = redis.RedisCluster(
+                startup_nodes=startup_nodes,
+                decode_responses=True,
+                skip_full_coverage_check=True,
+                socket_connect_timeout=5,
+            )
+            r.ping()
+
+            route_config = {
+                "targets": [
+                    {"url": f"http://{ip}:{APP_PORT}", "weight": 1}
+                    for ip in tunnel_ips
+                ],
+                "policy": "rr",
+                "preserve_host": False,
+            }
+
+            r.set(ROUTE_KEY, json.dumps(route_config))
+            print(
+                f"[*] Successfully set route {ROUTE_KEY} -> {json.dumps(route_config)} "
+                f"in Redis Cluster on attempt {attempt}",
+                file=sys.stderr,
+            )
+            return True, None
+        except Exception as e:
+            last_error = f"Failed to write route to Redis Cluster on attempt {attempt}: {e}"
+            print(f"[!] {last_error}", file=sys.stderr)
+
+            if attempt < max_retries:
+                time.sleep(retry_delay_sec)
+
+    # All attempts failed
+    return False, last_error or "Failed to write route to Redis Cluster after retries"
 
 
 def delete_route_from_redis(state_json: dict) -> Tuple[bool, str | None]:
@@ -173,9 +178,84 @@ def delete_route_from_redis(state_json: dict) -> Tuple[bool, str | None]:
 
 @plugin.command("init")
 def handle_init(input_data: PluginInput) -> PluginOutput:
-    """No-op init for test-app-route service."""
+    """Wait until Redis is reachable (for leader); non-leaders are no-op."""
     local_state = input_data.local_state or {}
-    return PluginOutput(status="completed", local_state=local_state)
+    state_json = input_data.state or {}
+
+    if not isinstance(state_json, dict):
+        return PluginOutput(
+            status="error",
+            error_message="Invalid state format in init",
+            local_state=local_state,
+        )
+
+    local_node_id = input_data.local_node_id
+
+    # Only leader needs to wait for Redis; other nodes can treat init as no-op.
+    if not is_local_node_leader(local_node_id, state_json):
+        return PluginOutput(status="completed", local_state=local_state)
+
+    endpoints = get_redis_connection_info(state_json)
+    if not endpoints:
+        msg = "No Redis endpoints available (init)"
+        print(f"[!] {msg}", file=sys.stderr)
+        return PluginOutput(
+            status="postponed",
+            error_message=msg,
+            local_state=local_state,
+        )
+
+    # Optionally verify that Redis cluster is reachable from at least one endpoint.
+    try:
+        import redis
+        from redis.cluster import ClusterNode
+    except ImportError:
+        msg = "redis-py library not installed (init)"
+        print(f"[!] {msg}", file=sys.stderr)
+        return PluginOutput(
+            status="postponed",
+            error_message=msg,
+            local_state=local_state,
+        )
+
+    startup_nodes = [ClusterNode(host, port) for host, port in endpoints]
+
+    max_retries = 3
+    retry_delay_sec = 5
+    last_error: str | None = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(
+                f"[*] init: attempt {attempt}/{max_retries} to ping Redis Cluster "
+                f"via startup_nodes={startup_nodes}",
+                file=sys.stderr,
+            )
+            r = redis.RedisCluster(
+                startup_nodes=startup_nodes,
+                decode_responses=True,
+                skip_full_coverage_check=True,
+                socket_connect_timeout=5,
+            )
+            r.ping()
+
+            print(
+                f"[*] init: Redis Cluster is reachable on attempt {attempt}",
+                file=sys.stderr,
+            )
+            return PluginOutput(status="completed", local_state=local_state)
+        except Exception as e:
+            last_error = f"init: failed to ping Redis Cluster on attempt {attempt}: {e}"
+            print(f"[!] {last_error}", file=sys.stderr)
+            if attempt < max_retries:
+                time.sleep(retry_delay_sec)
+
+    # If we reach here, Redis cluster is still not reachable — postpone init.
+    return PluginOutput(
+        status="postponed",
+        error_message=last_error or "init: Redis Cluster is not reachable",
+        local_state=local_state,
+    )
 
 
 @plugin.command("apply")
@@ -201,6 +281,10 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
 
     success, error = ensure_route_in_redis(state_json)
     if not success:
+        # Also log the error locally so it shows up in node logs even if
+        # the executor does not print error_message from PluginOutput.
+        if error:
+            print(f"[!] test-app-route apply: {error}", file=sys.stderr)
         return PluginOutput(
             status="postponed",
             error_message=error or "Failed to configure route in Redis",
@@ -232,14 +316,6 @@ def handle_health(input_data: PluginInput) -> PluginOutput:
     if not is_local_node_leader(local_node_id, state_json):
         # Non-leader nodes do not manage this route
         return PluginOutput(status="completed", local_state=local_state)
-
-    # Route health makes sense only after Redis cluster is fully initialized
-    if not is_redis_cluster_initialized(state_json):
-        return PluginOutput(
-            status="postponed",
-            error_message="Redis cluster is not initialized yet",
-            local_state=local_state,
-        )
 
     try:
         import redis
