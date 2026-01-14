@@ -54,7 +54,7 @@ async function downloadResource(params) {
       const t = typeof total === 'number' ? total : 0;
       const c = typeof current === 'number' ? current : 0;
       const pct = t > 0 ? Math.floor((c / t) * 100) : 0;
-      console.log(`${key} ${c}/${t} (${pct}%)\n`);
+      console.log(`${key} ${c}/${t} (${pct}%)`);
     },
   });
 

@@ -74,7 +74,7 @@ function parseGatekeeperResourceResponse(buf) {
   //   encryption: { key: 'hex', iv: 'hex' }
   // }
   const data = responseData.data;
-  if (!data.resource || !data.encryption) {
+  if (!data?.resource || !data?.encryption) {
     throw new Error('Gatekeeper response is invalid - missing resource or encryption field');
   }
 
