@@ -316,7 +316,6 @@ RUN mkdir -p ${OUTPUTDIR}/opt && ln -s /usr/local/lib/swarm-cloud-api ${OUTPUTDI
 # swarm-cloud-api runtime wrappers (Node.js entrypoints)
 RUN mkdir -p ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api
 ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api
-# canonical schema-sync entrypoint used by the provision plugin via /opt/swarm-cloud-api/schema-sync
 ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/schema-sync ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
 RUN chmod +x \
     ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api \
