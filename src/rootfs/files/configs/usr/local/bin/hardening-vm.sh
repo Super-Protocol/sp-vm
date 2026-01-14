@@ -36,5 +36,8 @@ iptables -A INPUT -i lxcbr0 -p udp --sport 68 --dport 67 -j ACCEPT
 
 # if NOT DEBUG, then close VM via firewall
 if grep -q 'sp-debug=true' /proc/cmdline; then
+    # Allow SSH (TCP 22)
+    iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+
     systemctl start ssh
 fi
