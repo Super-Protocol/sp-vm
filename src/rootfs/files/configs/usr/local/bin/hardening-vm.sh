@@ -26,6 +26,7 @@ iptables -A INPUT -p tcp --dport 80 -j ACCEPT
 # @TODO this will ignore NetworkPolicies in k8s, refactor in future
 iptables -I INPUT -s 10.43.0.0/16 -j ACCEPT
 iptables -I INPUT -s 10.42.0.0/16 -j ACCEPT
+iptables -I INPUT -s 10.13.0.0/16 -j ACCEPT
 
 # Allow WireGuard (UDP 51820)
 iptables -A INPUT -p udp --dport 51820 -j ACCEPT
