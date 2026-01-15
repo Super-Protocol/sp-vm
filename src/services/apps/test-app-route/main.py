@@ -9,7 +9,7 @@ from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 
 
 ROUTE_DOMAIN = "test.test.oresty.superprotocol.io"
-ROUTE_KEY = f"routes:{ROUTE_DOMAIN}"
+ROUTE_KEY = f"manual-routes:{ROUTE_DOMAIN}"
 APP_PORT = 34567
 
 
