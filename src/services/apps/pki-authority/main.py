@@ -47,7 +47,6 @@ class EventHandler:
         "lite_certificate", "lite_privateKey"
     ]
     PROP_INITIALIZED = f"{AUTHORITY_SERVICE_PREFIX}initialized"
-    PROP_REGISTERED_ENDPOINTS = f"{AUTHORITY_SERVICE_PREFIX}registered_endpoints"
     PROP_PKI_DOMAIN = f"{AUTHORITY_SERVICE_PREFIX}pki_domain"
 
     def __init__(self, input_data: PluginInput):
@@ -98,31 +97,13 @@ class EventHandler:
         if not self.is_leader:
             return
 
-        registered_endpoints = self.authority_config.get(
-            self.PROP_REGISTERED_ENDPOINTS, ""
-        ).split(";")
-
+        # Get current endpoints from cluster nodes
         current_endpoints = []
         for node in self.pki_cluster_nodes:
             node_id = node.get("node_id")
             tunnel_ip = get_node_tunnel_ip(node_id, self.wg_props)
             if tunnel_ip:
                 current_endpoints.append(tunnel_ip)
-
-        # Compare endpoints regardless of order
-        if set(registered_endpoints) == set(current_endpoints):
-            log(
-                LogLevel.INFO,
-                f"Gateway endpoints are up to date: "
-                f"registered={registered_endpoints}, current={current_endpoints}"
-            )
-            return
-
-        log(
-            LogLevel.INFO,
-            f"Gateway endpoints changed: "
-            f"registered={registered_endpoints}, current={current_endpoints}"
-        )
 
         # Get Redis connection info
         redis_endpoints = self.get_redis_connection_info()
@@ -132,20 +113,7 @@ class EventHandler:
             self.error_message = "No Redis nodes available to configure gateway routes"
             return
 
-        # Build targets list from current endpoints
-        targets = [
-            {"url": f"https://{endpoint}:8443", "weight": 1}
-            for endpoint in current_endpoints
-        ]
-        route_config = {
-            "targets": targets,
-            "policy": "rr",
-            "preserve_host": False,
-            "passthrough": True
-        }
-        route_json = json.dumps(route_config)
         route_key = f"routes:{self.pki_domain}"
-
         startup_nodes = [ClusterNode(host, port) for host, port in redis_endpoints]
 
         try:
@@ -155,18 +123,82 @@ class EventHandler:
                 skip_full_coverage_check=True,
                 socket_connect_timeout=5,
             )
-            redis_client.ping()
 
-            redis_client.set(route_key, route_json)
+            # Read current route from Redis
+            registered_endpoints = []
+            try:
+                existing_route = redis_client.get(route_key)
+                if existing_route:
+                    route_data = json.loads(existing_route)
+                    # Extract IPs from targets URLs
+                    for target in route_data.get("targets", []):
+                        url = target.get("url", "")
+                        # Parse https://IP:PORT format
+                        if "://" in url:
+                            ip_port = url.split("://")[1]
+                            ip = ip_port.split(":")[0]
+                            registered_endpoints.append(ip)
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                log(
+                    LogLevel.WARN,
+                    f"Failed to read existing route from Redis, treating as empty: {error}"
+                )
+                registered_endpoints = []
+
+            # Compare endpoints regardless of order
+            if set(registered_endpoints) == set(current_endpoints):
+                log(
+                    LogLevel.INFO,
+                    f"Gateway endpoints are up to date: "
+                    f"registered={registered_endpoints}, current={current_endpoints}"
+                )
+                return
+
             log(
                 LogLevel.INFO,
-                f"Successfully set gateway route {route_key} in Redis Cluster"
+                f"Gateway endpoints changed: "
+                f"registered={registered_endpoints}, current={current_endpoints}"
             )
 
-            if self.cluster_properties is None:
-                self.cluster_properties = {}
-            self.cluster_properties[self.PROP_REGISTERED_ENDPOINTS] = \
-                ";".join(current_endpoints)
+            # Build targets list from current endpoints
+            targets = [
+                {"url": f"https://{endpoint}:8443", "weight": 1}
+                for endpoint in current_endpoints
+            ]
+            route_config = {
+                "targets": targets,
+                "policy": "rr",
+                "preserve_host": False,
+                "passthrough": True
+            }
+            route_json = json.dumps(route_config)
+
+            # Retry logic for setting route in Redis
+            max_retries = 3
+            retry_delay = 5
+
+            for attempt in range(1, max_retries + 1):
+                try:
+                    redis_client.set(route_key, route_json)
+                    log(
+                        LogLevel.INFO,
+                        f"Successfully set gateway route {route_key} in Redis Cluster"
+                    )
+                    break  # Success, exit retry loop
+                except Exception as set_error:  # pylint: disable=broad-exception-caught
+                    if attempt < max_retries:
+                        log(
+                            LogLevel.WARN,
+                            f"Failed to set route (attempt {attempt}/{max_retries}): {set_error}. "
+                            f"Retrying in {retry_delay}s..."
+                        )
+                        time.sleep(retry_delay)
+                    else:
+                        log(
+                            LogLevel.ERROR,
+                            f"Failed to set route after {max_retries} attempts: {set_error}"
+                        )
+                        raise
 
         except Exception as error:  # pylint: disable=broad-exception-caught
             error_msg = f"Failed to set route in Redis Cluster: {str(error)}"
@@ -402,12 +434,6 @@ class EventHandler:
         )
         redis_client.delete(route_key)
         log(LogLevel.INFO, f"Deleted route {route_key} from Redis Cluster")
-
-        # Clear registered endpoints to ensure route is recreated on next PKI node start
-        if self.cluster_properties is None:
-            self.cluster_properties = {}
-        self.cluster_properties[self.PROP_REGISTERED_ENDPOINTS] = ""
-        log(LogLevel.INFO, "Cleared registered endpoints in cluster properties")
 
     def destroy(self) -> PluginOutput:
         """Destroy PKI Authority service and clean up."""
