@@ -1,5 +1,6 @@
 api:
-  port: 443
+    httpsPort: 443
+    httpPort: 80
 pki:
   allowedChallenges:
     - token

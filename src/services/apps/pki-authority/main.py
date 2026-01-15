@@ -403,6 +403,12 @@ class EventHandler:
         redis_client.delete(route_key)
         log(LogLevel.INFO, f"Deleted route {route_key} from Redis Cluster")
 
+        # Clear registered endpoints to ensure route is recreated on next PKI node start
+        if self.cluster_properties is None:
+            self.cluster_properties = {}
+        self.cluster_properties[self.PROP_REGISTERED_ENDPOINTS] = ""
+        log(LogLevel.INFO, "Cleared registered endpoints in cluster properties")
+
     def destroy(self) -> PluginOutput:
         """Destroy PKI Authority service and clean up."""
         try:
@@ -431,7 +437,11 @@ class EventHandler:
                 self.delete_route_from_redis()
 
             log(LogLevel.INFO, "PKI Authority destroyed")
-            return PluginOutput(status="completed", local_state=self.local_state)
+            return PluginOutput(
+                status="completed",
+                local_state=self.local_state,
+                cluster_properties=self.cluster_properties if self.cluster_properties else None
+            )
 
         except Exception as error:  # pylint: disable=broad-exception-caught
             error_msg = f"Destroy failed: {str(error)}"

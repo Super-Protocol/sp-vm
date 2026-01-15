@@ -560,7 +560,7 @@ def setup_iptables(wg_ip):
         description=f"PCCS DNAT {host_ip}:{PCCS_PORT} -> 127.0.0.1:{PCCS_PORT}"
     )
 
-    # Rule 2: WireGuard PREROUTING
+    # Rule 2: WireGuard PREROUTING (HTTPS)
     ensure_iptables_rule(
         check_args=[
             "iptables", "-t", "nat", "-C", "PREROUTING",
@@ -583,7 +583,30 @@ def setup_iptables(wg_ip):
         description=f"PREROUTING WireGuard {PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443"
     )
 
-    # Rule 3: OUTPUT
+    # Rule 2a: WireGuard PREROUTING (HTTP)
+    ensure_iptables_rule(
+        check_args=[
+            "iptables", "-t", "nat", "-C", "PREROUTING",
+            "-i", WIREGUARD_INTERFACE,
+            "-p", "tcp",
+            "--dport", "8080",
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "DNAT",
+            "--to-destination", f"{CONTAINER_IP}:80"
+        ],
+        add_args=[
+            "iptables", "-t", "nat", "-A", "PREROUTING",
+            "-i", WIREGUARD_INTERFACE,
+            "-p", "tcp",
+            "--dport", "8080",
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "DNAT",
+            "--to-destination", f"{CONTAINER_IP}:80"
+        ],
+        description=f"PREROUTING WireGuard 8080 -> {CONTAINER_IP}:80"
+    )
+
+    # Rule 3: OUTPUT (HTTPS)
     ensure_iptables_rule(
         check_args=[
             "iptables", "-t", "nat", "-C", "OUTPUT",
@@ -604,6 +627,29 @@ def setup_iptables(wg_ip):
             "--to-destination", f"{CONTAINER_IP}:443"
         ],
         description=f"OUTPUT {wg_ip}:{PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443"
+    )
+
+    # Rule 3a: OUTPUT (HTTP)
+    ensure_iptables_rule(
+        check_args=[
+            "iptables", "-t", "nat", "-C", "OUTPUT",
+            "-d", wg_ip,
+            "-p", "tcp",
+            "--dport", "8080",
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "DNAT",
+            "--to-destination", f"{CONTAINER_IP}:80"
+        ],
+        add_args=[
+            "iptables", "-t", "nat", "-A", "OUTPUT",
+            "-d", wg_ip,
+            "-p", "tcp",
+            "--dport", "8080",
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "DNAT",
+            "--to-destination", f"{CONTAINER_IP}:80"
+        ],
+        description=f"OUTPUT {wg_ip}:8080 -> {CONTAINER_IP}:80"
     )
 
     # Rule 4: MASQUERADE
