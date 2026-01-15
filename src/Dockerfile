@@ -282,6 +282,8 @@ ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/
 ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
 RUN ln -sf /etc/systemd/system/swarm-services.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-services.service"
+ADD rootfs/files/configs/etc/systemd/system/download-sp-swarm-services.service ${OUTPUTDIR}/etc/systemd/system/download-sp-swarm-services.service
+RUN ln -sf /etc/systemd/system/download-sp-swarm-services.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/download-sp-swarm-services.service"
 
 # disabling serial getty
 ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
@@ -304,6 +306,15 @@ COPY repos/swarm-cloud/apps/swarm-node-e2e/fixtures/schema.yaml ${OUTPUTDIR}/etc
 # install Node.js
 ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/install_nodejs.sh
+
+# Services Downloader: stage files and install
+ADD rootfs/files/configs/usr/local/lib/services-downloader ${OUTPUTDIR}/usr/local/lib/services-downloader
+ADD rootfs/files/scripts/install_services_downloader.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/install_services_downloader.sh
+RUN --security=insecure bash /buildroot/files/scripts/install_services_downloader.sh
+## no standalone wrapper; script uses Node CLI directly
+ADD rootfs/files/configs/usr/local/bin/download-sp-swarm-services.sh ${OUTPUTDIR}/usr/local/bin/download-sp-swarm-services.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/download-sp-swarm-services.sh
 
 # install pnpm and build Node.js applications inside rootfs via script
 ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
