@@ -1,4 +1,7 @@
 #!/bin/bash
+
+exit 0
+
 set -euo pipefail
 
 # This script bootstraps the swarm-cloud-api service into SwarmDB via swarm-cli.
