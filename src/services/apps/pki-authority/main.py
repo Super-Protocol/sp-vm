@@ -113,7 +113,7 @@ class EventHandler:
             self.error_message = "No Redis nodes available to configure gateway routes"
             return
 
-        route_key = f"routes:{self.pki_domain}"
+        route_key = f"manual-routes:{self.pki_domain}"
         startup_nodes = [ClusterNode(host, port) for host, port in redis_endpoints]
 
         try:
