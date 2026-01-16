@@ -17,7 +17,9 @@ TARGET_DIR="${TARGET_DIR:-/etc/sp-swarm-services}"
 RESOURCE_NAME="sp-swarm-services"
 
 log() {
-	printf "[download-sp-swarm-services] %s\n" "$*" >&2;
+	local ts
+	ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z')"
+	printf "[%s] [download-sp-swarm-services] %s\n" "$ts" "$*" >&2;
 }
 
 # Helpers: YAML block extraction and PEM normalization
