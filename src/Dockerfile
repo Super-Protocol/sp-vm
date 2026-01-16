@@ -152,21 +152,13 @@ ADD kernel/files/scripts/build-kernel.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/build-kernel.sh
 ### End kernel ###
 
-### Start hauler ###
-FROM ubuntu:24.04 AS hauler_builder
-RUN apt update && apt -y install curl
-ARG HAULER_VERSION="1.1.0"
-RUN mkdir -p "/opt/hauler/.hauler"
-RUN ln -s "/opt/hauler/.hauler" "/root/.hauler"
-RUN curl -sfL https://get.hauler.dev | bash
-WORKDIR /opt/hauler
-ADD hauler/files/configs/rke2-airgap.yaml /opt/hauler/rke2-airgap.yaml
-RUN hauler store sync --store rke2-store --platform linux/amd64 --files /opt/hauler/rke2-airgap.yaml
-RUN rm /opt/hauler/rke2-airgap.yaml
-RUN hauler store add --store rke2-store image ghcr.io/super-protocol/tee-pki-curl:v1.7.5 --platform linux/amd64
-# TODO: add argo-cd, argo-workflows, cert-manager, gpu-operator, longhorn charts
-RUN hauler store save --store rke2-store --filename rke2-airgap.tar.zst
-### End hauler ###
+### Swarm DB start
+FROM golang:1.25.3 AS swarm-db-build
+COPY repos/swarm-db /app/swarm/swarm-db
+WORKDIR /app/swarm/swarm-db
+RUN make
+RUN make build-linux-amd64
+### Swarm DB finish
 
 ### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
@@ -194,8 +186,18 @@ RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
 ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
 RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
+# RKE2: clean default installation inside rootfs (no legacy scripts)
+ARG RKE2_VERSION=v1.32.8+rke2r1
+ARG RKE2_INSTALL_SHA256=2d24db2184dd6b1a5e281fa45cc9a8234c889394721746f89b5fe953fdaaf40a
+ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
+ENV RKE2_INSTALL_SHA256=${RKE2_INSTALL_SHA256}
+ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
+RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
+
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
+# ensure system boots into multi-user.target instead of graphical.target
+RUN ln -sf "/lib/systemd/system/multi-user.target" "${OUTPUTDIR}/etc/systemd/system/default.target"
 
 RUN cp "${OUTPUTDIR}/usr/share/systemd/tmp.mount" "${OUTPUTDIR}/etc/systemd/system/tmp.mount";
 
@@ -215,48 +217,30 @@ COPY --from=certs_builder /buildroot/registry.superprotocol.local.ca.crt ${OUTPU
 COPY --from=certs_builder /buildroot/registry.superprotocol.local.ca.crt ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.ca.crt
 COPY --from=certs_builder /buildroot/registry.superprotocol.local.key ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.key
 COPY --from=certs_builder /buildroot/registry.superprotocol.local.crt ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.crt
-ADD rootfs/files/configs/cert/superprotocol-certs.sh ${OUTPUTDIR}/usr/local/bin/
-ADD rootfs/files/configs/cert/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system
-RUN ln -s /etc/systemd/system/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/superprotocol-certs.service
+# ADD rootfs/files/configs/cert/superprotocol-certs.sh ${OUTPUTDIR}/usr/local/bin/
+# ADD rootfs/files/configs/cert/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system
+# RUN ln -s /etc/systemd/system/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/superprotocol-certs.service
 ADD rootfs/files/scripts/refresh_ca_certs.sh /buildroot/files/scripts/refresh_ca_certs.sh
 RUN --security=insecure /buildroot/files/scripts/refresh_ca_certs.sh
 
 # check for presence of trusted self-signed CA from Super Protocol
 RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < ${OUTPUTDIR}/etc/ssl/certs/ca-certificates.crt | grep -i 'super'
 
-ARG LOCAL_REGISTRY_HOST=hauler.local
 ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
 RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
-RUN mkdir -p "${OUTPUTDIR}/etc/rancher/node"
-RUN LC_ALL=C tr -dc '[:alpha:][:digit:]' < /dev/urandom | head -c 32 > "${OUTPUTDIR}/etc/rancher/node/password"
-ADD rootfs/files/configs/etc/cni/net.d/05-cilium.conflist ${OUTPUTDIR}/etc/cni/net.d/05-cilium.conflist
 ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/etc/sysctl.d/99-zzz-override_cilium.conf
-ADD rootfs/files/configs/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/var/lib/rancher/rke2/rke2-pss.yaml
 ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
+RUN mkdir -p "${OUTPUTDIR}/etc/rancher/rke2"
+ADD rootfs/files/configs/etc/rancher/rke2/config.yaml ${OUTPUTDIR}/etc/rancher/rke2/config.yaml
 
 # copy iscsi configs, cause this partition will be remounted with empty dir
+RUN mkdir -p "${OUTPUTDIR}/etc/iscsi"
 RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
 ADD rootfs/files/scripts/setup_sshd_config.sh /buildroot/files/scripts/setup_sshd_config.sh
 RUN /buildroot/files/scripts/setup_sshd_config.sh
 
-RUN mkdir -p "$OUTPUTDIR/etc/super/opt/hauler";
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
-RUN ln -sf "/opt/hauler/.hauler" "${OUTPUTDIR}/root/.hauler";
-COPY --from=hauler_builder /opt/hauler/rke2-airgap.tar.zst ${OUTPUTDIR}/etc/super/opt/hauler/
-COPY --from=hauler_builder /usr/local/bin/hauler ${OUTPUTDIR}/usr/local/bin/
-
-# TODO: move hauler and rke2? to anuther independent layers..
-
-ADD rootfs/files/configs/etc/rancher/rke2/config.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/config.yaml.tmpl
-ADD rootfs/files/configs/etc/rancher/rke2/registries.yaml.tmpl /buildroot/files/configs/etc/rancher/rke2/registries.yaml.tmpl
-ADD rootfs/files/scripts/template_rke2_configs_preinstall.sh /buildroot/files/scripts/template_rke2_configs_preinstall.sh
-RUN /buildroot/files/scripts/template_rke2_configs_preinstall.sh
-ADD rootfs/files/scripts/download_rke2.sh /buildroot/files/scripts/download_rke2.sh
-RUN /buildroot/files/scripts/download_rke2.sh
-ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
-RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/rke2-pss.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/rke2-pss.yaml
 
 # copy pki-authority service files
 ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
@@ -270,31 +254,138 @@ ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.
 ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
 RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
 
-ADD rootfs/files/scripts/template_configs_post_rke2install.sh /buildroot/files/scripts/template_configs_post_rke2install.sh
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl /buildroot/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl.tmpl
-ADD rootfs/files/configs/usr/local/lib/systemd/system/rke2-server.env.append /buildroot/files/configs/usr/local/lib/systemd/system/rke2-server.env.append
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
-RUN /buildroot/files/scripts/template_configs_post_rke2install.sh
 
 RUN mkdir -p "${OUTPUTDIR}/sp"
-ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml
-ADD rootfs/files/configs/etc/systemd/system/check-config-files.service ${OUTPUTDIR}/etc/systemd/system/check-config-files.service
-ADD rootfs/files/configs/etc/systemd/system/check-config-files.timer ${OUTPUTDIR}/etc/systemd/system/check-config-files.timer
-ADD rootfs/files/configs/usr/local/bin/check-config-files.sh ${OUTPUTDIR}/usr/local/bin/check-config-files.sh
-RUN ln -sf /etc/systemd/system/check-config-files.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/check-config-files.service"
-RUN ln -sf /etc/systemd/system/check-config-files.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/check-config-files.timer"
+# Enable only the timer; service will be triggered by it
 ADD rootfs/files/configs/etc/systemd/system/local-registry.service ${OUTPUTDIR}/etc/systemd/system/local-registry.service
 ADD rootfs/files/configs/usr/local/bin/local-registry.sh ${OUTPUTDIR}/usr/local/bin/local-registry.sh
 RUN ln -sf /etc/systemd/system/local-registry.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/local-registry.service"
 ADD rootfs/files/configs/etc/systemd/system/hardening-vm.service ${OUTPUTDIR}/etc/systemd/system/hardening-vm.service
 ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bin/hardening-vm.sh
 RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
+
+# swarm services
+ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
+RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
+ADD rootfs/files/configs/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
+ADD rootfs/files/configs/etc/systemd/system/swarm-node.service ${OUTPUTDIR}/etc/systemd/system/swarm-node.service
+ADD rootfs/files/configs/usr/local/bin/swarm-node.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
+RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-node.service"
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
+# run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
+
+# swarm one-shot services runner
+ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
+ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
+RUN ln -sf /etc/systemd/system/swarm-services.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-services.service"
 
 # disabling serial getty
 ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
 RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
+
+# swarm binaries into VM rootfs
+RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bin"
+COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
+COPY repos/swarm-cloud ${OUTPUTDIR}/opt/swarm-cloud
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud
+RUN cp -r ${OUTPUTDIR}/opt/swarm-cloud/services ${OUTPUTDIR}/etc/swarm-cloud/services
+RUN cp -r ${OUTPUTDIR}/opt/swarm-cloud/provision-plugin-sdk ${OUTPUTDIR}/etc/swarm-cloud/provision-plugin-sdk
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
+ADD rootfs/files/configs/usr/local/bin/kubectl ${OUTPUTDIR}/usr/local/bin/kubectl
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/kubectl
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-db
+# COPY repos/swarm-db/schema.yaml ${OUTPUTDIR}/etc/swarm-db/schema.yaml
+COPY repos/swarm-cloud/apps/swarm-node-e2e/fixtures/schema.yaml ${OUTPUTDIR}/etc/swarm-db/schema.yaml
+
+# install Node.js
+ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/install_nodejs.sh
+
+# install pnpm and build Node.js applications inside rootfs via script
+ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
+RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
+
+# make /opt/swarm-cloud-api point to built swarm-cloud artifacts
+RUN mkdir -p ${OUTPUTDIR}/opt && ln -s /usr/local/lib/swarm-cloud-api ${OUTPUTDIR}/opt/swarm-cloud-api
+
+# swarm-cloud-api runtime wrappers (Node.js entrypoints)
+RUN mkdir -p ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api
+ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api
+ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/schema-sync ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
+RUN chmod +x \
+    ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api \
+    ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
+
+# install PCCS
+ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
+ADD rootfs/files/configs/pccs-init/ /buildroot/files/configs/pccs-init/
+RUN --security=insecure /buildroot/files/scripts/install_pccs.sh
+RUN cp /buildroot/files/configs/pccs-init/pccs-init.service "${OUTPUTDIR}/usr/lib/systemd/system/pccs-init.service"
+RUN cp /buildroot/files/configs/pccs-init/pccs-init.sh "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
+RUN chmod +x "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
+RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pccs-init.service"
+
+# Custom swarm services
+RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
+COPY services/apps/ ${OUTPUTDIR}/etc/swarm-services/
+COPY swarm-scripts ${OUTPUTDIR}/etc/swarm-service-launchers/
+# provision plugins from original swarm-cloud repo
+# COPY repos/swarm-cloud/services/swarm-cloud-api ${OUTPUTDIR}/etc/swarm-services/swarm-cloud-api
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-services/*/main.py
+RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/*/main.py
+
+# tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
+ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
+RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
+# MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
+ADD rootfs/files/scripts/install_mongodb.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_mongodb.sh
+# disable autostart without requiring systemd during build (remove enable symlinks for MongoDB)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongod.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongod.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongodb.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongodb.service
+# NATS (install nats-server 2.12.2 into VM rootfs)
+ADD rootfs/files/scripts/install_nats.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_nats.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for nats)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/nats-server.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/nats-server.service || true
+# CockroachDB (install cockroach binary into VM rootfs)
+ADD rootfs/files/scripts/install_cockroachdb.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_cockroachdb.sh
+# Knot DNS (install knot into VM rootfs)
+ADD rootfs/files/scripts/install_knot.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_knot.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for knot)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/knot.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/knot.service || true
+# OpenResty (install into VM rootfs so provisioner only configures and manages it)
+ADD rootfs/files/scripts/install_openresty.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_openresty.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for openresty)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/openresty.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/openresty.service || true
+RUN mkdir -p ${OUTPUTDIR}/etc/resty-auto-ssl/storage \
+    && chown -R www-data:www-data ${OUTPUTDIR}/etc/resty-auto-ssl
+# disable autostart without requiring systemd during build (remove enable symlinks)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
+    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service
+# ensure swarm-cloud-api, cockroachdb and wireguard are disabled by default (no systemd enable symlinks)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/cockroachdb.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/wg-quick@wg0.service
+# cleanup apt lists and policy-rc.d
+RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
+    && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
+
+ADD rootfs/files/scripts/install_provision_plugin_sdk.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_provision_plugin_sdk.sh
 
 # Build info
 ARG SP_VM_IMAGE_VERSION
@@ -360,7 +451,7 @@ RUN wget -O /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc https://code.
 RUN wget -O /buildroot/src/edk2_2024.05.orig.tar.xz https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05.orig.tar.xz
 RUN dpkg-source -x /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc /buildroot/edk2_build
 WORKDIR /buildroot/edk2_build
-RUN apt build-dep -y ./
+# RUN apt update && apt -y build-dep ./
 RUN make -C BaseTools
 ADD bios/files/configs/0001-SuperProtocol_Rtmr0.patch /buildroot/edk2_build/debian/patches/SuperProtocol/
 RUN quilt import -p0 debian/patches/SuperProtocol/0001-SuperProtocol_Rtmr0.patch

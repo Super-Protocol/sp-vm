@@ -1,0 +1,17 @@
+[Unit]
+Description=Run Swarm setup scripts from /etc/swarm-service-launchers
+After=network-online.target swarm-db.service swarm-node.service
+Wants=network-online.target
+Requires=swarm-db.service swarm-node.service
+ConditionPathExists=/etc/swarm-service-launchers
+
+[Service]
+Type=oneshot
+WorkingDirectory=/
+ExecStart=/usr/local/bin/swarm-services.sh
+StandardOutput=append:/var/log/swarm-services.log
+StandardError=append:/var/log/swarm-services-err.log
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

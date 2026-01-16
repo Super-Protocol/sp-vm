@@ -1,0 +1,18 @@
+[Unit]
+Description=Swarm Cloud API service
+After=network-online.target swarm-db.service
+Wants=network-online.target
+Requires=swarm-db.service
+
+[Service]
+Type=simple
+WorkingDirectory=/usr/local/lib/swarm-cloud
+ExecStart=/usr/local/bin/swarm-cloud-api.sh
+StandardOutput=append:/var/log/swarm-cloud-api.log
+StandardError=append:/var/log/swarm-cloud-api-err.log
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
