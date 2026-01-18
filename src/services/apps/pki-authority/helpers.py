@@ -5,6 +5,7 @@ PKI Authority LXC container management helpers.
 
 import os
 import re
+import secrets
 import shutil
 import ssl
 import subprocess
@@ -362,6 +363,19 @@ def patch_yaml_config(cpu_type: str, vm_mode: VMMode, pki_domain: str):
     if "ownChallenge" not in config["pki"]:
         config["pki"]["ownChallenge"] = {}
     config["pki"]["ownChallenge"]["type"] = cpu_type
+
+    # For untrusted, generate random deviceIdHex (32 bytes)
+    if cpu_type == "untrusted":
+        device_id_hex = secrets.token_hex(32)
+        config["pki"]["ownChallenge"]["deviceIdHex"] = device_id_hex
+        log(LogLevel.INFO, f"Generated deviceIdHex for untrusted type: {device_id_hex}")
+
+        # Add 'untrusted' to allowedChallenges if not present
+        if "allowedChallenges" not in config["pki"]:
+            config["pki"]["allowedChallenges"] = []
+        if "untrusted" not in config["pki"]["allowedChallenges"]:
+            config["pki"]["allowedChallenges"].append("untrusted")
+            log(LogLevel.INFO, "Added 'untrusted' to allowedChallenges")
 
     # Set ownDomain from parameter
     if pki_domain:
