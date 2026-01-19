@@ -22,6 +22,18 @@ log() {
 	printf "[%s] [download-sp-swarm-services] %s\n" "$ts" "$*" >&2;
 }
 
+is_cloud_mode() {
+	# Cloud images are built with SP_VM_IMAGE_VERSION like: cloud-build-<run_number>
+	if [[ -f /etc/sp-release ]] && grep -q "cloud-build" /etc/sp-release 2>/dev/null; then
+		return 0
+	fi
+	# Also exposed via kernel cmdline as: build=<SP_VM_IMAGE_VERSION>
+	if [[ -r /proc/cmdline ]] && grep -q "build=cloud-build" /proc/cmdline 2>/dev/null; then
+		return 0
+	fi
+	return 1
+}
+
 # Helpers: YAML block extraction and PEM normalization
 list_top_keys() {
 		awk 'BEGIN{FS":"} /^[A-Za-z0-9_.-]+:[[:space:]]*/{print $1}' "$YAML_PATH" | sort -u || true
@@ -160,6 +172,12 @@ parse_branch_name() {
 }
 
 main() {
+	# In cloud mode this unit/script must be a no-op.
+	if is_cloud_mode; then
+		log "Cloud mode detected — exiting"
+		exit 0
+	fi
+
 	# If sp-swarm-services YAML is missing, do nothing and exit 0
 	if [[ ! -f "$SP_SWARM_SERVICES_YAML_PATH" ]]; then
 		log "sp-swarm-services.yaml not found: $SP_SWARM_SERVICES_YAML_PATH — exiting"
