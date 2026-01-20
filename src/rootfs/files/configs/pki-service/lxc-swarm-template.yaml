@@ -25,10 +25,11 @@ pki:
       type: super
       keysPath: /app/keys
   mode:
-    role: subroot
-    attestationServiceSource:
-      type: swarm
-      mode: init
-      storage:
+    role: swarm
+    swarmMode: init
+    storage:
         storageType: file
         storageFolder: /app/swarm-storage
+    networkSettings:
+      networkType: trusted
+

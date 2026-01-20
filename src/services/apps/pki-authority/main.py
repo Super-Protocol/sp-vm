@@ -17,6 +17,7 @@ from helpers import (
     delete_iptables_rules,
     detect_cpu_type,
     detect_vm_mode,
+    detect_network_type,
     patch_yaml_config,
     patch_lxc_config,
     setup_iptables,
@@ -30,7 +31,7 @@ from helpers import (
     read_property_from_fs,
     LogLevel,
     log,
-    get_pki_domain,
+    get_pki_authority_param,
 )
 
 # Configuration
@@ -48,6 +49,8 @@ class EventHandler:
     ]
     PROP_INITIALIZED = f"{AUTHORITY_SERVICE_PREFIX}initialized"
     PROP_PKI_DOMAIN = f"{AUTHORITY_SERVICE_PREFIX}pki_domain"
+    PROP_NETWORK_KEY_HASH = f"{AUTHORITY_SERVICE_PREFIX}network_key_hash"
+    PROP_NETWORK_TYPE = f"{AUTHORITY_SERVICE_PREFIX}network_type"
 
     def __init__(self, input_data: PluginInput):
         self.input_data = input_data
@@ -63,13 +66,15 @@ class EventHandler:
         self.authority_config = {prop["name"]: prop["value"] for prop in self.authority_props}
 
         self.pki_domain = self.authority_config.get(self.PROP_PKI_DOMAIN, "")
+        self.network_key_hash = self.authority_config.get(self.PROP_NETWORK_KEY_HASH, "")
+        self.network_type = self.authority_config.get(self.PROP_NETWORK_TYPE, "")
 
         # Output parameters
         self.status = None
         self.error_message = None
         self.cluster_properties = {}
 
-    def get_redis_tunnel_ips(self) -> list[str]:
+    def _get_redis_tunnel_ips(self) -> list[str]:
         """Get list of Redis node tunnel IPs."""
         redis_node_props = self.state_json.get("redisNodeProperties", [])
         wg_props = self.state_json.get("wgNodeProperties", [])
@@ -84,15 +89,15 @@ class EventHandler:
 
         return sorted(set(redis_hosts))
 
-    def get_redis_connection_info(self) -> list[tuple[str, int]]:
+    def _get_redis_connection_info(self) -> list[tuple[str, int]]:
         """Get Redis cluster connection endpoints.
 
         Returns list of (host, port) tuples for Redis nodes.
         """
-        redis_tunnel_ips = self.get_redis_tunnel_ips()
+        redis_tunnel_ips = self._get_redis_tunnel_ips()
         return [(ip, 6379) for ip in redis_tunnel_ips]
 
-    def create_gateway_endpoints(self):
+    def _create_gateway_endpoints(self):
         """Create and update gateway endpoints in Redis."""
         if not self.is_leader:
             return
@@ -106,7 +111,7 @@ class EventHandler:
                 current_endpoints.append(tunnel_ip)
 
         # Get Redis connection info
-        redis_endpoints = self.get_redis_connection_info()
+        redis_endpoints = self._get_redis_connection_info()
 
         if not redis_endpoints and current_endpoints:
             self.status = "postponed"
@@ -206,10 +211,10 @@ class EventHandler:
             self.error_message = error_msg
             log(LogLevel.ERROR, error_msg)
 
-    def create_output(self) -> PluginOutput:
+    def _create_output(self) -> PluginOutput:
         """Create plugin output based on current status."""
         if self.status == "completed":
-            self.create_gateway_endpoints()
+            self._create_gateway_endpoints()
         elif self.status == "postponed":
             log(LogLevel.INFO, f"Apply postponed: {self.error_message}")
         elif self.status == "error":
@@ -226,161 +231,287 @@ class EventHandler:
             )
         )
 
-    # pylint: disable=too-many-locals,too-many-return-statements
-    # pylint: disable=too-many-branches,too-many-statements
     def apply(self) -> PluginOutput:
         """Apply PKI Authority configuration."""
+        # Basic validation
         if not isinstance(self.state_json, dict):
             self.status = "error"
             self.error_message = "Invalid state format"
-            return self.create_output()
+            return self._create_output()
 
         local_tunnel_ip = get_node_tunnel_ip(self.local_node_id, self.wg_props)
         if not local_tunnel_ip:
             self.status = "error"
             self.error_message = "Local node has no WireGuard tunnel IP"
-            return self.create_output()
+            return self._create_output()
 
         try:
             vm_mode = detect_vm_mode()
-            initialized = self.authority_config.get(self.PROP_INITIALIZED)
 
-            # If initialized is true, verify all required properties are present
-            if initialized == "true":
-                missing = []
+            # Route to appropriate handler based on VM mode
+            if vm_mode == VMMode.SWARM_INIT:
+                return self._handle_swarm_init(local_tunnel_ip)
 
-                for prop in self.AUTHORITY_SERVICE_PROPERTIES:
-                    prop_name = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
-                    prop_value = self.authority_config.get(prop_name, "")
-
-                    if not prop_value:
-                        missing.append(prop_name)
-
-                if not self.pki_domain:
-                    self.pki_domain = get_pki_domain()
-                    missing.append(self.PROP_PKI_DOMAIN)
-
-                if missing:
-                    error_msg = (
-                        f"Service marked as initialized but missing properties: "
-                        f"{', '.join(missing)}"
-                    )
-                    log(LogLevel.ERROR, error_msg)
-                    initialized = "false"
-
-            if vm_mode == VMMode.SWARM_NORMAL and initialized != "true":
-                self.status = "postponed"
-                self.error_message = (
-                    "Waiting for authority service properties to be initialized"
-                )
-                return self.create_output()
-
-            container = LXCContainer(PKI_SERVICE_NAME)
-
-            # Start or restart LXC container
-            if container.is_running():
-                if initialized != "true" or self.is_restart_required():
-                    exit_code = container.stop(
-                        graceful_timeout=30, command_timeout=60
-                    )
-                    if exit_code != 0:
-                        raise Exception(
-                            f"Failed to stop container with exit code {exit_code}"
-                        )
-
-            if container.is_running():
-                log(
-                    LogLevel.INFO,
-                    f"Container {PKI_SERVICE_NAME} is already running, "
-                    f"no restart required"
-                )
-                self.status = "completed"
-                return self.create_output()
-
-            cpu_type = detect_cpu_type()
-            if not self.pki_domain:
-                self.pki_domain = get_pki_domain()
-            patch_yaml_config(cpu_type, vm_mode, self.pki_domain)
-            patch_lxc_config(cpu_type)
-            update_pccs_url()
-            setup_iptables(local_tunnel_ip)
-
-            if initialized == "true":
-                for prop in self.AUTHORITY_SERVICE_PROPERTIES:
-                    prop_name = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
-                    prop_value = self.authority_config.get(prop_name, "")
-                    save_property_into_fs(prop, base64.b64decode(prop_value))
-
-            exit_code = container.start(timeout=30)
-            if exit_code != 0:
-                raise Exception(
-                    f"Failed to start container with exit code {exit_code}"
-                )
-
-            log(LogLevel.INFO, f"LXC container {PKI_SERVICE_NAME} is running")
-
-            # If not initialized, wait for tee-pki service to generate property files
-            if initialized != "true":
-                missing_properties = self.AUTHORITY_SERVICE_PROPERTIES.copy()
-                timeout = 30
-                interval = 5
-                elapsed = 0
-                collected_properties = {}
-
-                while elapsed < timeout:
-                    # Try to read each missing property
-                    for prop in missing_properties[:]:
-                        success, value = read_property_from_fs(prop)
-
-                        if success:
-                            prop_key = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
-                            collected_properties[prop_key] = \
-                                base64.b64encode(value).decode()
-                            missing_properties.remove(prop)
-
-                    # Check if all properties collected
-                    if not missing_properties:
-                        log(
-                            LogLevel.INFO,
-                            "All property files have been generated "
-                            "by tee-pki service"
-                        )
-                        collected_properties[self.PROP_PKI_DOMAIN] = self.pki_domain
-                        collected_properties[self.PROP_INITIALIZED] = "true"
-
-                        self.status = "completed"
-                        self.cluster_properties = collected_properties
-                        return self.create_output()
-
-                    # Show what's still missing
-                    log(
-                        LogLevel.INFO,
-                        f"Waiting for property files. Missing: "
-                        f"{', '.join(missing_properties)} (elapsed: {elapsed}s)"
-                    )
-
-                    time.sleep(interval)
-                    elapsed += interval
-
-                # Timeout reached
-                self.status = "postponed"
-                self.error_message = (
-                    f"Timeout waiting for tee-pki to generate property files: "
-                    f"{', '.join(missing_properties)}"
-                )
-                return self.create_output()
-
-            self.status = "completed"
-            return self.create_output()
+            # SWARM_NORMAL
+            return self._handle_swarm_normal(local_tunnel_ip)
 
         except Exception as error:  # pylint: disable=broad-exception-caught
             error_msg = f"Apply failed: {str(error)}"
             log(LogLevel.ERROR, error_msg)
             self.status = "error"
             self.error_message = error_msg
-            return self.create_output()
+            return self._create_output()
 
-    def is_restart_required(self) -> bool:
+    def _stop_container_if_running(self, container: LXCContainer) -> None:
+        """Stop container if it's running."""
+        if container.is_running():
+            log(LogLevel.INFO, "Stopping existing container")
+            exit_code = container.stop(graceful_timeout=30, command_timeout=60)
+            if exit_code != 0:
+                raise Exception(f"Failed to stop container with exit code {exit_code}")
+
+    def _configure_and_start_container(
+        self, container: LXCContainer, local_tunnel_ip: str, vm_mode: VMMode
+    ) -> None:
+        """Configure and start container."""
+        cpu_type = detect_cpu_type()
+        patch_yaml_config(
+            cpu_type,
+            vm_mode,
+            self.pki_domain,
+            self.network_type,
+            self.network_key_hash
+        )
+        patch_lxc_config(cpu_type)
+        update_pccs_url()
+        setup_iptables(local_tunnel_ip)
+
+        exit_code = container.start(timeout=30)
+        if exit_code != 0:
+            raise Exception(f"Failed to start container with exit code {exit_code}")
+
+        log(LogLevel.INFO, f"LXC container {PKI_SERVICE_NAME} started")
+
+    def _check_for_missing_properties(self) -> list[str]:
+        """Check for missing required properties.
+
+        Returns:
+            List of missing property names (empty if all present)
+        """
+        missing = []
+
+        for prop in self.AUTHORITY_SERVICE_PROPERTIES:
+            prop_name = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
+            if not self.authority_config.get(prop_name, ""):
+                missing.append(prop_name)
+
+        if not self.pki_domain:
+            missing.append(self.PROP_PKI_DOMAIN)
+
+        if not self.network_key_hash:
+            missing.append(self.PROP_NETWORK_KEY_HASH)
+
+        if not self.network_type:
+            missing.append(self.PROP_NETWORK_TYPE)
+
+        return missing
+
+    def _wait_for_properties_generation(self) -> PluginOutput:
+        """Wait for tee-pki service to generate ALL property files."""
+        missing_properties = self.AUTHORITY_SERVICE_PROPERTIES.copy()
+        timeout = 30
+        interval = 5
+        elapsed = 0
+        collected_properties = {}
+
+        while elapsed < timeout:
+            # Try to read each missing property
+            for prop in missing_properties[:]:
+                success, value = read_property_from_fs(prop)
+
+                if success:
+                    prop_key = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
+                    collected_properties[prop_key] = base64.b64encode(value).decode()
+                    missing_properties.remove(prop)
+
+            # Check if ALL properties collected
+            if not missing_properties:
+                log(
+                    LogLevel.INFO,
+                    "All property files have been generated by tee-pki service"
+                )
+                # Set initialized flag ONLY when all properties are ready
+                collected_properties[self.PROP_PKI_DOMAIN] = self.pki_domain
+                collected_properties[self.PROP_NETWORK_KEY_HASH] = self.network_key_hash
+                collected_properties[self.PROP_NETWORK_TYPE] = self.network_type
+                collected_properties[self.PROP_INITIALIZED] = "true"
+
+                self.status = "completed"
+                self.cluster_properties = collected_properties
+                return self._create_output()
+
+            log(
+                LogLevel.INFO,
+                f"Waiting for property files. Missing: "
+                f"{', '.join(missing_properties)} (elapsed: {elapsed}s)"
+            )
+
+            time.sleep(interval)
+            elapsed += interval
+
+        # Timeout - NOT all properties collected, do NOT set initialized flag
+        self.status = "postponed"
+        self.error_message = (
+            f"Timeout waiting for tee-pki to generate property files: "
+            f"{', '.join(missing_properties)}"
+        )
+        return self._create_output()
+
+    def _handle_swarm_init(self, local_tunnel_ip: str) -> PluginOutput:
+        """Handle swarm-init mode: read external sources and initialize properties."""
+        # Step 1: Get pki_domain from external source (file)
+        if not self.pki_domain:
+            try:
+                self.pki_domain = get_pki_authority_param("domain")
+                log(LogLevel.INFO, f"Read PKI domain from external source: {self.pki_domain}")
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                error_msg = f"Failed to get PKI domain from external source: {error}"
+                log(LogLevel.ERROR, error_msg)
+                self.status = "error"
+                self.error_message = error_msg
+                return self._create_output()
+
+        # Get network_key_hash from external source (file)
+        if not self.network_key_hash:
+            try:
+                self.network_key_hash = get_pki_authority_param("networkKeyHashHex")
+                log(
+                    LogLevel.INFO,
+                    f"Read network key hash from external source: {self.network_key_hash}"
+                )
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                error_msg = f"Failed to get network key hash from external source: {error}"
+                log(LogLevel.ERROR, error_msg)
+                self.status = "error"
+                self.error_message = error_msg
+                return self._create_output()
+
+        # Get network_type from kernel cmdline
+        if not self.network_type:
+            self.network_type = detect_network_type()
+            log(LogLevel.INFO, f"Detected network type: {self.network_type}")
+
+        container = LXCContainer(PKI_SERVICE_NAME)
+        initialized = self.authority_config.get(self.PROP_INITIALIZED)
+
+        # Step 2: Check initialized flag
+        if initialized == "true":
+            # Step 3: Verify ALL required properties are present
+            missing = self._check_for_missing_properties()
+
+            # Step 4: If ANY property is missing - ERROR
+            if missing:
+                error_msg = (
+                    f"Service marked as initialized but missing required properties: "
+                    f"{', '.join(missing)}"
+                )
+                log(LogLevel.ERROR, error_msg)
+                self.status = "error"
+                self.error_message = error_msg
+                return self._create_output()
+
+            # Step 5: Compare DB properties with FS (is_restart_required)
+            # Step 6: If mismatch - restart container and restore properties
+            if container.is_running() and not self._is_restart_required():
+                # Everything matches, container running, nothing to do
+                log(LogLevel.INFO, "Container running, no changes detected")
+                self.status = "completed"
+                return self._create_output()
+
+            # Need to restart or start container
+            if container.is_running():
+                log(LogLevel.INFO, "Configuration changed, restarting container")
+                self._stop_container_if_running(container)
+
+            # Restore properties from DB to filesystem
+            for prop in self.AUTHORITY_SERVICE_PROPERTIES:
+                prop_name = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
+                prop_value = self.authority_config.get(prop_name, "")
+                save_property_into_fs(prop, base64.b64decode(prop_value))
+
+            # Start container
+            self._configure_and_start_container(container, local_tunnel_ip, VMMode.SWARM_INIT)
+            self.status = "completed"
+            return self._create_output()
+
+        # Step 7: Not initialized - restart container and wait for properties generation
+        log(LogLevel.INFO, "Service not initialized, starting initialization process")
+
+        # Restart container if running
+        if container.is_running():
+            log(LogLevel.INFO, "Stopping container for initialization")
+            self._stop_container_if_running(container)
+
+        # Start container
+        self._configure_and_start_container(container, local_tunnel_ip, VMMode.SWARM_INIT)
+
+        # Wait for properties generation
+        return self._wait_for_properties_generation()
+
+    def _handle_swarm_normal(self, local_tunnel_ip: str) -> PluginOutput:
+        """Handle swarm-normal mode: read ONLY from properties (DB), no external sources."""
+        initialized = self.authority_config.get(self.PROP_INITIALIZED)
+
+        # If not initialized - wait for swarm-init to complete
+        if initialized != "true":
+            self.status = "postponed"
+            self.error_message = "Waiting for authority service properties to be initialized"
+            return self._create_output()
+
+        # Initialized - verify ALL required properties are present
+        missing = self._check_for_missing_properties()
+
+        # If ANY property is missing - ERROR (should never happen if initialized=true)
+        if missing:
+            error_msg = (
+                f"Service marked as initialized but missing required properties: "
+                f"{', '.join(missing)}"
+            )
+            log(LogLevel.ERROR, error_msg)
+            self.status = "error"
+            self.error_message = error_msg
+            return self._create_output()
+
+        # All properties present - manage container
+        container = LXCContainer(PKI_SERVICE_NAME)
+
+        # Check if restart is needed
+        if container.is_running():
+            if self._is_restart_required():
+                log(LogLevel.INFO, "Configuration changed, restarting container")
+                self._stop_container_if_running(container)
+            else:
+                log(
+                    LogLevel.INFO,
+                    f"Container {PKI_SERVICE_NAME} is already running, "
+                    f"no restart required"
+                )
+                self.status = "completed"
+                return self._create_output()
+
+        # Restore properties to filesystem before starting container
+        for prop in self.AUTHORITY_SERVICE_PROPERTIES:
+            prop_name = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
+            prop_value = self.authority_config.get(prop_name, "")
+            save_property_into_fs(prop, base64.b64decode(prop_value))
+
+        # Configure and start container
+        self._configure_and_start_container(container, local_tunnel_ip, VMMode.SWARM_NORMAL)
+
+        self.status = "completed"
+        return self._create_output()
+
+    def _is_restart_required(self) -> bool:
         """Check if container restart is required based on config changes."""
         for prop in self.AUTHORITY_SERVICE_PROPERTIES:
             prop_name = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
@@ -411,13 +542,13 @@ class EventHandler:
         log(LogLevel.INFO, "No configuration changes detected")
         return False
 
-    def delete_route_from_redis(self) -> None:
+    def _delete_route_from_redis(self) -> None:
         """Delete the PKI Authority route from Redis Cluster.
 
         Raises:
             Exception: If deletion fails
         """
-        redis_endpoints = self.get_redis_connection_info()
+        redis_endpoints = self._get_redis_connection_info()
 
         if not redis_endpoints:
             log(LogLevel.WARN, "No Redis endpoints available, skipping route deletion")
@@ -460,7 +591,7 @@ class EventHandler:
                     LogLevel.INFO,
                     "This is the last PKI Authority node, deleting route from Redis"
                 )
-                self.delete_route_from_redis()
+                self._delete_route_from_redis()
 
             log(LogLevel.INFO, "PKI Authority destroyed")
             return PluginOutput(

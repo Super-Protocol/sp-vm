@@ -47,7 +47,6 @@ def log(level: LogLevel, message: str):
 
 class VMMode(Enum):
     """VM mode types."""
-    LEGACY = "legacy"
     SWARM_INIT = "swarm-init"
     SWARM_NORMAL = "swarm-normal"
 
@@ -167,7 +166,9 @@ class LXCContainer:
             log(LogLevel.ERROR, f"Failed to create container: {error}")
             return False
 
-    def is_service_healthy(self, min_uptime: int = 120, healthcheck_url: str = "/healthcheck") -> bool:
+    def is_service_healthy(
+        self, min_uptime: int = 120, healthcheck_url: str = "/healthcheck"
+    ) -> bool:
         """Check if service inside container is running and healthy."""
         try:
             # 1. Check service status inside container
@@ -278,8 +279,6 @@ def detect_vm_mode() -> VMMode:
         with open("/proc/cmdline", "r", encoding="utf-8") as file:
             cmdline = file.read()
 
-        if "vm_mode=legacy" in cmdline:
-            return VMMode.LEGACY
         if "vm_mode=swarm-init" in cmdline:
             return VMMode.SWARM_INIT
         return VMMode.SWARM_NORMAL
@@ -287,15 +286,35 @@ def detect_vm_mode() -> VMMode:
         return VMMode.SWARM_NORMAL
 
 
-def get_pki_domain() -> str:
-    """Read PKI authority domain from swarm-env.yaml.
+def detect_network_type() -> str:
+    """Detect network type from kernel command line.
+    
+    Returns:
+        'untrusted' if allow_untrusted=true is present in cmdline, otherwise 'trusted'.
+    """
+    try:
+        with open("/proc/cmdline", "r", encoding="utf-8") as file:
+            cmdline = file.read()
+
+        if "allow_untrusted=true" in cmdline:
+            return "untrusted"
+        return "trusted"
+    except FileNotFoundError:
+        return "trusted"
+
+
+def get_pki_authority_param(param_name: str) -> str:
+    """Read PKI authority parameter from swarm-env.yaml.
+
+    Args:
+        param_name: Name of the parameter under pki-authority section.
 
     Returns:
-        Domain string.
+        Parameter value as string.
 
     Raises:
         FileNotFoundError: If swarm-env.yaml does not exist.
-        ValueError: If configuration is empty or domain is not found.
+        ValueError: If configuration is empty or parameter is not found.
         Exception: For other errors during reading.
     """
     swarm_env_path = Path(SWARM_ENV_YAML)
@@ -314,37 +333,39 @@ def get_pki_domain() -> str:
             log(LogLevel.ERROR, error_msg)
             raise ValueError(error_msg)
 
-        domain = config.get("pki-authority", {}).get("domain")
-        if not domain:
-            error_msg = f"No domain found in {SWARM_ENV_YAML} under pki-authority.domain"
+        param_value = config.get("pki-authority", {}).get(param_name)
+        if not param_value:
+            error_msg = (
+                f"No {param_name} found in {SWARM_ENV_YAML} "
+                f"under pki-authority.{param_name}"
+            )
             log(LogLevel.ERROR, error_msg)
             raise ValueError(error_msg)
 
-        log(LogLevel.INFO, f"Read PKI domain from config: {domain}")
-        return domain
+        log(LogLevel.INFO, f"Read {param_name} from config: {param_value}")
+        return param_value
 
     except (FileNotFoundError, ValueError):
         raise
     except Exception as error:  # pylint: disable=broad-exception-caught
-        error_msg = f"Failed to read domain from {SWARM_ENV_YAML}: {error}"
+        error_msg = f"Failed to read {param_name} from {SWARM_ENV_YAML}: {error}"
         log(LogLevel.ERROR, error_msg)
         raise Exception(error_msg) from error
 
 
-def patch_yaml_config(cpu_type: str, vm_mode: VMMode, pki_domain: str):
+def patch_yaml_config(
+    cpu_type: str,
+    vm_mode: VMMode,
+    pki_domain: str,
+    network_type: str,
+    network_key_hash: str
+):
     """Set own challenge type in LXC container configuration."""
-    if vm_mode == VMMode.LEGACY:
-        template_name = "lxc-legacy-vm-template.yaml"
-        log(
-            LogLevel.INFO,
-            f"Detected {vm_mode.value} mode, using legacy template"
-        )
-    else:
-        template_name = "lxc-swarm-template.yaml"
-        log(
-            LogLevel.INFO,
-            f"Detected {vm_mode.value} mode, using swarm template"
-        )
+    template_name = "lxc-swarm-template.yaml"
+    log(
+        LogLevel.INFO,
+        f"Detected {vm_mode.value} mode, using swarm template"
+    )
 
     src_yaml = Path(f"/etc/super/containers/pki-authority/{template_name}")
     dst_yaml = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/conf/lxc.yaml")
@@ -382,16 +403,25 @@ def patch_yaml_config(cpu_type: str, vm_mode: VMMode, pki_domain: str):
         config["pki"]["ownDomain"] = pki_domain
         log(LogLevel.INFO, f"Set ownDomain to: {pki_domain}")
 
-    # Set mode.attestationServiceSource.mode for swarm modes
-    if vm_mode in (VMMode.SWARM_INIT, VMMode.SWARM_NORMAL):
-        if "mode" not in config["pki"]:
-            config["pki"]["mode"] = {}
-        if "attestationServiceSource" not in config["pki"]["mode"]:
-            config["pki"]["mode"]["attestationServiceSource"] = {}
+    # Set mode.swarmMode
+    if "mode" not in config["pki"]:
+        config["pki"]["mode"] = {}
 
-        mode_value = "init" if vm_mode == VMMode.SWARM_INIT else "normal"
-        config["pki"]["mode"]["attestationServiceSource"]["mode"] = mode_value
-        log(LogLevel.INFO, f"Set attestationServiceSource mode to: {mode_value}")
+    mode_value = "init" if vm_mode == VMMode.SWARM_INIT else "normal"
+    config["pki"]["mode"]["swarmMode"] = mode_value
+    log(LogLevel.INFO, f"Set swarmMode to: {mode_value}")
+
+    # Set networkSettings
+    if network_type and network_key_hash:
+        config["pki"]["mode"]["networkSettings"] = {
+            "networkType": network_type,
+            "networkKeyHashHex": network_key_hash
+        }
+        log(
+            LogLevel.INFO,
+            f"Set networkSettings: networkType={network_type}, "
+            f"networkKeyHashHex={network_key_hash}"
+        )
 
     # Ensure destination directory exists
     dst_yaml.parent.mkdir(parents=True, exist_ok=True)
@@ -765,5 +795,3 @@ def read_property_from_fs(file_name: str) -> tuple[bool, bytes]:
         if content:
             return (True, content)
     return (False, b"")
-
-
