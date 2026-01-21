@@ -269,9 +269,7 @@ RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/sy
 # swarm services
 ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
 RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
-ADD rootfs/files/configs/etc/systemd/system/swarm-cloud-api.service ${OUTPUTDIR}/etc/systemd/system/swarm-cloud-api.service
 ADD rootfs/files/configs/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
-# RUN ln -sf /etc/systemd/system/swarm-cloud-api.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-cloud-api.service"
 ADD rootfs/files/configs/etc/systemd/system/swarm-node.service ${OUTPUTDIR}/etc/systemd/system/swarm-node.service
 ADD rootfs/files/configs/usr/local/bin/swarm-node.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
 RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-node.service"
@@ -324,16 +322,15 @@ RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
 
 # make /opt/swarm-cloud-api point to built swarm-cloud artifacts
-RUN mkdir -p ${OUTPUTDIR}/opt && ln -s /usr/local/lib/swarm-cloud ${OUTPUTDIR}/opt/swarm-cloud-api
+RUN mkdir -p ${OUTPUTDIR}/opt && ln -s /usr/local/lib/swarm-cloud-api ${OUTPUTDIR}/opt/swarm-cloud-api
 
 # swarm-cloud-api runtime wrappers (Node.js entrypoints)
 RUN mkdir -p ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api
 ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/swarm-cloud-api ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api
-# canonical schema-sync entrypoint used by the provision plugin via /opt/swarm-cloud-api/schema-sync
-ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/schema-sync ${OUTPUTDIR}/usr/local/lib/swarm-cloud/schema-sync
+ADD rootfs/files/configs/usr/local/lib/swarm-cloud-api/schema-sync ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
 RUN chmod +x \
     ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api \
-    ${OUTPUTDIR}/usr/local/lib/swarm-cloud/schema-sync
+    ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
 
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
@@ -392,8 +389,7 @@ RUN mkdir -p ${OUTPUTDIR}/etc/resty-auto-ssl/storage \
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
     &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service
 # ensure swarm-cloud-api, cockroachdb and wireguard are disabled by default (no systemd enable symlinks)
-RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-cloud-api.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/cockroachdb.service \
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/cockroachdb.service \
     && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/wg-quick@wg0.service
 # cleanup apt lists and policy-rc.d
 RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \

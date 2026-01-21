@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -euo pipefail
 
 # This script bootstraps the swarm-cloud-api service into SwarmDB via swarm-cli.
@@ -6,7 +7,7 @@ set -euo pipefail
 #
 # Notes:
 # - The swarm-cloud-api manifest and main.py are provided by the image at:
-#     /etc/swarm-services/swarm-cloud-api/{manifest.yaml, main.py}
+#     /etc/swarm-cloud/services/swarm-cloud-api/{manifest.yaml, main.py}
 #   We do not reimplement any logic here, only register ClusterPolicy and ClusterService.
 # - swarm-cloud-api depends on CockroachDB, Redis, WireGuard and Knot as expressed
 #   in its own manifest and provision plugin.
@@ -27,8 +28,8 @@ CLUSTER_ID=${CLUSTER_ID:-swarm-cloud-api}
 
 # Location and manifest inside the container.
 # IMPORTANT: This script runs only on one node. All nodes must have the same location available already
-# (baked into the image), so we point to /etc/swarm-services/${SERVICE_NAME}.
-LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
+# (baked into the image), so we point to /etc/swarm-cloud/services/${SERVICE_NAME}.
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
 MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
@@ -37,7 +38,6 @@ if [ ! -f "$MANIFEST_PATH" ]; then
   exit 1
 fi
 
-CLI="$(dirname "$0")/swarm-cli.sh"
 echo "Ensuring ClusterPolicy '$CLUSTER_POLICY'..."
 if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
   python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicies "$CLUSTER_POLICY" >/dev/null 2>&1; then
@@ -55,7 +55,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterService '$SERVICE_PK'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SERVICE_PK" --name="$SERVICE_NAME" --cluster_policy="$CLUSTER_POLICY" --version="$SERVICE_VERSION" --location="$LOCATION_PATH" --omit-command-init
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SERVICE_PK" --name="$SERVICE_NAME" --cluster_policy="$CLUSTER_POLICY" --version="$SERVICE_VERSION" --location="$LOCATION_PATH"
 fi
 
 echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."
