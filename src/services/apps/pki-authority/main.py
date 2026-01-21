@@ -69,10 +69,19 @@ class EventHandler:
         self.network_key_hash = self.authority_config.get(self.PROP_NETWORK_KEY_HASH, "")
         self.network_type = self.authority_config.get(self.PROP_NETWORK_TYPE, "")
 
+        # Read current pki_node_ready value
+        pki_node_props = self.state_json.get("pkiNodeProperties", [])
+        self.current_pki_node_ready = None
+        for prop in pki_node_props:
+            if prop.get("node_id") == self.local_node_id and prop.get("name") == "pki_node_ready":
+                self.current_pki_node_ready = prop.get("value")
+                break
+
         # Output parameters
         self.status = None
         self.error_message = None
         self.cluster_properties = {}
+        self.node_properties = {}
 
     def _get_redis_tunnel_ips(self) -> list[str]:
         """Get list of Redis node tunnel IPs."""
@@ -99,16 +108,16 @@ class EventHandler:
 
     def _create_gateway_endpoints(self):
         """Create and update gateway endpoints in Redis."""
-        if not self.is_leader:
-            return
-
-        # Get current endpoints from cluster nodes
+        # Get current endpoints from nodes with pki_node_ready=true
+        pki_node_props = self.state_json.get("pkiNodeProperties", [])
+        
         current_endpoints = []
-        for node in self.pki_cluster_nodes:
-            node_id = node.get("node_id")
-            tunnel_ip = get_node_tunnel_ip(node_id, self.wg_props)
-            if tunnel_ip:
-                current_endpoints.append(tunnel_ip)
+        for prop in pki_node_props:
+            if prop.get("name") == "pki_node_ready" and prop.get("value") == "true":
+                node_id = prop.get("node_id")
+                tunnel_ip = get_node_tunnel_ip(node_id, self.wg_props)
+                if tunnel_ip:
+                    current_endpoints.append(tunnel_ip)
 
         # Get Redis connection info
         redis_endpoints = self._get_redis_connection_info()
@@ -214,7 +223,8 @@ class EventHandler:
     def _create_output(self) -> PluginOutput:
         """Create plugin output based on current status."""
         if self.status == "completed":
-            self._create_gateway_endpoints()
+            if self.is_leader:
+                self._create_gateway_endpoints()
         elif self.status == "postponed":
             log(LogLevel.INFO, f"Apply postponed: {self.error_message}")
         elif self.status == "error":
@@ -228,39 +238,39 @@ class EventHandler:
             error_message=self.error_message,
             cluster_properties=(
                 self.cluster_properties if self.status == "completed" else None
-            )
+            ),
+            node_properties=self.node_properties if self.node_properties else None
         )
 
     def apply(self) -> PluginOutput:
         """Apply PKI Authority configuration."""
-        # Basic validation
-        if not isinstance(self.state_json, dict):
-            self.status = "error"
-            self.error_message = "Invalid state format"
-            return self._create_output()
-
-        local_tunnel_ip = get_node_tunnel_ip(self.local_node_id, self.wg_props)
-        if not local_tunnel_ip:
-            self.status = "error"
-            self.error_message = "Local node has no WireGuard tunnel IP"
-            return self._create_output()
-
         try:
+            # Basic validation
+            if not isinstance(self.state_json, dict):
+                self.status = "error"
+                self.error_message = "Invalid state format"
+                return self._create_output()
+
+            local_tunnel_ip = get_node_tunnel_ip(self.local_node_id, self.wg_props)
+            if not local_tunnel_ip:
+                self.status = "postponed"
+                self.error_message = "Waiting for WireGuard tunnel IP to be configured"
+                return self._create_output()
+
             vm_mode = detect_vm_mode()
 
-            # Route to appropriate handler based on VM mode
             if vm_mode == VMMode.SWARM_INIT:
-                return self._handle_swarm_init(local_tunnel_ip)
-
-            # SWARM_NORMAL
-            return self._handle_swarm_normal(local_tunnel_ip)
+                self._handle_swarm_init(local_tunnel_ip)
+            else:
+                self._handle_swarm_normal(local_tunnel_ip)
 
         except Exception as error:  # pylint: disable=broad-exception-caught
             error_msg = f"Apply failed: {str(error)}"
             log(LogLevel.ERROR, error_msg)
             self.status = "error"
             self.error_message = error_msg
-            return self._create_output()
+
+        return self._create_output()
 
     def _stop_container_if_running(self, container: LXCContainer) -> None:
         """Stop container if it's running."""
@@ -290,7 +300,11 @@ class EventHandler:
         if exit_code != 0:
             raise Exception(f"Failed to start container with exit code {exit_code}")
 
-        log(LogLevel.INFO, f"LXC container {PKI_SERVICE_NAME} started")
+        is_healthy, err_msg = self.health(timeout=30, interval=5)
+        if is_healthy:
+            log(LogLevel.INFO, f"LXC container {PKI_SERVICE_NAME} started and health check passed")
+        else:
+            log(LogLevel.WARN, f"LXC container {PKI_SERVICE_NAME} started but health check failed: {err_msg}")
 
     def _check_for_missing_properties(self) -> list[str]:
         """Check for missing required properties.
@@ -316,11 +330,9 @@ class EventHandler:
 
         return missing
 
-    def _wait_for_properties_generation(self) -> PluginOutput:
+    def _wait_for_properties_generation(self, timeout: int = 30, interval: int = 5) -> None:
         """Wait for tee-pki service to generate ALL property files."""
         missing_properties = self.AUTHORITY_SERVICE_PROPERTIES.copy()
-        timeout = 30
-        interval = 5
         elapsed = 0
         collected_properties = {}
 
@@ -348,7 +360,7 @@ class EventHandler:
 
                 self.status = "completed"
                 self.cluster_properties = collected_properties
-                return self._create_output()
+                return
 
             log(
                 LogLevel.INFO,
@@ -365,9 +377,8 @@ class EventHandler:
             f"Timeout waiting for tee-pki to generate property files: "
             f"{', '.join(missing_properties)}"
         )
-        return self._create_output()
 
-    def _handle_swarm_init(self, local_tunnel_ip: str) -> PluginOutput:
+    def _handle_swarm_init(self, local_tunnel_ip: str) -> None:
         """Handle swarm-init mode: read external sources and initialize properties."""
         # Step 1: Get pki_domain from external source (file)
         if not self.pki_domain:
@@ -379,7 +390,7 @@ class EventHandler:
                 log(LogLevel.ERROR, error_msg)
                 self.status = "error"
                 self.error_message = error_msg
-                return self._create_output()
+                return
 
         # Get network_key_hash from external source (file)
         if not self.network_key_hash:
@@ -394,7 +405,7 @@ class EventHandler:
                 log(LogLevel.ERROR, error_msg)
                 self.status = "error"
                 self.error_message = error_msg
-                return self._create_output()
+                return
 
         # Get network_type from kernel cmdline
         if not self.network_type:
@@ -418,7 +429,7 @@ class EventHandler:
                 log(LogLevel.ERROR, error_msg)
                 self.status = "error"
                 self.error_message = error_msg
-                return self._create_output()
+                return
 
             # Step 5: Compare DB properties with FS (is_restart_required)
             # Step 6: If mismatch - restart container and restore properties
@@ -426,7 +437,7 @@ class EventHandler:
                 # Everything matches, container running, nothing to do
                 log(LogLevel.INFO, "Container running, no changes detected")
                 self.status = "completed"
-                return self._create_output()
+                return
 
             # Need to restart or start container
             if container.is_running():
@@ -442,7 +453,7 @@ class EventHandler:
             # Start container
             self._configure_and_start_container(container, local_tunnel_ip, VMMode.SWARM_INIT)
             self.status = "completed"
-            return self._create_output()
+            return
 
         # Step 7: Not initialized - restart container and wait for properties generation
         log(LogLevel.INFO, "Service not initialized, starting initialization process")
@@ -454,11 +465,11 @@ class EventHandler:
 
         # Start container
         self._configure_and_start_container(container, local_tunnel_ip, VMMode.SWARM_INIT)
-
         # Wait for properties generation
-        return self._wait_for_properties_generation()
+        self._wait_for_properties_generation(timeout=30, interval=5)
 
-    def _handle_swarm_normal(self, local_tunnel_ip: str) -> PluginOutput:
+
+    def _handle_swarm_normal(self, local_tunnel_ip: str) -> None:
         """Handle swarm-normal mode: read ONLY from properties (DB), no external sources."""
         initialized = self.authority_config.get(self.PROP_INITIALIZED)
 
@@ -466,7 +477,7 @@ class EventHandler:
         if initialized != "true":
             self.status = "postponed"
             self.error_message = "Waiting for authority service properties to be initialized"
-            return self._create_output()
+            return
 
         # Initialized - verify ALL required properties are present
         missing = self._check_for_missing_properties()
@@ -480,7 +491,7 @@ class EventHandler:
             log(LogLevel.ERROR, error_msg)
             self.status = "error"
             self.error_message = error_msg
-            return self._create_output()
+            return
 
         # All properties present - manage container
         container = LXCContainer(PKI_SERVICE_NAME)
@@ -497,7 +508,7 @@ class EventHandler:
                     f"no restart required"
                 )
                 self.status = "completed"
-                return self._create_output()
+                return
 
         # Restore properties to filesystem before starting container
         for prop in self.AUTHORITY_SERVICE_PROPERTIES:
@@ -509,7 +520,6 @@ class EventHandler:
         self._configure_and_start_container(container, local_tunnel_ip, VMMode.SWARM_NORMAL)
 
         self.status = "completed"
-        return self._create_output()
 
     def _is_restart_required(self) -> bool:
         """Check if container restart is required based on config changes."""
@@ -607,6 +617,52 @@ class EventHandler:
                 status="error", error_message=error_msg, local_state=self.local_state
             )
 
+    def health(self, timeout: int = 0, interval: int = 5) -> tuple[bool, str]:
+        """Check health of PKI Authority service.
+        
+        Args:
+            timeout: Maximum time to wait for service to become healthy (0 = single check)
+            interval: Time between health check attempts
+        
+        Returns:
+            Tuple of (is_healthy, error_message). If healthy, error_message is empty string.
+        """
+        is_healthy = False
+        error_msg = ""
+        
+        try:
+            container = LXCContainer(PKI_SERVICE_NAME)
+            elapsed = 0
+            
+            while True:
+                if container.is_running() and container.is_service_healthy():
+                    is_healthy = True
+                    break
+                
+                # If timeout is 0, only check once
+                if timeout == 0 or elapsed >= timeout:
+                    error_msg = "PKI service is not healthy or container is not running"
+                    break
+                
+                # Wait before next attempt
+                time.sleep(interval)
+                elapsed += interval
+                
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            error_msg = f"Health check failed: {str(error)}"
+            log(LogLevel.ERROR, error_msg)
+        
+        # Compare current pki_node_ready with new health status
+        current_healthy_status = "true" if is_healthy else "false"
+        if self.current_pki_node_ready != current_healthy_status:
+            log(
+                LogLevel.INFO,
+                f"PKI node ready status changed: {self.current_pki_node_ready} -> {current_healthy_status}"
+            )
+            self.node_properties["pki_node_ready"] = current_healthy_status
+        
+        return (is_healthy, error_msg)
+
 
 # Plugin commands
 @plugin.command("init")
@@ -635,23 +691,22 @@ def handle_apply(input_data: PluginInput) -> PluginOutput:
 @plugin.command("health")
 def handle_health(input_data: PluginInput) -> PluginOutput:
     """Check health of PKI Authority service."""
-    local_state = input_data.local_state or {}
+    handler = EventHandler(input_data)
+    is_healthy, error_msg = handler.health()
 
-    try:
-        container = LXCContainer(PKI_SERVICE_NAME)
-
-        if container.is_running() and container.is_service_healthy():
-            return PluginOutput(status="completed", local_state=local_state)
-
+    if is_healthy:
         return PluginOutput(
-            status="error",
-            error_message="PKI service is not healthy or container is not running",
-            local_state=local_state
+            status="completed",
+            local_state=input_data.local_state,
+            node_properties=handler.node_properties if handler.node_properties else None
         )
-    except Exception as error:  # pylint: disable=broad-exception-caught
-        error_msg = f"Health check failed: {str(error)}"
-        log(LogLevel.ERROR, error_msg)
-        return PluginOutput(status="error", error_message=error_msg, local_state=local_state)
+    
+    return PluginOutput(
+        status="error",
+        error_message=error_msg,
+        local_state=input_data.local_state,
+        node_properties=handler.node_properties if handler.node_properties else None
+    )
 
 
 @plugin.command("finalize")

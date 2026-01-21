@@ -6,7 +6,7 @@ pki:
     - token
     - tdx
     - sev-snp
-  allowedSubRootChallenges:
+  validateParamRules:
     - type: tdx
       signatureVerification: github
     - type: sev-snp

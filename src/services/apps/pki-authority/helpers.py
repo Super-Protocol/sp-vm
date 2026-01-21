@@ -7,10 +7,8 @@ import os
 import re
 import secrets
 import shutil
-import ssl
 import subprocess
 import sys
-import time
 import urllib.request
 from datetime import datetime
 from enum import Enum
@@ -166,12 +164,10 @@ class LXCContainer:
             log(LogLevel.ERROR, f"Failed to create container: {error}")
             return False
 
-    def is_service_healthy(
-        self, min_uptime: int = 120, healthcheck_url: str = "/healthcheck"
-    ) -> bool:
+    def is_service_healthy(self, healthcheck_url: str = "/healthcheck") -> bool:
         """Check if service inside container is running and healthy."""
         try:
-            # 1. Check service status inside container
+            # Check service status inside container
             result = subprocess.run(
                 [
                     "lxc-attach", "-n", self.container_name, "--",
@@ -183,81 +179,31 @@ class LXCContainer:
             )
             status = result.stdout.strip()
 
-            if status not in ["active", "activating"]:
+            if status != "active":
                 log(LogLevel.INFO, f"Service {SERVICE_INSIDE_CONTAINER} status: {status}")
                 return False
 
-            # If service is active, check how long it's been running
-            if status == "active":
-                result = subprocess.run(
-                    [
-                        "lxc-attach", "-n", self.container_name, "--",
-                        "systemctl", "show",
-                        SERVICE_INSIDE_CONTAINER,
-                        "--property=ActiveEnterTimestamp"
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=False
-                )
+            # Service is active, check healthcheck endpoint
+            container_ip = self.get_ip()
+            if not container_ip:
+                log(LogLevel.INFO, "Could not get container IP")
+                return False
 
-                # Parse ActiveEnterTimestamp
-                for line in result.stdout.split('\n'):
-                    if line.startswith('ActiveEnterTimestamp='):
-                        timestamp_str = line.split('=', 1)[1].strip()
-                        if timestamp_str and timestamp_str != '0':
-                            try:
-                                # Get timestamp in seconds since epoch
-                                ts_result = subprocess.run(
-                                    ["date", "+%s", "-d", timestamp_str],
-                                    capture_output=True,
-                                    text=True,
-                                    check=False
-                                )
-                                start_time = int(ts_result.stdout.strip())
-                                current_time = int(time.time())
-                                uptime_seconds = current_time - start_time
+            # Perform HTTP healthcheck
+            try:
+                req = urllib.request.Request(f"http://{container_ip}{healthcheck_url}")
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    if response.status == 200:
+                        return True
 
-                                # If running more than min_uptime, check healthcheck endpoint
-                                if uptime_seconds > min_uptime:
-                                    container_ip = self.get_ip()
-
-                                    if container_ip:
-                                        # Perform HTTPS healthcheck without certificate verification
-                                        try:
-                                            ctx = ssl.create_default_context()
-                                            ctx.check_hostname = False
-                                            ctx.verify_mode = ssl.CERT_NONE
-
-                                            req = urllib.request.Request(
-                                                f"https://{container_ip}{healthcheck_url}"
-                                            )
-                                            with urllib.request.urlopen(
-                                                req, context=ctx, timeout=5
-                                            ) as response:
-                                                if response.status == 200:
-                                                    return True
-
-                                                log(
-                                                    LogLevel.INFO,
-                                                    f"Healthcheck returned status: "
-                                                    f"{response.status}"
-                                                )
-                                                return False
-                                        except Exception as error:  # pylint: disable=broad-exception-caught
-                                            log(
-                                                LogLevel.INFO,
-                                                f"Healthcheck failed: {error}"
-                                            )
-                                            return False
-                            except Exception as error:  # pylint: disable=broad-exception-caught
-                                log(
-                                    LogLevel.INFO,
-                                    f"Failed to parse service uptime: {error}"
-                                )
-
-            # Service is active or activating (but not ready for healthcheck yet)
-            return True
+                    log(
+                        LogLevel.INFO,
+                        f"Healthcheck returned status: {response.status}"
+                    )
+                    return False
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                log(LogLevel.INFO, f"Healthcheck failed: {error}")
+                return False
 
         except Exception as error:  # pylint: disable=broad-exception-caught
             log(LogLevel.ERROR, f"Failed to check service health: {error}")
@@ -387,11 +333,21 @@ def patch_yaml_config(
 
     # For untrusted, generate random deviceIdHex (32 bytes)
     if cpu_type == "untrusted":
+        # Check if untrusted CPU type is running in trusted network
+        if network_type != "untrusted":
+            error_msg = (
+                "Cannot run untrusted machine in trusted network. "
+                f"CPU type: {cpu_type}, Network type: {network_type}"
+            )
+            log(LogLevel.ERROR, error_msg)
+            raise ValueError(error_msg)
+        
         device_id_hex = secrets.token_hex(32)
         config["pki"]["ownChallenge"]["deviceIdHex"] = device_id_hex
         log(LogLevel.INFO, f"Generated deviceIdHex for untrusted type: {device_id_hex}")
 
-        # Add 'untrusted' to allowedChallenges if not present
+    # Add 'untrusted' to allowedChallenges if network type is untrusted
+    if network_type == "untrusted":
         if "allowedChallenges" not in config["pki"]:
             config["pki"]["allowedChallenges"] = []
         if "untrusted" not in config["pki"]["allowedChallenges"]:

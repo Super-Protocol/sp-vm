@@ -53,6 +53,16 @@ stateExpr:
         {id, node_id: .node, cluster}
       ] | sort_by(.id, .node_id, .cluster),
 
+      pkiNodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith($cluster.id)) and
+          .deleted_ts == null and
+          .name == "pki_node_ready"
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
       redisCluster: {
         id: $redisCluster.id
       },
