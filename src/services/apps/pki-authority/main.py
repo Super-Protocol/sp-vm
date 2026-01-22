@@ -114,7 +114,7 @@ class EventHandler:
         """Create and update gateway endpoints in Redis."""
         # Get current endpoints from nodes with pki_node_ready=true
         pki_node_props = self.state_json.get("pkiNodeProperties", [])
-        
+
         current_endpoints = []
         for prop in pki_node_props:
             if prop.get("name") == "pki_node_ready" and prop.get("value") == "true":
@@ -280,8 +280,9 @@ class EventHandler:
 
     def _ensure_container_running(self, container: LXCContainer, local_tunnel_ip: str) -> None:
         """Ensure container is running with correct configuration.
-        
-        Checks for missing properties, restart requirements, restores properties and starts container.
+
+        Checks for missing properties, restart requirements,
+        restores properties and starts container.
         Sets self.status to 'completed' or 'error' and self.error_message on error.
         """
         # Verify ALL required properties are present
@@ -340,9 +341,15 @@ class EventHandler:
 
         is_healthy, err_msg = self.health(timeout=30, interval=5)
         if is_healthy:
-            log(LogLevel.INFO, f"LXC container {PKI_SERVICE_NAME} started and health check passed")
+            log(
+                LogLevel.INFO,
+                f"LXC container {PKI_SERVICE_NAME} started and health check passed"
+            )
         else:
-            log(LogLevel.WARN, f"LXC container {PKI_SERVICE_NAME} started but health check failed: {err_msg}")
+            log(
+                LogLevel.WARN,
+                f"LXC container {PKI_SERVICE_NAME} started but health check failed: {err_msg}"
+            )
 
     def _check_for_missing_properties(self) -> list[str]:
         """Check for missing required properties.
@@ -518,8 +525,16 @@ class EventHandler:
         # Check yaml config parameters
         yaml_params = [
             ("pki.ownDomain", self.pki_domain, "domain"),
-            ("pki.mode.networkSettings.networkType", self.network_type, "network_type"),
-            ("pki.mode.networkSettings.networkKeyHashHex", self.network_key_hash, "network_key_hash"),
+            (
+                "pki.mode.networkSettings.networkType",
+                self.network_type,
+                "network_type"
+            ),
+            (
+                "pki.mode.networkSettings.networkKeyHashHex",
+                self.network_key_hash,
+                "network_key_hash"
+            ),
         ]
 
         for yaml_path, expected_value, param_name in yaml_params:
@@ -531,7 +546,8 @@ class EventHandler:
             if yaml_value != expected_value:
                 log(
                     LogLevel.INFO,
-                    f"Parameter {param_name} changed (yaml: {yaml_value}, expected: {expected_value}), restart required"
+                    f"Parameter {param_name} changed "
+                    f"(yaml: {yaml_value}, expected: {expected_value}), restart required"
                 )
                 return True
 
@@ -578,7 +594,11 @@ class EventHandler:
             exit_code = container.destroy()
             if exit_code != 0:
                 error_msg = f"Failed to destroy container with exit code {exit_code}"
-                return PluginOutput(status="error", error_message=error_msg, local_state=self.local_state)
+                return PluginOutput(
+                    status="error",
+                    error_message=error_msg,
+                    local_state=self.local_state
+                )
 
             delete_iptables_rules()
 
@@ -594,7 +614,9 @@ class EventHandler:
             return PluginOutput(
                 status="completed",
                 local_state=self.local_state,
-                cluster_properties=self.cluster_properties if self.cluster_properties else None
+                cluster_properties=(
+                    self.cluster_properties if self.cluster_properties else None
+                )
             )
 
         except Exception as error:  # pylint: disable=broad-exception-caught
@@ -606,41 +628,44 @@ class EventHandler:
 
     def health(self, timeout: int = 0, interval: int = 5) -> tuple[bool, str]:
         """Check health of PKI Authority service.
-        
+
         Args:
             timeout: Maximum time to wait for service to become healthy (0 = single check)
             interval: Time between health check attempts
-        
+
         Returns:
             Tuple of (is_healthy, error_message). If healthy, error_message is empty string.
         """
         is_healthy = False
         error_msg = ""
-        
+
         try:
             container = LXCContainer(PKI_SERVICE_NAME)
             elapsed = 0
             attempt = 0
-            
+
             while True:
                 attempt += 1
                 if container.is_running() and container.is_service_healthy():
                     is_healthy = True
                     break
-                
+
                 # If timeout is 0, only check once
                 if timeout == 0 or elapsed >= timeout:
-                    error_msg = f"PKI service is not healthy or container is not running (attempts: {attempt})"
+                    error_msg = (
+                        f"PKI service is not healthy or container is not running "
+                        f"(attempts: {attempt})"
+                    )
                     break
-                
+
                 # Wait before next attempt
                 time.sleep(interval)
                 elapsed += interval
-                
+
         except Exception as error:  # pylint: disable=broad-exception-caught
             error_msg = f"Health check failed on attempt {attempt}: {str(error)}"
             log(LogLevel.ERROR, error_msg)
-        
+
         # Compare current pki_node_ready with new health status
         current_healthy_status = "true" if is_healthy else "false"
         if self.current_pki_node_ready != current_healthy_status:
@@ -649,7 +674,7 @@ class EventHandler:
                 f"PKI node ready status changed: {self.current_pki_node_ready} -> {current_healthy_status}"
             )
             self.node_properties["pki_node_ready"] = current_healthy_status
-        
+
         return (is_healthy, error_msg)
 
 
@@ -689,7 +714,7 @@ def handle_health(input_data: PluginInput) -> PluginOutput:
             local_state=input_data.local_state,
             node_properties=handler.node_properties if handler.node_properties else None
         )
-    
+
     return PluginOutput(
         status="error",
         error_message=error_msg,

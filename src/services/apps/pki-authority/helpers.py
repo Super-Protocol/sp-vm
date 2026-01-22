@@ -234,7 +234,7 @@ def detect_vm_mode() -> VMMode:
 
 def detect_network_type() -> str:
     """Detect network type from kernel command line.
-    
+
     Returns:
         'untrusted' if allow_untrusted=true is present in cmdline, otherwise 'trusted'.
     """
@@ -381,7 +381,7 @@ def patch_yaml_config(
             )
             log(LogLevel.ERROR, error_msg)
             raise ValueError(error_msg)
-        
+
         device_id_hex = secrets.token_hex(32)
         config["pki"]["ownChallenge"]["deviceIdHex"] = device_id_hex
         log(LogLevel.INFO, f"Generated deviceIdHex for untrusted type: {device_id_hex}")
