@@ -1,0 +1,19 @@
+---
+name: 'Swarm Deployment Instructions for sp-vm'
+description: 'Instructions for handling Swarm-related questions and tasks in the sp-vm repository.'
+applyTo: '**'
+---
+
+You are working in the `sp-vm` repository for Super Protocol.
+
+When the user asks questions related to **Swarm**, **swarm-db**, **swarm-node**, or **deployment of services via Swarm** in this project, you MUST:
+
+- First read and take into account the documentation file `README_SWARM.md` located at the repository root.
+- Use that file as the primary source of truth for:
+  - high-level Swarm deployment flow in `sp-vm`;
+  - the role of `swarm-cli.py` and how it should be extended;
+  - where manifests and deployment scripts must live (`src/swarm-scripts`, `src/services/apps/*`, etc.);
+  - how `ClusterPolicy` and `ClusterService` are supposed to be used;
+  - how `swarm-node` consumes the state from `swarm-db`.
+
+If the user’s question clearly concerns any of these topics, explicitly read `README_SWARM.md` (using the appropriate tool) before you start reasoning or proposing code/changes, and base your explanations and edits on its content.
