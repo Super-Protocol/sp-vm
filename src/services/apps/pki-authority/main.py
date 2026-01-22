@@ -32,6 +32,7 @@ from helpers import (
     LogLevel,
     log,
     get_pki_authority_param,
+    read_yaml_config_param,
 )
 
 # Configuration
@@ -68,6 +69,8 @@ class EventHandler:
         self.pki_domain = self.authority_config.get(self.PROP_PKI_DOMAIN, "")
         self.network_key_hash = self.authority_config.get(self.PROP_NETWORK_KEY_HASH, "")
         self.network_type = self.authority_config.get(self.PROP_NETWORK_TYPE, "")
+        self.initialized = self.authority_config.get(self.PROP_INITIALIZED, "")
+        self.vm_mode = detect_vm_mode()
 
         # Read current pki_node_ready value
         pki_node_props = self.state_json.get("pkiNodeProperties", [])
@@ -140,24 +143,17 @@ class EventHandler:
 
             # Read current route from Redis
             registered_endpoints = []
-            try:
-                existing_route = redis_client.get(route_key)
-                if existing_route:
-                    route_data = json.loads(existing_route)
-                    # Extract IPs from targets URLs
-                    for target in route_data.get("targets", []):
-                        url = target.get("url", "")
-                        # Parse https://IP:PORT format
-                        if "://" in url:
-                            ip_port = url.split("://")[1]
-                            ip = ip_port.split(":")[0]
-                            registered_endpoints.append(ip)
-            except Exception as error:  # pylint: disable=broad-exception-caught
-                log(
-                    LogLevel.WARN,
-                    f"Failed to read existing route from Redis, treating as empty: {error}"
-                )
-                registered_endpoints = []
+            existing_route = redis_client.get(route_key)
+            if existing_route:
+                route_data = json.loads(existing_route)
+                # Extract IPs from targets URLs
+                for target in route_data.get("targets", []):
+                    url = target.get("url", "")
+                    # Parse https://IP:PORT format
+                    if "://" in url:
+                        ip_port = url.split("://")[1]
+                        ip = ip_port.split(":")[0]
+                        registered_endpoints.append(ip)
 
             # Compare endpoints regardless of order
             if set(registered_endpoints) == set(current_endpoints):
@@ -232,13 +228,16 @@ class EventHandler:
         else:
             log(LogLevel.ERROR, f"Apply ended with unknown status {self.status}")
 
+        # Determine if cluster_properties should be included
+        should_update_cluster = (
+            self.vm_mode == VMMode.SWARM_INIT or self.is_leader
+        ) and self.status in ("completed", "postponed") and self.cluster_properties
+
         return PluginOutput(
             status=self.status,
             local_state=self.local_state if self.status == "completed" else None,
             error_message=self.error_message,
-            cluster_properties=(
-                self.cluster_properties if self.status == "completed" else None
-            ),
+            cluster_properties=self.cluster_properties if should_update_cluster else None,
             node_properties=self.node_properties if self.node_properties else None
         )
 
@@ -257,9 +256,7 @@ class EventHandler:
                 self.error_message = "Waiting for WireGuard tunnel IP to be configured"
                 return self._create_output()
 
-            vm_mode = detect_vm_mode()
-
-            if vm_mode == VMMode.SWARM_INIT:
+            if self.vm_mode == VMMode.SWARM_INIT:
                 self._handle_swarm_init(local_tunnel_ip)
             else:
                 self._handle_swarm_normal(local_tunnel_ip)
@@ -280,14 +277,54 @@ class EventHandler:
             if exit_code != 0:
                 raise Exception(f"Failed to stop container with exit code {exit_code}")
 
+    def _ensure_container_running(self, container: LXCContainer, local_tunnel_ip: str) -> None:
+        """Ensure container is running with correct configuration.
+        
+        Checks for missing properties, restart requirements, restores properties and starts container.
+        Sets self.status to 'completed' or 'error' and self.error_message on error.
+        """
+        # Verify ALL required properties are present
+        missing = self._check_for_missing_properties()
+
+        if missing:
+            error_msg = (
+                f"Service marked as initialized but missing required properties: "
+                f"{', '.join(missing)}"
+            )
+            log(LogLevel.ERROR, error_msg)
+            self.status = "error"
+            self.error_message = error_msg
+            return
+
+        # Check if restart is needed
+        if container.is_running():
+            if self._is_restart_required():
+                log(LogLevel.INFO, "Configuration changed, restarting contain er")
+                self._stop_container_if_running(container)
+            else:
+                # Everything matches, container running, nothing to do
+                log(LogLevel.INFO, "Container running, no changes detected")
+                self.status = "completed"
+                return
+
+        # Restore properties from DB to filesystem
+        for prop in self.AUTHORITY_SERVICE_PROPERTIES:
+            prop_name = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
+            prop_value = self.authority_config.get(prop_name, "")
+            save_property_into_fs(prop, base64.b64decode(prop_value))
+
+        # Start container
+        self._configure_and_start_container(container, local_tunnel_ip)
+        self.status = "completed"
+
     def _configure_and_start_container(
-        self, container: LXCContainer, local_tunnel_ip: str, vm_mode: VMMode
+        self, container: LXCContainer, local_tunnel_ip: str
     ) -> None:
         """Configure and start container."""
         cpu_type = detect_cpu_type()
         patch_yaml_config(
             cpu_type,
-            vm_mode,
+            self.vm_mode,
             self.pki_domain,
             self.network_type,
             self.network_key_hash
@@ -357,6 +394,7 @@ class EventHandler:
                 collected_properties[self.PROP_NETWORK_KEY_HASH] = self.network_key_hash
                 collected_properties[self.PROP_NETWORK_TYPE] = self.network_type
                 collected_properties[self.PROP_INITIALIZED] = "true"
+                self.initialized = "true"
 
                 self.status = "completed"
                 self.cluster_properties = collected_properties
@@ -380,7 +418,7 @@ class EventHandler:
 
     def _handle_swarm_init(self, local_tunnel_ip: str) -> None:
         """Handle swarm-init mode: read external sources and initialize properties."""
-        # Step 1: Get pki_domain from external source (file)
+        # Get pki_domain from external source (file)
         if not self.pki_domain:
             try:
                 self.pki_domain = get_pki_authority_param("domain")
@@ -413,49 +451,13 @@ class EventHandler:
             log(LogLevel.INFO, f"Detected network type: {self.network_type}")
 
         container = LXCContainer(PKI_SERVICE_NAME)
-        initialized = self.authority_config.get(self.PROP_INITIALIZED)
 
-        # Step 2: Check initialized flag
-        if initialized == "true":
-            # Step 3: Verify ALL required properties are present
-            missing = self._check_for_missing_properties()
-
-            # Step 4: If ANY property is missing - ERROR
-            if missing:
-                error_msg = (
-                    f"Service marked as initialized but missing required properties: "
-                    f"{', '.join(missing)}"
-                )
-                log(LogLevel.ERROR, error_msg)
-                self.status = "error"
-                self.error_message = error_msg
-                return
-
-            # Step 5: Compare DB properties with FS (is_restart_required)
-            # Step 6: If mismatch - restart container and restore properties
-            if container.is_running() and not self._is_restart_required():
-                # Everything matches, container running, nothing to do
-                log(LogLevel.INFO, "Container running, no changes detected")
-                self.status = "completed"
-                return
-
-            # Need to restart or start container
-            if container.is_running():
-                log(LogLevel.INFO, "Configuration changed, restarting container")
-                self._stop_container_if_running(container)
-
-            # Restore properties from DB to filesystem
-            for prop in self.AUTHORITY_SERVICE_PROPERTIES:
-                prop_name = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
-                prop_value = self.authority_config.get(prop_name, "")
-                save_property_into_fs(prop, base64.b64decode(prop_value))
-
-            # Start container
-            self._configure_and_start_container(container, local_tunnel_ip, VMMode.SWARM_INIT)
-            self.status = "completed"
+        if self.initialized == "true":
+            # Use common logic for ensuring container is running
+            self._ensure_container_running(container, local_tunnel_ip)
             return
 
-        # Step 7: Not initialized - restart container and wait for properties generation
+        # Not initialized - restart container and wait for properties generation
         log(LogLevel.INFO, "Service not initialized, starting initialization process")
 
         # Restart container if running
@@ -464,65 +466,28 @@ class EventHandler:
             self._stop_container_if_running(container)
 
         # Start container
-        self._configure_and_start_container(container, local_tunnel_ip, VMMode.SWARM_INIT)
+        self._configure_and_start_container(container, local_tunnel_ip)
         # Wait for properties generation
         self._wait_for_properties_generation(timeout=30, interval=5)
 
 
     def _handle_swarm_normal(self, local_tunnel_ip: str) -> None:
         """Handle swarm-normal mode: read ONLY from properties (DB), no external sources."""
-        initialized = self.authority_config.get(self.PROP_INITIALIZED)
-
         # If not initialized - wait for swarm-init to complete
-        if initialized != "true":
+        if self.initialized != "true":
             self.status = "postponed"
             self.error_message = "Waiting for authority service properties to be initialized"
-            return
-
-        # Initialized - verify ALL required properties are present
-        missing = self._check_for_missing_properties()
-
-        # If ANY property is missing - ERROR (should never happen if initialized=true)
-        if missing:
-            error_msg = (
-                f"Service marked as initialized but missing required properties: "
-                f"{', '.join(missing)}"
-            )
-            log(LogLevel.ERROR, error_msg)
-            self.status = "error"
-            self.error_message = error_msg
             return
 
         # All properties present - manage container
         container = LXCContainer(PKI_SERVICE_NAME)
 
-        # Check if restart is needed
-        if container.is_running():
-            if self._is_restart_required():
-                log(LogLevel.INFO, "Configuration changed, restarting container")
-                self._stop_container_if_running(container)
-            else:
-                log(
-                    LogLevel.INFO,
-                    f"Container {PKI_SERVICE_NAME} is already running, "
-                    f"no restart required"
-                )
-                self.status = "completed"
-                return
-
-        # Restore properties to filesystem before starting container
-        for prop in self.AUTHORITY_SERVICE_PROPERTIES:
-            prop_name = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
-            prop_value = self.authority_config.get(prop_name, "")
-            save_property_into_fs(prop, base64.b64decode(prop_value))
-
-        # Configure and start container
-        self._configure_and_start_container(container, local_tunnel_ip, VMMode.SWARM_NORMAL)
-
-        self.status = "completed"
+        # Use common logic for ensuring container is running
+        self._ensure_container_running(container, local_tunnel_ip)
 
     def _is_restart_required(self) -> bool:
         """Check if container restart is required based on config changes."""
+        # Check file-based properties
         for prop in self.AUTHORITY_SERVICE_PROPERTIES:
             prop_name = f"{self.AUTHORITY_SERVICE_PREFIX}{prop}"
             config_value = self.authority_config.get(prop_name, "")
@@ -546,6 +511,26 @@ class EventHandler:
                     return True
             except Exception as error:  # pylint: disable=broad-exception-caught
                 log(LogLevel.ERROR, f"Failed to decode property {prop}: {error}")
+                return True
+
+        # Check yaml config parameters
+        yaml_params = [
+            ("pki.ownDomain", self.pki_domain, "domain"),
+            ("pki.mode.networkSettings.networkType", self.network_type, "network_type"),
+            ("pki.mode.networkSettings.networkKeyHashHex", self.network_key_hash, "network_key_hash"),
+        ]
+
+        for yaml_path, expected_value, param_name in yaml_params:
+            if not expected_value:
+                continue
+
+            yaml_value = read_yaml_config_param(yaml_path)
+
+            if yaml_value != expected_value:
+                log(
+                    LogLevel.INFO,
+                    f"Parameter {param_name} changed (yaml: {yaml_value}, expected: {expected_value}), restart required"
+                )
                 return True
 
         # No changes detected
@@ -633,15 +618,17 @@ class EventHandler:
         try:
             container = LXCContainer(PKI_SERVICE_NAME)
             elapsed = 0
+            attempt = 0
             
             while True:
+                attempt += 1
                 if container.is_running() and container.is_service_healthy():
                     is_healthy = True
                     break
                 
                 # If timeout is 0, only check once
                 if timeout == 0 or elapsed >= timeout:
-                    error_msg = "PKI service is not healthy or container is not running"
+                    error_msg = f"PKI service is not healthy or container is not running (attempts: {attempt})"
                     break
                 
                 # Wait before next attempt
@@ -649,7 +636,7 @@ class EventHandler:
                 elapsed += interval
                 
         except Exception as error:  # pylint: disable=broad-exception-caught
-            error_msg = f"Health check failed: {str(error)}"
+            error_msg = f"Health check failed on attempt {attempt}: {str(error)}"
             log(LogLevel.ERROR, error_msg)
         
         # Compare current pki_node_ready with new health status

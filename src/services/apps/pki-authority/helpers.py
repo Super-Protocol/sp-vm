@@ -249,6 +249,46 @@ def detect_network_type() -> str:
         return "trusted"
 
 
+def read_yaml_config_param(param_path: str) -> Optional[str]:
+    """Read parameter from container's yaml configuration.
+
+    Args:
+        param_path: Dot-separated path to parameter (e.g., 'pki.ownDomain').
+
+    Returns:
+        Parameter value as string, or None if not found or error.
+    """
+    yaml_config_path = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/conf/lxc.yaml")
+
+    if not yaml_config_path.exists():
+        log(LogLevel.DEBUG, f"YAML config not found: {yaml_config_path}")
+        return None
+
+    try:
+        with open(yaml_config_path, "r", encoding="utf-8") as file:
+            config = yaml.safe_load(file)
+
+        if not config:
+            log(LogLevel.DEBUG, f"Empty YAML config: {yaml_config_path}")
+            return None
+
+        # Navigate through nested dictionary using dot-separated path
+        value = config
+        for key in param_path.split('.'):
+            if isinstance(value, dict):
+                value = value.get(key)
+                if value is None:
+                    return None
+            else:
+                return None
+
+        return str(value) if value is not None else None
+
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        log(LogLevel.DEBUG, f"Failed to read {param_path} from YAML config: {error}")
+        return None
+
+
 def get_pki_authority_param(param_name: str) -> str:
     """Read PKI authority parameter from swarm-env.yaml.
 
