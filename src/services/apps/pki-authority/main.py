@@ -90,13 +90,12 @@ class EventHandler:
     def _get_redis_tunnel_ips(self) -> list[str]:
         """Get list of Redis node tunnel IPs."""
         redis_node_props = self.state_json.get("redisNodeProperties", [])
-        wg_props = self.state_json.get("wgNodeProperties", [])
 
         redis_hosts = []
         for prop in redis_node_props:
             if prop.get("name") == "redis_node_ready" and prop.get("value") == "true":
                 node_id = prop.get("node_id")
-                tunnel_ip = get_node_tunnel_ip(node_id, wg_props)
+                tunnel_ip = get_node_tunnel_ip(node_id, self.wg_props)
                 if tunnel_ip:
                     redis_hosts.append(tunnel_ip)
 
@@ -110,23 +109,43 @@ class EventHandler:
         redis_tunnel_ips = self._get_redis_tunnel_ips()
         return [(ip, 6379) for ip in redis_tunnel_ips]
 
-    def _create_gateway_endpoints(self):
-        """Create and update gateway endpoints in Redis."""
-        # Get current endpoints from nodes with pki_node_ready=true
-        pki_node_props = self.state_json.get("pkiNodeProperties", [])
+    def _get_current_endpoints(self) -> list[str]:
+        """Get list of tunnel IPs for PKI nodes that are ready.
 
+        Returns list of tunnel IPs for nodes with pki_node_ready=true.
+        """
+        pki_node_props = self.state_json.get("pkiNodeProperties", [])
         current_endpoints = []
-        for prop in pki_node_props:
-            if prop.get("name") == "pki_node_ready" and prop.get("value") == "true":
-                node_id = prop.get("node_id")
+
+        for cluster_node in self.pki_cluster_nodes:
+            node_id = cluster_node.get("node_id")
+            if not node_id:
+                continue
+
+            # Find pki_node_ready property for this node
+            node_ready = False
+            for prop in pki_node_props:
+                if (prop.get("node_id") == node_id and
+                    prop.get("name") == "pki_node_ready" and
+                    prop.get("value") == "true"):
+                    node_ready = True
+                    break
+
+            if node_ready:
                 tunnel_ip = get_node_tunnel_ip(node_id, self.wg_props)
                 if tunnel_ip:
                     current_endpoints.append(tunnel_ip)
 
+        return current_endpoints
+
+    def _create_gateway_endpoints(self):
+        """Create and update gateway endpoints in Redis."""
+        current_endpoints = self._get_current_endpoints()
+
         # Get Redis connection info
         redis_endpoints = self._get_redis_connection_info()
 
-        if not redis_endpoints and current_endpoints:
+        if not redis_endpoints:
             self.status = "postponed"
             self.error_message = "No Redis nodes available to configure gateway routes"
             return
@@ -671,7 +690,8 @@ class EventHandler:
         if self.current_pki_node_ready != current_healthy_status:
             log(
                 LogLevel.INFO,
-                f"PKI node ready status changed: {self.current_pki_node_ready} -> {current_healthy_status}"
+                f"PKI node ready status changed: "
+                f"{self.current_pki_node_ready} -> {current_healthy_status}"
             )
             self.node_properties["pki_node_ready"] = current_healthy_status
 

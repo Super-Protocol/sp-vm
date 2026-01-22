@@ -60,7 +60,7 @@ stateExpr:
           .deleted_ts == null and
           .name == "pki_node_ready"
         ) |
-        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn and .deleted_ts == null)) | .node}
       ] | sort_by(.cluster_node, .name, .value, .node_id),
 
       redisCluster: {
@@ -74,7 +74,7 @@ stateExpr:
           .deleted_ts == null and
           .name == "redis_node_ready"
         ) |
-        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn and .deleted_ts == null)) | .node}
       ] | sort_by(.cluster_node, .name, .value, .node_id),
 
       wgCluster: {
