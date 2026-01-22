@@ -1,0 +1,20 @@
+[Unit]
+Description=Swarm DB service
+After=network-online.target local-fs.target
+Wants=network-online.target
+RequiresMountsFor=/var /var/lib /var/lib/swarm-db
+ConditionPathExists=/usr/local/bin/swarm-db-linux-amd64
+ConditionPathExists=/sp/swarm/node-db.yaml
+
+[Service]
+Type=simple
+WorkingDirectory=/
+ExecStartPre=mkdir -p /var/lib/swarm-db/data
+ExecStart=/usr/local/bin/swarm-db-linux-amd64 -config /sp/swarm/node-db.yaml
+StandardOutput=append:/var/log/swarm-db.log
+StandardError=append:/var/log/swarm-db-err.log
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

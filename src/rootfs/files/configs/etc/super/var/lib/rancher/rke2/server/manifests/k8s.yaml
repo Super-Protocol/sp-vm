@@ -985,7 +985,7 @@ spec:
                 echo "$filtered_configmap" | kubectl apply -n $NAMESPACE -f -
               fi
             else
-                # created by tools/osbuilder/rootfs-builder/ubuntu/superprotocol/check-config-files.sh
+                # created by tools/osbuilder/rootfs-builder/ubuntu/superprotocol/check-config-files.sh (deleted)
                 if [[ -z "${CPU_TYPE:-}" ]];then
                     echo "Failed to get CPU type from cpu-type configmap in super-protocol ns!";
                     exit 1;

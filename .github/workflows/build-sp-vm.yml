@@ -32,10 +32,20 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SWARM_CLOUD_SWARM_DB_REPO_RO }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
+      
+      - name: Login to TEE PKI Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.TEE_PKI_USERNAME }}
+          password: ${{ secrets.TEE_PKI_ACCESS_TOKEN }}
+      
       - name: Set SP_VM_IMAGE_VERSION variable
         run: |
           if [[ "${{ inputs.build-type }}" == "cloud" ]]; then
