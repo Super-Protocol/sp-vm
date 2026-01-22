@@ -2,6 +2,7 @@
 """PKI Authority service provisioning plugin."""
 
 import base64
+import hashlib
 import json
 import sys
 import time
@@ -433,10 +434,11 @@ class EventHandler:
         # Get network_key_hash from external source (file)
         if not self.network_key_hash:
             try:
-                self.network_key_hash = get_pki_authority_param("networkKeyHashHex")
+                network_key = get_pki_authority_param("networkKey")
+                self.network_key_hash = hashlib.sha256(network_key.encode()).hexdigest()
                 log(
                     LogLevel.INFO,
-                    f"Read network key hash from external source: {self.network_key_hash}"
+                    f"Calculated network key hash from external source: {self.network_key_hash}"
                 )
             except Exception as error:  # pylint: disable=broad-exception-caught
                 error_msg = f"Failed to get network key hash from external source: {error}"
