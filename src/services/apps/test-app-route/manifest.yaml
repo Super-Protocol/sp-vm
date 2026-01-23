@@ -17,10 +17,25 @@ stateExpr:
 
     ($appClusterNodes | map(.node)) as $appNodeIds |
 
-    # Find Redis cluster (not bound to app nodes)
+    # Find Redis cluster with at least one ready node (not bound to app nodes)
     (
-      [$swarmdb.clusters[] | select(.cluster_policy == "redis" and .deleted_ts == null)] |
-      .[0]
+      [
+        $swarmdb.clusters[] |
+        select(.cluster_policy == "redis" and .deleted_ts == null) |
+        . as $c |
+        select(
+          (
+            [$swarmdb.clusternodeproperties[] |
+              select(
+                (.cluster_node | startswith($c.id)) and
+                .deleted_ts == null and
+                .name == "redis_node_ready" and
+                .value == "true"
+              )
+            ] | length > 0
+          )
+        )
+      ] | .[0]
     ) as $redisCluster |
 
     # Redis cluster nodes
