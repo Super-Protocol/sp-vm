@@ -75,7 +75,7 @@ stateExpr:
         select(
           (.cluster_node | startswith($redisCluster.id)) and
           .deleted_ts == null and
-          .name == "redis_node_ready"
+          (.name | startswith("redis_"))
         ) |
         {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
       ] | sort_by(.cluster_node, .name, .value, .node_id),

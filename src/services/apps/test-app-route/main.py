@@ -11,6 +11,7 @@ from provision_plugin_sdk import ProvisionPlugin, PluginInput, PluginOutput
 ROUTE_DOMAIN = "test.test.oresty.superprotocol.io"
 ROUTE_KEY = f"manual-routes:{ROUTE_DOMAIN}"
 APP_PORT = 34567
+MAX_REDIS_LAST_SEEN_SEC = 180
 
 
 plugin = ProvisionPlugin()
@@ -43,11 +44,31 @@ def get_redis_connection_info(state_json: dict) -> List[Tuple[str, int]]:
     redis_props = state_json.get("redisNodeProperties", [])
     wg_props = state_json.get("wgNodeProperties", [])
 
-    # Find ready Redis nodes
-    ready_nodes = set()
+    # Build per-node properties
+    props_by_node: dict[str, dict[str, str]] = {}
     for prop in redis_props:
-        if prop.get("name") == "redis_node_ready" and prop.get("value") == "true":
-            ready_nodes.add(prop.get("node_id"))
+        node_id = prop.get("node_id")
+        if not node_id:
+            continue
+        props_by_node.setdefault(node_id, {})[prop.get("name", "")] = prop.get("value", "")
+
+    # Find ready Redis nodes that have a recent heartbeat
+    ready_nodes = set()
+    now_ms = int(time.time() * 1000)
+    max_age_ms = MAX_REDIS_LAST_SEEN_SEC * 1000
+    for node_id, props in props_by_node.items():
+        if props.get("redis_node_ready") != "true":
+            continue
+        last_seen_raw = props.get("redis_last_seen_ts")
+        if not last_seen_raw:
+            continue
+        try:
+            last_seen_ms = int(last_seen_raw)
+        except ValueError:
+            continue
+        if now_ms - last_seen_ms > max_age_ms:
+            continue
+        ready_nodes.add(node_id)
 
     # Get tunnel IPs for ready nodes
     endpoints: List[Tuple[str, int]] = []
