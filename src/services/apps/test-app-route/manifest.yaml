@@ -17,16 +17,10 @@ stateExpr:
 
     ($appClusterNodes | map(.node)) as $appNodeIds |
 
-    # Find Redis cluster that shares at least one node with this app cluster
+    # Find Redis cluster (not bound to app nodes)
     (
-      $swarmdb.clusters[] |
-      select(.cluster_policy == "redis" and .deleted_ts == null) |
-      select(
-        (
-          [$swarmdb.clusternodes[] | select(.deleted_ts == null and (.node | IN($appNodeIds[])))] |
-          length > 0
-        )
-      )
+      [$swarmdb.clusters[] | select(.cluster_policy == "redis" and .deleted_ts == null)] |
+      .[0]
     ) as $redisCluster |
 
     # Redis cluster nodes
