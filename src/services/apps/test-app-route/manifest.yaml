@@ -42,6 +42,16 @@ stateExpr:
     ([$swarmdb.clusternodes[] | select(.cluster == $redisCluster.id and .deleted_ts == null)]) as $redisClusterNodes |
     ($redisClusterNodes | map(.node)) as $redisNodeIds |
 
+    # Find Redis Sentinel cluster
+    (
+      $swarmdb.clusters[] |
+      select(.cluster_policy == "redis-sentinel" and .deleted_ts == null)
+    ) as $sentinelCluster |
+
+    # Redis Sentinel cluster nodes
+    ([$swarmdb.clusternodes[] | select(.cluster == $sentinelCluster.id and .deleted_ts == null)]) as $sentinelClusterNodes |
+    ($sentinelClusterNodes | map(.node)) as $sentinelNodeIds |
+
     # Find WireGuard cluster that contains any Redis nodes
     (
       $swarmdb.clusters[] |
@@ -53,6 +63,18 @@ stateExpr:
         )
       )
     ) as $wgCluster |
+
+    # Find WireGuard cluster that contains any Redis Sentinel nodes
+    (
+      $swarmdb.clusters[] |
+      select(.cluster_policy == "wireguard" and .deleted_ts == null) |
+      select(
+        (
+          [$swarmdb.clusternodes[] | select(.deleted_ts == null and (.node | IN($sentinelNodeIds[])))] |
+          length > 0
+        )
+      )
+    ) as $sentinelWgCluster |
 
     {
       cluster: {
@@ -80,6 +102,20 @@ stateExpr:
         {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
       ] | sort_by(.cluster_node, .name, .value, .node_id),
 
+      sentinelCluster: {
+        id: $sentinelCluster.id
+      },
+
+      sentinelNodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith($sentinelCluster.id)) and
+          .deleted_ts == null and
+          (.name | startswith("redis_sentinel_"))
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
       wgCluster: {
         id: $wgCluster.id
       },
@@ -88,6 +124,16 @@ stateExpr:
         $swarmdb.clusternodeproperties[] |
         select(
           (.cluster_node | startswith($wgCluster.id)) and
+          .deleted_ts == null and
+          .name == "tunnel_ip"
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
+      sentinelWgNodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith($sentinelWgCluster.id)) and
           .deleted_ts == null and
           .name == "tunnel_ip"
         ) |
