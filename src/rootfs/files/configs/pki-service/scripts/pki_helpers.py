@@ -571,7 +571,7 @@ def ensure_iptables_rule(check_args: List[str], add_args: List[str], description
         subprocess.run(add_args, check=True)
         log(LogLevel.INFO, "Rule added")
 
-def setup_iptables(wg_ip):
+def setup_iptables():
     """Setup iptables NAT rules for LXC container access to host services."""
     host_ip = get_bridge_ip(BRIDGE_NAME)
 
@@ -600,99 +600,7 @@ def setup_iptables(wg_ip):
         description=f"PCCS DNAT {host_ip}:{PCCS_PORT} -> 127.0.0.1:{PCCS_PORT}"
     )
 
-    # Rule 2: WireGuard PREROUTING (HTTPS)
-    ensure_iptables_rule(
-        check_args=[
-            "iptables", "-t", "nat", "-C", "PREROUTING",
-            "-i", WIREGUARD_INTERFACE,
-            "-p", "tcp",
-            "--dport", PKI_SERVICE_EXTERNAL_PORT,
-            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
-            "-j", "DNAT",
-            "--to-destination", f"{CONTAINER_IP}:443"
-        ],
-        add_args=[
-            "iptables", "-t", "nat", "-A", "PREROUTING",
-            "-i", WIREGUARD_INTERFACE,
-            "-p", "tcp",
-            "--dport", PKI_SERVICE_EXTERNAL_PORT,
-            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
-            "-j", "DNAT",
-            "--to-destination", f"{CONTAINER_IP}:443"
-        ],
-        description=f"PREROUTING WireGuard {PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443"
-    )
-
-    # Rule 2a: WireGuard PREROUTING (HTTP)
-    ensure_iptables_rule(
-        check_args=[
-            "iptables", "-t", "nat", "-C", "PREROUTING",
-            "-i", WIREGUARD_INTERFACE,
-            "-p", "tcp",
-            "--dport", "8080",
-            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
-            "-j", "DNAT",
-            "--to-destination", f"{CONTAINER_IP}:80"
-        ],
-        add_args=[
-            "iptables", "-t", "nat", "-A", "PREROUTING",
-            "-i", WIREGUARD_INTERFACE,
-            "-p", "tcp",
-            "--dport", "8080",
-            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
-            "-j", "DNAT",
-            "--to-destination", f"{CONTAINER_IP}:80"
-        ],
-        description=f"PREROUTING WireGuard 8080 -> {CONTAINER_IP}:80"
-    )
-
-    # Rule 3: OUTPUT (HTTPS)
-    ensure_iptables_rule(
-        check_args=[
-            "iptables", "-t", "nat", "-C", "OUTPUT",
-            "-d", wg_ip,
-            "-p", "tcp",
-            "--dport", PKI_SERVICE_EXTERNAL_PORT,
-            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
-            "-j", "DNAT",
-            "--to-destination", f"{CONTAINER_IP}:443"
-        ],
-        add_args=[
-            "iptables", "-t", "nat", "-A", "OUTPUT",
-            "-d", wg_ip,
-            "-p", "tcp",
-            "--dport", PKI_SERVICE_EXTERNAL_PORT,
-            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
-            "-j", "DNAT",
-            "--to-destination", f"{CONTAINER_IP}:443"
-        ],
-        description=f"OUTPUT {wg_ip}:{PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443"
-    )
-
-    # Rule 3a: OUTPUT (HTTP)
-    ensure_iptables_rule(
-        check_args=[
-            "iptables", "-t", "nat", "-C", "OUTPUT",
-            "-d", wg_ip,
-            "-p", "tcp",
-            "--dport", "8080",
-            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
-            "-j", "DNAT",
-            "--to-destination", f"{CONTAINER_IP}:80"
-        ],
-        add_args=[
-            "iptables", "-t", "nat", "-A", "OUTPUT",
-            "-d", wg_ip,
-            "-p", "tcp",
-            "--dport", "8080",
-            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
-            "-j", "DNAT",
-            "--to-destination", f"{CONTAINER_IP}:80"
-        ],
-        description=f"OUTPUT {wg_ip}:8080 -> {CONTAINER_IP}:80"
-    )
-
-    # Rule 4: MASQUERADE
+    # Rule 2: MASQUERADE
     ensure_iptables_rule(
         check_args=[
             "iptables", "-t", "nat", "-C", "POSTROUTING",
@@ -709,7 +617,7 @@ def setup_iptables(wg_ip):
         description=f"POSTROUTING MASQUERADE for {CONTAINER_IP}/32"
     )
 
-    # Rule 5: Allow port 8081 on lxcbr0
+    # Rule 3: Allow port 8081 on lxcbr0
     ensure_iptables_rule(
         check_args=[
             "iptables", "-C", "INPUT",
@@ -760,21 +668,6 @@ def update_pccs_url():
 
     with open(qcnl_conf, "w", encoding="utf-8") as file:
         file.write(content)
-
-
-
-def init_container():
-    """Initialize LXC container for PKI Authority."""
-    LXCContainer(PKI_SERVICE_NAME).create()
-
-
-def get_node_tunnel_ip(node_id: str, wg_props: List[dict]) -> Optional[str]:
-    """Get tunnel IP for a node from WireGuard properties."""
-    for prop in wg_props:
-        if prop.get("node_id") == node_id and prop.get("name") == "tunnel_ip":
-            return prop.get("value")
-    return None
-
 
 def save_property_into_fs(file_name: str, content: bytes):
     """Save property content to filesystem."""
