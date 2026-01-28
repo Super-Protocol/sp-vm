@@ -251,6 +251,18 @@ COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-212538041
 ADD rootfs/files/configs/pki-service/lxc-swarm-template.yaml "${OUTPUTDIR}/etc/super/containers/pki-authority/lxc-swarm-template.yaml"
 ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
 ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
+RUN mkdir -p "${OUTPUTDIR}/usr/local/bin/pki-authority"
+ADD rootfs/files/configs/pki-service/pki_helpers.py "${OUTPUTDIR}/usr/local/bin/pki-authority/pki_helpers.py"
+ADD rootfs/files/configs/pki-service/pki_init.py "${OUTPUTDIR}/usr/local/bin/pki-authority/pki_init.py"
+ADD rootfs/files/configs/pki-service/pki_configure.py "${OUTPUTDIR}/usr/local/bin/pki-authority/pki_configure.py"
+ADD rootfs/files/configs/pki-service/pki-authority-init.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/pki-authority.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/pki-authority.service.d/init.conf "${OUTPUTDIR}/etc/systemd/system/pki-authority.service.d/init.conf"
+ADD rootfs/files/configs/pki-service/pki-authority.path "${OUTPUTDIR}/etc/systemd/system"
+RUN chmod +x "${OUTPUTDIR}/usr/local/bin/pki-authority/pki_init.py" "${OUTPUTDIR}/usr/local/bin/pki-authority/pki_configure.py"
+RUN ln -s /etc/systemd/system/pki-authority-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-init.service"
+RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
+RUN ln -s /etc/systemd/system/pki-authority.path "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.path"
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append

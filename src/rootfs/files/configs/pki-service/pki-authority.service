@@ -1,0 +1,19 @@
+[Unit]
+Description=PKI authority lxc-container
+After=pki-authority-init.service nvidia-persistenced.service pccs.service
+Requires=pki-authority-init.service pccs.service
+Wants=nvidia-persistenced.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+TimeoutStartSec=3min
+
+ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure.py
+
+ExecStart=/usr/bin/lxc-start -n pki-authority -F
+
+ExecStop=/usr/bin/lxc-stop -n pki-authority
+
+KillMode=control-group

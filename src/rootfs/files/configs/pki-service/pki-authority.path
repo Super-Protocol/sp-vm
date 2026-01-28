@@ -1,0 +1,13 @@
+[Unit]
+Description=Wait for Swarm configuration files for PKI authority
+ConditionKernelCommandLine=!vm_mode=swarm-init
+
+[Path]
+# Wait for these files to appear before starting pki-authority.service
+PathExists=/run/swarm/join.token
+PathExists=/run/swarm/manager.addr
+# Add more paths here as needed
+Unit=pki-authority.service
+
+[Install]
+WantedBy=multi-user.target
