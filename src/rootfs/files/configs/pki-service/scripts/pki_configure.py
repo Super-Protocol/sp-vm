@@ -36,7 +36,13 @@ def main():
     log(LogLevel.INFO, f"Network type: {network_type}")
     
     try:
-        pki_domain = get_pki_authority_param("domain")
+        try:
+            pki_domain = get_pki_authority_param("domain")
+        except (FileNotFoundError, ValueError) as e:
+            log(LogLevel.WARN, f"Failed to read domain from config: {e}")
+            pki_domain = "localhost"
+            log(LogLevel.INFO, f"Using default domain: {pki_domain}")
+        
         network_key = get_pki_authority_param("networkKey")
         
         # Get or generate swarm key based on VM mode

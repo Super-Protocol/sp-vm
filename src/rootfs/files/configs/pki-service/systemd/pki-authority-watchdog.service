@@ -1,7 +1,0 @@
-[Unit]
-Description=PKI Authority Watchdog
-
-[Service]
-Type=oneshot
-TimeoutStartSec=1min
-ExecStart=/usr/local/bin/pki-authority/pki_watchdog.sh

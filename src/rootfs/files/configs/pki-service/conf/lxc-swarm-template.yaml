@@ -21,7 +21,7 @@ pki:
   ownChallenge:
     type: tdx
   certParams:
-    ocspUrl: https://ocsp.certs.superprotocol.com/v1/ocsp
+    ocspUrl: ''
   keyStorage:
     type: trusted
     storage:

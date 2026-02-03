@@ -1,8 +1,8 @@
 [Unit]
 Description=PKI authority lxc-container
-After=pki-authority-init.service nvidia-persistenced.service pccs.service
+After=pki-authority-init.service pki-authority-sync.service nvidia-persistenced.service pccs.service
 Requires=pki-authority-init.service pccs.service
-Wants=nvidia-persistenced.service
+Wants=nvidia-persistenced.service pki-authority-sync.service
 
 [Service]
 Type=simple
@@ -17,3 +17,6 @@ ExecStart=/usr/bin/lxc-start -n pki-authority -F
 ExecStop=/usr/bin/lxc-stop -n pki-authority
 
 KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

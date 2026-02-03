@@ -1,0 +1,15 @@
+[Unit]
+Description=PKI authority sync client service
+ConditionKernelCommandLine=!vm_mode=swarm-init
+After=network-online.target pki-authority-init.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /usr/bin/pki-sync-client sync --config /etc/super/pki-authority-sync/secrets-config.yaml --swarm-env /sp/swarm/swarm-env.yaml -v --disable-server-identity-check
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

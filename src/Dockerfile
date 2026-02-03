@@ -256,15 +256,13 @@ ADD rootfs/files/configs/pki-service/scripts/*.py "${OUTPUTDIR}/usr/local/bin/pk
 ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pki-authority/"
 ADD rootfs/files/configs/pki-service/systemd/pki-authority-init.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-authority.service "${OUTPUTDIR}/etc/systemd/system"
-# ADD rootfs/files/configs/pki-service/systemd/pki-authority-watchdog.service "${OUTPUTDIR}/etc/systemd/system"
-# ADD rootfs/files/configs/pki-service/systemd/pki-authority-watchdog.timer "${OUTPUTDIR}/etc/systemd/system"
-ADD rootfs/files/configs/pki-service/systemd/pki-authority.service.d/init.conf "${OUTPUTDIR}/etc/systemd/system/pki-authority.service.d/init.conf"
-ADD rootfs/files/configs/pki-service/systemd/pki-authority.path "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/systemd/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system"
+RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-authority-sync"
+ADD rootfs/files/configs/pki-service/conf/secrets-config.yaml "${OUTPUTDIR}/etc/super/pki-authority-sync/secrets-config.yaml"
 RUN chmod +x "${OUTPUTDIR}"/usr/local/bin/pki-authority/*.py "${OUTPUTDIR}"/usr/local/bin/pki-authority/*.sh
 RUN ln -s /etc/systemd/system/pki-authority-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-init.service"
 RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
-RUN ln -s /etc/systemd/system/pki-authority.path "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.path"
-# RUN ln -s /etc/systemd/system/pki-authority-watchdog.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-authority-watchdog.timer"
+RUN ln -s /etc/systemd/system/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-sync.service"
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
@@ -366,6 +364,13 @@ RUN chmod +x ${OUTPUTDIR}/etc/swarm-cloud/services/*/main.py
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
+
+# install pki-sync-client npm package globally (requires python3-venv from setup_runtime_tools)
+ARG PKI_SYNC_CLIENT_VERSION=2.0.2
+ADD rootfs/files/scripts/install_sync_client.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/install_sync_client.sh
+RUN --security=insecure /buildroot/files/scripts/install_sync_client.sh "${PKI_SYNC_CLIENT_VERSION}"
+
 # MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
 ADD rootfs/files/scripts/install_mongodb.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_mongodb.sh

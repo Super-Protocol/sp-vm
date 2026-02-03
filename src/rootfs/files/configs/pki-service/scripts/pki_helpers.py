@@ -27,7 +27,7 @@ WIREGUARD_INTERFACE = "wg0"
 STORAGE_PATH = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/swarm-storage")
 IPTABLES_RULE_COMMENT = f"{PKI_SERVICE_NAME}-rule"
 SWARM_ENV_YAML = "/sp/swarm/swarm-env.yaml"
-SWARM_KEY_FILE = "/etc/swarm.key"
+SWARM_KEY_FILE = "/etc/swarm/swarm.key"
 
 
 class LogLevel(Enum):
@@ -355,6 +355,11 @@ def generate_swarm_key() -> str:
     swarm_key = secrets.token_hex(32)  # 32 bytes = 64 hex characters
     
     try:
+        # Ensure directory exists
+        if not swarm_key_path.parent.exists():
+            swarm_key_path.parent.mkdir(parents=True, exist_ok=True)
+            log(LogLevel.INFO, f"Created directory {swarm_key_path.parent}")
+        
         with open(swarm_key_path, "w", encoding="utf-8") as file:
             file.write(swarm_key)
         
@@ -716,6 +721,29 @@ def setup_iptables():
             "-j", "ACCEPT"
         ],
         description="Allow TCP port 8081 on lxcbr0"
+    )
+
+    # Rule 4: DNAT external port 8443 to container port 443
+    ensure_iptables_rule(
+        check_args=[
+            "iptables", "-t", "nat", "-C", "PREROUTING",
+            "-i", "enp0s1",
+            "-p", "tcp",
+            "--dport", PKI_SERVICE_EXTERNAL_PORT,
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "DNAT",
+            "--to-destination", f"{CONTAINER_IP}:443"
+        ],
+        add_args=[
+            "iptables", "-t", "nat", "-A", "PREROUTING",
+            "-i", "enp0s1",
+            "-p", "tcp",
+            "--dport", PKI_SERVICE_EXTERNAL_PORT,
+            "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
+            "-j", "DNAT",
+            "--to-destination", f"{CONTAINER_IP}:443"
+        ],
+        description=f"PKI external access: enp0s1:{PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443"
     )
 
 
