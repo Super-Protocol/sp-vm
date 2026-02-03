@@ -27,6 +27,7 @@ WIREGUARD_INTERFACE = "wg0"
 STORAGE_PATH = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/swarm-storage")
 IPTABLES_RULE_COMMENT = f"{PKI_SERVICE_NAME}-rule"
 SWARM_ENV_YAML = "/sp/swarm/swarm-env.yaml"
+SWARM_KEY_FILE = "/etc/swarm.key"
 
 
 class LogLevel(Enum):
@@ -339,12 +340,82 @@ def get_pki_authority_param(param_name: str) -> str:
         raise Exception(error_msg) from error
 
 
+def generate_swarm_key() -> str:
+    """Generate new 32-byte swarm key and save to file.
+    
+    Returns:
+        Swarm key as hex string (64 characters).
+        
+    Raises:
+        Exception: If failed to save key to file.
+    """
+    swarm_key_path = Path(SWARM_KEY_FILE)
+    
+    log(LogLevel.INFO, "Generating new 32-byte swarm key")
+    swarm_key = secrets.token_hex(32)  # 32 bytes = 64 hex characters
+    
+    try:
+        with open(swarm_key_path, "w", encoding="utf-8") as file:
+            file.write(swarm_key)
+        
+        # Set restrictive permissions (600)
+        swarm_key_path.chmod(0o600)
+        
+        log(LogLevel.INFO, f"Swarm key generated and saved to {SWARM_KEY_FILE}")
+        return swarm_key
+    except Exception as error:
+        error_msg = f"Failed to save swarm key: {error}"
+        log(LogLevel.ERROR, error_msg)
+        raise Exception(error_msg) from error
+
+
+def load_swarm_key() -> str:
+    """Load existing swarm key from file.
+    
+    Returns:
+        Swarm key as hex string (64 characters).
+        
+    Raises:
+        FileNotFoundError: If swarm key file doesn't exist.
+        ValueError: If swarm key format is invalid.
+        Exception: For other errors during reading.
+    """
+    swarm_key_path = Path(SWARM_KEY_FILE)
+    
+    if not swarm_key_path.exists():
+        error_msg = f"Swarm key file {SWARM_KEY_FILE} not found"
+        log(LogLevel.ERROR, error_msg)
+        raise FileNotFoundError(error_msg)
+    
+    log(LogLevel.INFO, f"Reading swarm key from {SWARM_KEY_FILE}")
+    
+    try:
+        with open(swarm_key_path, "r", encoding="utf-8") as file:
+            swarm_key = file.read().strip()
+        
+        # Validate key format (should be 64 hex characters)
+        if not re.match(r'^[0-9a-fA-F]{64}$', swarm_key):
+            error_msg = f"Invalid swarm key format in {SWARM_KEY_FILE}. Expected 64 hex characters."
+            log(LogLevel.ERROR, error_msg)
+            raise ValueError(error_msg)
+        
+        log(LogLevel.INFO, "Swarm key loaded successfully")
+        return swarm_key
+    except (FileNotFoundError, ValueError):
+        raise
+    except Exception as error:
+        error_msg = f"Failed to read swarm key: {error}"
+        log(LogLevel.ERROR, error_msg)
+        raise Exception(error_msg) from error
+
+
 def patch_yaml_config(
     cpu_type: str,
     vm_mode: VMMode,
     pki_domain: str,
     network_type: str,
-    network_key_hash: str
+    network_key_hash: str,
+    swarm_key: str
 ):
     """Set own challenge type in LXC container configuration."""
     template_name = "lxc-swarm-template.yaml"
@@ -418,6 +489,15 @@ def patch_yaml_config(
             f"Set networkSettings: networkType={network_type}, "
             f"networkKeyHashHex={network_key_hash}"
         )
+
+    # Set secretsStorage with swarmKey
+    if swarm_key:
+        if "secretsStorage" not in config:
+            config["secretsStorage"] = {}
+        if "static" not in config["secretsStorage"]:
+            config["secretsStorage"]["static"] = {}
+        config["secretsStorage"]["static"]["swarmKey"] = swarm_key
+        log(LogLevel.INFO, "Set swarmKey in secretsStorage.static")
 
     # Ensure destination directory exists
     dst_yaml.parent.mkdir(parents=True, exist_ok=True)

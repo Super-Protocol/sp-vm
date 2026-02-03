@@ -12,8 +12,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from pki_helpers import (
     log, LogLevel, detect_cpu_type, detect_vm_mode, detect_network_type,
     patch_yaml_config, patch_lxc_config, get_pki_authority_param,
-    setup_iptables, update_pccs_url,
-    PKI_SERVICE_NAME
+    setup_iptables, update_pccs_url, generate_swarm_key, load_swarm_key,
+    PKI_SERVICE_NAME, VMMode
 )
 
 
@@ -38,13 +38,25 @@ def main():
     try:
         pki_domain = get_pki_authority_param("domain")
         network_key = get_pki_authority_param("networkKey")
+        
+        # Get or generate swarm key based on VM mode
+        if vm_mode == VMMode.SWARM_INIT:
+            # In swarm-init mode: try to load existing key, generate if doesn't exist
+            try:
+                swarm_key = load_swarm_key()
+            except FileNotFoundError:
+                swarm_key = generate_swarm_key()
+        else:
+            # In swarm-normal mode: key must exist
+            swarm_key = load_swarm_key()
 
         patch_yaml_config(
             cpu_type=cpu_type,
             vm_mode=vm_mode,
             network_type=network_type,
             pki_domain=pki_domain,
-            network_key_hash=hashlib.sha256(network_key.encode()).hexdigest()
+            network_key_hash=hashlib.sha256(network_key.encode()).hexdigest(),
+            swarm_key=swarm_key
         )
         log(LogLevel.INFO, "YAML config patched successfully")
         

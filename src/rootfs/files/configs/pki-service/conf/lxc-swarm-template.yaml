@@ -1,6 +1,9 @@
 api:
     httpsPort: 443
     httpPort: 80
+    enabledApis:
+    - secrets
+    - pki
 pki:
   allowedChallenges:
     - token
@@ -32,4 +35,12 @@ pki:
         storageFolder: /app/swarm-storage
     networkSettings:
       networkType: trusted
+secretsStorage:
+  static:
+    swarmKey: dummy-swarm-key
+  storage:
+    storageType: file
+    storageFolder: /app/swarm-storage
+  validationCaBundle:
+    type: pki
 

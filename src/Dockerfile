@@ -256,15 +256,15 @@ ADD rootfs/files/configs/pki-service/scripts/*.py "${OUTPUTDIR}/usr/local/bin/pk
 ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pki-authority/"
 ADD rootfs/files/configs/pki-service/systemd/pki-authority-init.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-authority.service "${OUTPUTDIR}/etc/systemd/system"
-ADD rootfs/files/configs/pki-service/systemd/pki-authority-watchdog.service "${OUTPUTDIR}/etc/systemd/system"
-ADD rootfs/files/configs/pki-service/systemd/pki-authority-watchdog.timer "${OUTPUTDIR}/etc/systemd/system"
+# ADD rootfs/files/configs/pki-service/systemd/pki-authority-watchdog.service "${OUTPUTDIR}/etc/systemd/system"
+# ADD rootfs/files/configs/pki-service/systemd/pki-authority-watchdog.timer "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-authority.service.d/init.conf "${OUTPUTDIR}/etc/systemd/system/pki-authority.service.d/init.conf"
 ADD rootfs/files/configs/pki-service/systemd/pki-authority.path "${OUTPUTDIR}/etc/systemd/system"
 RUN chmod +x "${OUTPUTDIR}"/usr/local/bin/pki-authority/*.py "${OUTPUTDIR}"/usr/local/bin/pki-authority/*.sh
 RUN ln -s /etc/systemd/system/pki-authority-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-init.service"
 RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
 RUN ln -s /etc/systemd/system/pki-authority.path "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.path"
-RUN ln -s /etc/systemd/system/pki-authority-watchdog.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-authority-watchdog.timer"
+# RUN ln -s /etc/systemd/system/pki-authority-watchdog.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-authority-watchdog.timer"
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
