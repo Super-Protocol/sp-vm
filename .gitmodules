@@ -7,3 +7,6 @@
 [submodule "swarm-db"]
 	path = src/repos/swarm-db
 	url = git@github.com:Super-Protocol/swarm-db.git
+[submodule "src/repos/sp-swarm-services"]
+	path = src/repos/sp-swarm-services
+	url = git@github.com:Super-Protocol/sp-swarm-services.git
