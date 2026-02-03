@@ -160,6 +160,20 @@ RUN make
 RUN make build-linux-amd64
 ### Swarm DB finish
 
+### Auth service files start
+FROM node:24-bookworm-slim AS auth_service_files_builder
+WORKDIR /work/sp-swarm-services
+
+# ensure bash/find exist for the prepare script
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash findutils ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# copy full repo as requested, then prepare a minimal auth-service bundle into /out
+COPY repos/sp-swarm-services/ ./
+RUN bash ./scripts/prepare-auth-service-files.sh /out
+### Auth service files finish
+
 ### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
 RUN apt update && apt install -y wget gcc make build-essential debootstrap petname gettext
@@ -320,6 +334,10 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/download-sp-swarm-services.sh
 ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
+
+# Auth service (prepared in separate build stage)
+RUN mkdir -p ${OUTPUTDIR}/etc/auth-service
+COPY --from=auth_service_files_builder /out/ ${OUTPUTDIR}/etc/auth-service/
 
 # make /opt/swarm-cloud-api point to built swarm-cloud artifacts
 RUN mkdir -p ${OUTPUTDIR}/opt && ln -s /usr/local/lib/swarm-cloud-api ${OUTPUTDIR}/opt/swarm-cloud-api
