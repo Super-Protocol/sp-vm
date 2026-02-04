@@ -7,7 +7,13 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node /usr/bin/pki-sync-client sync --config /etc/super/pki-authority-sync/secrets-config.yaml --swarm-env /sp/swarm/swarm-env.yaml -v --disable-server-identity-check
+ExecStart=/usr/bin/node /usr/bin/pki-sync-client sync \
+    --config /etc/super/pki-authority-sync/secrets-config.yaml \
+    --swarm-env /sp/swarm/swarm-env.yaml \
+    --save-certs-to-dir /etc/super/certs/ \
+    --save-certs-prefix gatekeeper \
+    --disable-server-identity-check \
+    -v
 Restart=on-failure
 RestartSec=10s
 

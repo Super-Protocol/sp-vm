@@ -26,6 +26,7 @@ PCCS_PORT = "8081"
 PKI_SERVICE_EXTERNAL_PORT = "8443"
 CONTAINER_IP = "10.0.3.100"
 WIREGUARD_INTERFACE = "wg0"
+EXTERNAL_INTERFACE = "enp0s1"  # Default external network interface
 STORAGE_PATH = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/swarm-storage")
 IPTABLES_RULE_COMMENT = f"{PKI_SERVICE_NAME}-rule"
 SWARM_ENV_YAML = "/sp/swarm/swarm-env.yaml"
@@ -668,6 +669,37 @@ def enable_route_localnet(bridge_name: str):
         log(LogLevel.INFO, f"Enabled route_localnet for {bridge_name}")
 
 
+def get_external_interface() -> str:
+    """Detect external network interface from default route.
+    
+    Returns:
+        Name of the external network interface used for default route.
+        Falls back to EXTERNAL_INTERFACE constant if detection fails.
+    """
+    try:
+        # Get default route interface
+        result = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        
+        if result.returncode == 0 and result.stdout:
+            # Parse output like: "default via 192.168.1.1 dev enp0s1 proto dhcp metric 100"
+            match = re.search(r'dev\s+(\S+)', result.stdout)
+            if match:
+                interface = match.group(1)
+                log(LogLevel.INFO, f"Detected external interface from default route: {interface}")
+                return interface
+        
+        log(LogLevel.WARN, f"Could not detect external interface, using default: {EXTERNAL_INTERFACE}")
+        return EXTERNAL_INTERFACE
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        log(LogLevel.WARN, f"Failed to detect external interface: {error}, using default: {EXTERNAL_INTERFACE}")
+        return EXTERNAL_INTERFACE
+
+
 def delete_iptables_rules():
     """Delete all iptables rules for PKI container (NAT and filter tables)."""
     # Delete rules from NAT table chains: PREROUTING, OUTPUT, POSTROUTING
@@ -717,6 +749,7 @@ def ensure_iptables_rule(check_args: List[str], add_args: List[str], description
 def setup_iptables():
     """Setup iptables NAT rules for LXC container access to host services."""
     host_ip = get_bridge_ip(BRIDGE_NAME)
+    external_interface = get_external_interface()
 
     enable_route_localnet(BRIDGE_NAME)
 
@@ -785,7 +818,7 @@ def setup_iptables():
     ensure_iptables_rule(
         check_args=[
             "iptables", "-t", "nat", "-C", "PREROUTING",
-            "-i", "enp0s1",
+            "-i", external_interface,
             "-p", "tcp",
             "--dport", PKI_SERVICE_EXTERNAL_PORT,
             "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
@@ -794,14 +827,14 @@ def setup_iptables():
         ],
         add_args=[
             "iptables", "-t", "nat", "-A", "PREROUTING",
-            "-i", "enp0s1",
+            "-i", external_interface,
             "-p", "tcp",
             "--dport", PKI_SERVICE_EXTERNAL_PORT,
             "-m", "comment", "--comment", IPTABLES_RULE_COMMENT,
             "-j", "DNAT",
             "--to-destination", f"{CONTAINER_IP}:443"
         ],
-        description=f"PKI external access: enp0s1:{PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443"
+        description=f"PKI external access: {external_interface}:{PKI_SERVICE_EXTERNAL_PORT} -> {CONTAINER_IP}:443"
     )
 
 
