@@ -291,6 +291,12 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/loca
 # run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
+# auth-service (runs as a swarm service)
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-auth-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-auth-service.service
+ADD rootfs/files/configs/usr/local/bin/sp-svc-auth-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-auth-service.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/sp-svc-auth-service.sh
+RUN ln -sf /etc/systemd/system/sp-svc-auth-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-auth-service.service"
+
 # swarm one-shot services runner
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
 ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
