@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import List, Optional
 
 import yaml
+from cryptography import x509
+from cryptography.x509.oid import ObjectIdentifier
 
 PKI_SERVICE_NAME = "pki-authority"
 SERVICE_INSIDE_CONTAINER = "tee-pki"
@@ -28,6 +30,7 @@ STORAGE_PATH = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/rootfs/app/swarm-storage")
 IPTABLES_RULE_COMMENT = f"{PKI_SERVICE_NAME}-rule"
 SWARM_ENV_YAML = "/sp/swarm/swarm-env.yaml"
 SWARM_KEY_FILE = "/etc/swarm/swarm.key"
+OID_CUSTOM_EXTENSION_NETWORK_TYPE = "1.3.6.1.3.8888.4"
 
 
 class LogLevel(Enum):
@@ -48,6 +51,13 @@ class VMMode(Enum):
     """VM mode types."""
     SWARM_INIT = "swarm-init"
     SWARM_NORMAL = "swarm-normal"
+
+
+class NetworkType(Enum):
+    """Network type types."""
+    TRUSTED = "trusted"
+    UNTRUSTED = "untrusted"
+
 
 class LXCContainer:
     """Manager for LXC container operations."""
@@ -233,21 +243,69 @@ def detect_vm_mode() -> VMMode:
         return VMMode.SWARM_NORMAL
 
 
-def detect_network_type() -> str:
+def detect_network_type() -> NetworkType:
     """Detect network type from kernel command line.
 
     Returns:
-        'untrusted' if allow_untrusted=true is present in cmdline, otherwise 'trusted'.
+        NetworkType.UNTRUSTED if allow_untrusted=true is present in cmdline,
+        otherwise NetworkType.TRUSTED.
     """
     try:
         with open("/proc/cmdline", "r", encoding="utf-8") as file:
             cmdline = file.read()
 
         if "allow_untrusted=true" in cmdline:
-            return "untrusted"
-        return "trusted"
+            return NetworkType.UNTRUSTED
+        return NetworkType.TRUSTED
     except FileNotFoundError:
-        return "trusted"
+        return NetworkType.TRUSTED
+
+
+def read_network_type_from_certificate(cert_path: Path = STORAGE_PATH / "basic_certificate") -> NetworkType:
+    """Read network type from certificate's custom OID extension.
+    
+    Args:
+        cert_path: Path to PEM certificate file.
+    
+    Returns:
+        NetworkType.TRUSTED or NetworkType.UNTRUSTED based on OID 1.3.6.1.3.8888.4 value.
+        Defaults to NetworkType.TRUSTED if OID is not present or has other value.
+    """
+    try:
+        if not cert_path.exists():
+            error_msg = f"Certificate not found at {cert_path}"
+            log(LogLevel.ERROR, error_msg)
+            raise FileNotFoundError(error_msg)
+        
+        with open(cert_path, "rb") as f:
+            cert = x509.load_pem_x509_certificate(f.read())
+        
+        # Custom OID for network type
+        network_type_oid = ObjectIdentifier(OID_CUSTOM_EXTENSION_NETWORK_TYPE)
+        
+        try:
+            # Try to get the extension by OID
+            extension = cert.extensions.get_extension_for_oid(network_type_oid)
+            # Extension value is typically ASN.1 encoded, get raw value
+            value = extension.value.value.decode('utf-8').strip()
+            
+            if value == NetworkType.TRUSTED.value:
+                log(LogLevel.INFO, f"Network type from certificate OID: {value}")
+                return NetworkType.TRUSTED
+            elif value == NetworkType.UNTRUSTED.value:
+                log(LogLevel.INFO, f"Network type from certificate OID: {value}")
+                return NetworkType.UNTRUSTED
+            else:
+                log(LogLevel.WARN, f"Unknown network type value '{value}' in OID, defaulting to trusted")
+                return NetworkType.TRUSTED
+                
+        except x509.ExtensionNotFound:
+            log(LogLevel.INFO, f"OID {OID_CUSTOM_EXTENSION_NETWORK_TYPE} not found in certificate, defaulting to trusted")
+            return NetworkType.TRUSTED
+            
+    except Exception as e:
+        log(LogLevel.ERROR, f"Error reading certificate: {e}, defaulting to trusted")
+        return NetworkType.TRUSTED
 
 
 def read_yaml_config_param(param_path: str) -> Optional[str]:
@@ -418,7 +476,7 @@ def patch_yaml_config(
     cpu_type: str,
     vm_mode: VMMode,
     pki_domain: str,
-    network_type: str,
+    network_type: NetworkType,
     network_key_hash: str,
     swarm_key: str
 ):
@@ -450,10 +508,10 @@ def patch_yaml_config(
     # For untrusted, generate random deviceIdHex (32 bytes)
     if cpu_type == "untrusted":
         # Check if untrusted CPU type is running in trusted network
-        if network_type != "untrusted":
+        if network_type != NetworkType.UNTRUSTED:
             error_msg = (
                 "Cannot run untrusted machine in trusted network. "
-                f"CPU type: {cpu_type}, Network type: {network_type}"
+                f"CPU type: {cpu_type}, Network type: {network_type.value}"
             )
             log(LogLevel.ERROR, error_msg)
             raise ValueError(error_msg)
@@ -463,7 +521,7 @@ def patch_yaml_config(
         log(LogLevel.INFO, f"Generated deviceIdHex for untrusted type: {device_id_hex}")
 
     # Add 'untrusted' to allowedChallenges if network type is untrusted
-    if network_type == "untrusted":
+    if network_type == NetworkType.UNTRUSTED:
         if "allowedChallenges" not in config["pki"]:
             config["pki"]["allowedChallenges"] = []
         if "untrusted" not in config["pki"]["allowedChallenges"]:
@@ -486,12 +544,12 @@ def patch_yaml_config(
     # Set networkSettings
     if network_type and network_key_hash:
         config["pki"]["mode"]["networkSettings"] = {
-            "networkType": network_type,
+            "networkType": network_type.value,
             "networkKeyHashHex": network_key_hash
         }
         log(
             LogLevel.INFO,
-            f"Set networkSettings: networkType={network_type}, "
+            f"Set networkSettings: networkType={network_type.value}, "
             f"networkKeyHashHex={network_key_hash}"
         )
 

@@ -13,7 +13,8 @@ from pki_helpers import (
     log, LogLevel, detect_cpu_type, detect_vm_mode, detect_network_type,
     patch_yaml_config, patch_lxc_config, get_pki_authority_param,
     setup_iptables, update_pccs_url, generate_swarm_key, load_swarm_key,
-    PKI_SERVICE_NAME, VMMode
+    read_network_type_from_certificate,
+    PKI_SERVICE_NAME, VMMode, NetworkType, STORAGE_PATH
 )
 
 
@@ -29,11 +30,40 @@ def main():
     # Detect environment
     cpu_type = detect_cpu_type()
     vm_mode = detect_vm_mode()
-    network_type = detect_network_type()
     
     log(LogLevel.INFO, f"CPU type: {cpu_type}")
     log(LogLevel.INFO, f"VM mode: {vm_mode.value}")
-    log(LogLevel.INFO, f"Network type: {network_type}")
+    
+    # Network type detection based on VM mode
+    if vm_mode == VMMode.SWARM_INIT:
+        # In swarm-init mode: read from kernel cmdline
+        network_type = detect_network_type()
+        log(LogLevel.INFO, f"Network type (from cmdline): {network_type.value}")
+    else:
+        # In swarm-normal mode: verify required files exist in swarm-storage
+        # These files should be synced by pki-authority-sync.service before this script runs
+        required_files = [
+            "auth_token",
+            "basic_certificate",
+            "basic_privateKey",
+            "lite_certificate",
+            "lite_privateKey"
+        ]
+        
+        missing_files = [f for f in required_files if not (STORAGE_PATH / f).exists()]
+        if missing_files:
+            error_msg = (
+                f"Required files missing in {STORAGE_PATH}: {', '.join(missing_files)}. "
+                "These files should be synced by pki-authority-sync.service before this script runs."
+            )
+            log(LogLevel.ERROR, error_msg)
+            sys.exit(1)
+        
+        log(LogLevel.INFO, "All required swarm-storage files are present")
+        
+        # Read network type from certificate OID
+        network_type = read_network_type_from_certificate()
+        log(LogLevel.INFO, f"Network type (from certificate): {network_type.value}")
     
     try:
         try:
