@@ -37,18 +37,28 @@ function build_swarm_cloud() {
     log_info "publishing built swarm-node artifacts to /usr/local/lib/swarm-cloud";
     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/apps/swarm-node';
     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-node/{dist,node_modules} /usr/local/lib/swarm-cloud/apps/swarm-node/';
-# 
-#     # swarm-cloud-ui
-#     log_info "building swarm-cloud-ui";
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-cloud-ui --output-style=stream';
-# 
-#     log_info "deploying swarm-cloud-ui via pnpm deploy to /usr/local/lib/swarm-cloud/apps/swarm-cloud-ui";
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; mkdir -p /usr/local/lib/swarm-cloud/apps/swarm-cloud-ui';
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/apps/swarm-cloud-ui/{.next,node_modules} /usr/local/lib/swarm-cloud/apps/swarm-cloud-ui/';
-# 
-#     log_info "copying shared UI libraries to /usr/local/lib/swarm-cloud/libs";
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'mkdir -p /usr/local/lib/swarm-cloud/libs';
-#     chroot "${OUTPUTDIR}" /bin/bash -lc 'cp -r /opt/swarm-cloud/libs/ui /usr/local/lib/swarm-cloud/libs/ui';
+
+    # swarm-cloud-ui
+    log_info "building swarm-cloud-ui";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'cd /opt/swarm-cloud && pnpm nx build swarm-cloud-ui --output-style=stream';
+
+    log_info "publishing built swarm-cloud-ui (Next standalone) to /usr/local/lib/swarm-cloud/apps/swarm-cloud-ui";
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'set -e; rm -rf /usr/local/lib/swarm-cloud/apps/swarm-cloud-ui; mkdir -p /usr/local/lib/swarm-cloud/apps/swarm-cloud-ui';
+    chroot "${OUTPUTDIR}" /bin/bash -lc '
+set -euo pipefail;
+UI_SRC=/opt/swarm-cloud/apps/swarm-cloud-ui;
+UI_DST=/usr/local/lib/swarm-cloud/apps/swarm-cloud-ui;
+
+# public assets (optional)
+cp -a "${UI_SRC}/public" "${UI_DST}/public" 2>/dev/null || true;
+
+# copy standalone server bundle
+cp -a "${UI_SRC}/.next/standalone/." "${UI_DST}/";
+
+# next standalone expects static assets under apps/swarm-cloud-ui/.next/static
+mkdir -p "${UI_DST}/apps/swarm-cloud-ui/.next";
+cp -a "${UI_SRC}/.next/static" "${UI_DST}/apps/swarm-cloud-ui/.next/static";
+';
 
 #     # In the deployed UI lib, TypeScript sources live under libs/ui/src, but some imports
 #     # reference sibling TS modules with a .js extension (e.g. "../lib/utils.js", "./button.js").
