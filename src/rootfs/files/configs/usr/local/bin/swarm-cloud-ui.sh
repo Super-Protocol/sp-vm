@@ -14,7 +14,7 @@ SWARM_CLOUD_UI_DIR="${SWARM_CLOUD_ROOT}/apps/swarm-cloud-ui"
 cd "${SWARM_CLOUD_UI_DIR}"
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "Node.js is not installed or not in PATH. Please install Node.js first." >&2
+  echo "Node.js is not installed or not in PATH." >&2
   exit 1
 fi
 
