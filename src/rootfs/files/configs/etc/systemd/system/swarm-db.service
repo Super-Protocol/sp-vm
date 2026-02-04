@@ -1,7 +1,7 @@
 [Unit]
 Description=Swarm DB service
-After=network-online.target local-fs.target
-Wants=network-online.target
+After=network-online.target local-fs.target pki-authority.service
+Wants=network-online.target pki-authority.service
 RequiresMountsFor=/var /var/lib /var/lib/swarm-db
 ConditionPathExists=/usr/local/bin/swarm-db-linux-amd64
 ConditionPathExists=/sp/swarm/node-db.yaml
@@ -10,7 +10,11 @@ ConditionPathExists=/sp/swarm/node-db.yaml
 Type=simple
 WorkingDirectory=/
 ExecStartPre=mkdir -p /var/lib/swarm-db/data
-ExecStart=/usr/local/bin/swarm-db-linux-amd64 -config /sp/swarm/node-db.yaml
+ExecStartPre=/usr/local/bin/prepare_swarm_db_config.py \
+    --base-config /sp/swarm/node-db.yaml \
+    --key-file /etc/swarm/swarm.key \
+    --output-config /etc/swarm/swarm-db-config.yaml
+ExecStart=/usr/local/bin/swarm-db-linux-amd64 -config /etc/swarm/swarm-db-config.yaml
 StandardOutput=append:/var/log/swarm-db.log
 StandardError=append:/var/log/swarm-db-err.log
 Restart=always

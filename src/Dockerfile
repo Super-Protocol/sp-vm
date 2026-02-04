@@ -279,6 +279,8 @@ RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/sy
 # swarm services
 ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
 RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
+ADD rootfs/files/scripts/prepare_swarm_db_config.py ${OUTPUTDIR}/usr/local/bin/prepare_swarm_db_config.py
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/prepare_swarm_db_config.py
 ADD rootfs/files/configs/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
 ADD rootfs/files/configs/etc/systemd/system/swarm-node.service ${OUTPUTDIR}/etc/systemd/system/swarm-node.service
 ADD rootfs/files/configs/usr/local/bin/swarm-node.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
