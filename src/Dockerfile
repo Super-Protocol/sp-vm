@@ -311,6 +311,8 @@ RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
 
 # swarm binaries into VM rootfs
 RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bin"
+ADD rootfs/files/configs/usr/local/bin/swarm-cloud-ui.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud-ui.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-ui.sh
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
 COPY repos/swarm-cloud ${OUTPUTDIR}/opt/swarm-cloud
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud
