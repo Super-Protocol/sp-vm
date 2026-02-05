@@ -35,28 +35,52 @@ def is_local_node_leader(local_node_id: str, state_json: dict) -> bool:
     return get_leader_node(state_json) == local_node_id
 
 
-def get_redis_connection_info(state_json: dict) -> List[Tuple[str, int]]:
-    """Get Redis cluster connection endpoints.
+def get_sentinel_connection_info(state_json: dict) -> List[Tuple[str, int]]:
+    """Get Redis Sentinel connection endpoints."""
+    sentinel_props = state_json.get("sentinelNodeProperties", [])
+    wg_props = state_json.get("sentinelWgNodeProperties", []) or state_json.get("wgNodeProperties", [])
 
-    Returns list of (host, port) tuples for Redis nodes.
-    """
-    redis_props = state_json.get("redisNodeProperties", [])
-    wg_props = state_json.get("wgNodeProperties", [])
-
-    # Find ready Redis nodes
-    ready_nodes = set()
-    for prop in redis_props:
-        if prop.get("name") == "redis_node_ready" and prop.get("value") == "true":
-            ready_nodes.add(prop.get("node_id"))
-
-    # Get tunnel IPs for ready nodes
     endpoints: List[Tuple[str, int]] = []
-    for node_id in ready_nodes:
+    for prop in sentinel_props:
+        if prop.get("name") != "redis_sentinel_node_ready" or prop.get("value") != "true":
+            continue
+        node_id = prop.get("node_id")
+        if not node_id:
+            continue
         tunnel_ip = get_node_tunnel_ip(node_id, wg_props)
         if tunnel_ip:
-            endpoints.append((tunnel_ip, 6379))
+            endpoints.append((tunnel_ip, 26379))
 
-    return endpoints
+    return sorted(set(endpoints))
+
+
+def get_redis_master_endpoint(state_json: dict) -> Tuple[Tuple[str, int] | None, str | None]:
+    """Resolve Redis master via Sentinel."""
+    sentinel_endpoints = get_sentinel_connection_info(state_json)
+    if not sentinel_endpoints:
+        return None, "No Redis Sentinel endpoints available"
+
+    try:
+        import redis
+    except ImportError:
+        return None, "redis-py library not installed"
+
+    last_error: str | None = None
+    for host, port in sentinel_endpoints:
+        try:
+            r = redis.Redis(
+                host=host,
+                port=port,
+                decode_responses=True,
+                socket_connect_timeout=2,
+            )
+            res = r.execute_command("SENTINEL", "get-master-addr-by-name", "redis-master")
+            if isinstance(res, (list, tuple)) and len(res) >= 2:
+                return (res[0], int(res[1])), None
+        except Exception as e:
+            last_error = f"Sentinel {host}:{port} error: {e}"
+
+    return None, last_error or "Failed to resolve Redis master via Sentinel"
 
 
 def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
@@ -67,9 +91,9 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
       we find its WireGuard tunnel IP via wgNodeProperties.
     - Each such IP becomes a backend URL http://<ip>:APP_PORT.
     """
-    endpoints = get_redis_connection_info(state_json)
-    if not endpoints:
-        msg = "No Redis endpoints available"
+    master_endpoint, err = get_redis_master_endpoint(state_json)
+    if not master_endpoint:
+        msg = err or "No Redis master endpoint available"
         print(f"[!] {msg}", file=sys.stderr)
         return False, msg
 
@@ -91,13 +115,10 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
 
     try:
         import redis
-        from redis.cluster import ClusterNode
     except ImportError:
         return False, "redis-py library not installed"
 
-    startup_nodes = [ClusterNode(host, port) for host, port in endpoints]
-
-    # A few retries in case the cluster is still converging or there are
+    # A few retries in case Sentinel/Redis is still converging or there are
     # short-lived connectivity issues.
     max_retries = 20
     retry_delay_sec = 5
@@ -107,14 +128,14 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
         try:
             print(
                 f"[*] Attempt {attempt}/{max_retries} to set route {ROUTE_KEY} "
-                f"in Redis Cluster via startup_nodes={startup_nodes}",
+                f"in Redis via master={master_endpoint}",
                 file=sys.stderr,
             )
-
-            r = redis.RedisCluster(
-                startup_nodes=startup_nodes,
+            host, port = master_endpoint
+            r = redis.Redis(
+                host=host,
+                port=port,
                 decode_responses=True,
-                skip_full_coverage_check=True,
                 socket_connect_timeout=5,
             )
             r.ping()
@@ -131,47 +152,45 @@ def ensure_route_in_redis(state_json: dict) -> Tuple[bool, str | None]:
             r.set(ROUTE_KEY, json.dumps(route_config))
             print(
                 f"[*] Successfully set route {ROUTE_KEY} -> {json.dumps(route_config)} "
-                f"in Redis Cluster on attempt {attempt}",
+                f"in Redis on attempt {attempt}",
                 file=sys.stderr,
             )
             return True, None
         except Exception as e:
-            last_error = f"Failed to write route to Redis Cluster on attempt {attempt}: {e}"
+            last_error = f"Failed to write route to Redis on attempt {attempt}: {e}"
             print(f"[!] {last_error}", file=sys.stderr)
 
             if attempt < max_retries:
                 time.sleep(retry_delay_sec)
 
     # All attempts failed
-    return False, last_error or "Failed to write route to Redis Cluster after retries"
+    return False, last_error or "Failed to write route to Redis after retries"
 
 
 def delete_route_from_redis(state_json: dict) -> Tuple[bool, str | None]:
     """Delete the OpenResty route from Redis Cluster."""
-    endpoints = get_redis_connection_info(state_json)
-    if not endpoints:
-        return False, "No Redis endpoints available"
+    master_endpoint, err = get_redis_master_endpoint(state_json)
+    if not master_endpoint:
+        return False, err or "No Redis master endpoint available"
 
     try:
         import redis
-        from redis.cluster import ClusterNode
     except ImportError:
         return False, "redis-py library not installed"
 
-    startup_nodes = [ClusterNode(host, port) for host, port in endpoints]
-
     try:
-        r = redis.RedisCluster(
-            startup_nodes=startup_nodes,
+        host, port = master_endpoint
+        r = redis.Redis(
+            host=host,
+            port=port,
             decode_responses=True,
-            skip_full_coverage_check=True,
             socket_connect_timeout=5,
         )
         r.delete(ROUTE_KEY)
-        print(f"[*] Deleted route {ROUTE_KEY} from Redis Cluster", file=sys.stderr)
+        print(f"[*] Deleted route {ROUTE_KEY} from Redis", file=sys.stderr)
         return True, None
     except Exception as e:
-        error_msg = f"Failed to delete route from Redis Cluster: {str(e)}"
+        error_msg = f"Failed to delete route from Redis: {str(e)}"
         print(f"[!] {error_msg}", file=sys.stderr)
         return False, error_msg
 
@@ -195,9 +214,9 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
     if not is_local_node_leader(local_node_id, state_json):
         return PluginOutput(status="completed", local_state=local_state)
 
-    endpoints = get_redis_connection_info(state_json)
-    if not endpoints:
-        msg = "No Redis endpoints available (init)"
+    master_endpoint, err = get_redis_master_endpoint(state_json)
+    if not master_endpoint:
+        msg = err or "No Redis master endpoint available (init)"
         print(f"[!] {msg}", file=sys.stderr)
         return PluginOutput(
             status="postponed",
@@ -208,7 +227,6 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
     # Optionally verify that Redis cluster is reachable from at least one endpoint.
     try:
         import redis
-        from redis.cluster import ClusterNode
     except ImportError:
         msg = "redis-py library not installed (init)"
         print(f"[!] {msg}", file=sys.stderr)
@@ -218,8 +236,6 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
             local_state=local_state,
         )
 
-    startup_nodes = [ClusterNode(host, port) for host, port in endpoints]
-
     max_retries = 3
     retry_delay_sec = 5
     last_error: str | None = None
@@ -227,33 +243,34 @@ def handle_init(input_data: PluginInput) -> PluginOutput:
     for attempt in range(1, max_retries + 1):
         try:
             print(
-                f"[*] init: attempt {attempt}/{max_retries} to ping Redis Cluster "
-                f"via startup_nodes={startup_nodes}",
+                f"[*] init: attempt {attempt}/{max_retries} to ping Redis master "
+                f"via {master_endpoint}",
                 file=sys.stderr,
             )
-            r = redis.RedisCluster(
-                startup_nodes=startup_nodes,
+            host, port = master_endpoint
+            r = redis.Redis(
+                host=host,
+                port=port,
                 decode_responses=True,
-                skip_full_coverage_check=True,
                 socket_connect_timeout=5,
             )
             r.ping()
 
             print(
-                f"[*] init: Redis Cluster is reachable on attempt {attempt}",
+                f"[*] init: Redis master is reachable on attempt {attempt}",
                 file=sys.stderr,
             )
             return PluginOutput(status="completed", local_state=local_state)
         except Exception as e:
-            last_error = f"init: failed to ping Redis Cluster on attempt {attempt}: {e}"
+            last_error = f"init: failed to ping Redis master on attempt {attempt}: {e}"
             print(f"[!] {last_error}", file=sys.stderr)
             if attempt < max_retries:
                 time.sleep(retry_delay_sec)
 
-    # If we reach here, Redis cluster is still not reachable — postpone init.
+    # If we reach here, Redis is still not reachable — postpone init.
     return PluginOutput(
         status="postponed",
-        error_message=last_error or "init: Redis Cluster is not reachable",
+        error_message=last_error or "init: Redis master is not reachable",
         local_state=local_state,
     )
 
@@ -319,7 +336,6 @@ def handle_health(input_data: PluginInput) -> PluginOutput:
 
     try:
         import redis
-        from redis.cluster import ClusterNode
     except ImportError:
         # If library is missing, health is postponed rather than fatal
         return PluginOutput(
@@ -328,21 +344,20 @@ def handle_health(input_data: PluginInput) -> PluginOutput:
             local_state=local_state,
         )
 
-    endpoints = get_redis_connection_info(state_json)
-    if not endpoints:
+    master_endpoint, err = get_redis_master_endpoint(state_json)
+    if not master_endpoint:
         return PluginOutput(
             status="postponed",
-            error_message="No Redis endpoints available",
+            error_message=err or "No Redis master endpoint available",
             local_state=local_state,
         )
 
-    startup_nodes = [ClusterNode(host, port) for host, port in endpoints]
-
     try:
-        r = redis.RedisCluster(
-            startup_nodes=startup_nodes,
+        host, port = master_endpoint
+        r = redis.Redis(
+            host=host,
+            port=port,
             decode_responses=True,
-            skip_full_coverage_check=True,
             socket_connect_timeout=5,
         )
         value = r.get(ROUTE_KEY)

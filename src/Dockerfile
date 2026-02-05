@@ -406,7 +406,9 @@ RUN mkdir -p ${OUTPUTDIR}/etc/resty-auto-ssl/storage \
     && chown -R www-data:www-data ${OUTPUTDIR}/etc/resty-auto-ssl
 # disable autostart without requiring systemd during build (remove enable symlinks)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
-    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service
+    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service \
+    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-sentinel.service \
+    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-sentinel.service
 # ensure swarm-cloud-api, cockroachdb and wireguard are disabled by default (no systemd enable symlinks)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/cockroachdb.service \
     && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/wg-quick@wg0.service
