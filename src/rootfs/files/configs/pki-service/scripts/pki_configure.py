@@ -4,7 +4,6 @@ PKI Authority LXC container configuration.
 Configures the container with network, device access, and runtime settings.
 """
 
-import hashlib
 import sys
 from pathlib import Path
 
@@ -43,7 +42,6 @@ def main():
         # In swarm-normal mode: verify required files exist in swarm-storage
         # These files should be synced by pki-authority-sync.service before this script runs
         required_files = [
-            "auth_token",
             "basic_certificate",
             "basic_privateKey",
             "lite_certificate",
@@ -73,7 +71,7 @@ def main():
             pki_domain = "localhost"
             log(LogLevel.INFO, f"Using default domain: {pki_domain}")
         
-        network_key = get_pki_authority_param("networkKey")
+        network_id = get_pki_authority_param("networkID")
         
         # Get or generate swarm key based on VM mode
         if vm_mode == VMMode.SWARM_INIT:
@@ -91,7 +89,7 @@ def main():
             vm_mode=vm_mode,
             network_type=network_type,
             pki_domain=pki_domain,
-            network_key_hash=hashlib.sha256(network_key.encode()).hexdigest(),
+            network_id=network_id,
             swarm_key=swarm_key
         )
         log(LogLevel.INFO, "YAML config patched successfully")

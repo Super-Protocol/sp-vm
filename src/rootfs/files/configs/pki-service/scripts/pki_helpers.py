@@ -478,7 +478,7 @@ def patch_yaml_config(
     vm_mode: VMMode,
     pki_domain: str,
     network_type: NetworkType,
-    network_key_hash: str,
+    network_id: str,
     swarm_key: str
 ):
     """Set own challenge type in LXC container configuration."""
@@ -543,16 +543,17 @@ def patch_yaml_config(
     log(LogLevel.INFO, f"Set swarmMode to: {mode_value}")
 
     # Set networkSettings
-    if network_type and network_key_hash:
-        config["pki"]["mode"]["networkSettings"] = {
-            "networkType": network_type.value,
-            "networkKeyHashHex": network_key_hash
-        }
-        log(
-            LogLevel.INFO,
-            f"Set networkSettings: networkType={network_type.value}, "
-            f"networkKeyHashHex={network_key_hash}"
-        )
+    if network_type or network_id:
+        if "networkSettings" not in config["pki"]["mode"]:
+            config["pki"]["mode"]["networkSettings"] = {}
+        
+        if network_type:
+            config["pki"]["mode"]["networkSettings"]["networkType"] = network_type.value
+            log(LogLevel.INFO, f"Set networkSettings.networkType: {network_type.value}")
+        
+        if network_id:
+            config["pki"]["mode"]["networkSettings"]["networkID"] = network_id
+            log(LogLevel.INFO, f"Set networkSettings.networkID: {network_id}")
 
     # Set secretsStorage with swarmKey
     if swarm_key:
