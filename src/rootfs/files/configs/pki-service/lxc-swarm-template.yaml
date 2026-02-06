@@ -1,0 +1,34 @@
+api:
+    httpsPort: 443
+    httpPort: 80
+pki:
+  allowedChallenges:
+    - token
+    - tdx
+    - sev-snp
+  allowedSubRootChallenges:
+    - type: tdx
+      signatureVerification: github
+    - type: sev-snp
+      signatureVerification: github
+  tokenStorage:
+    storageType: file
+    storageFolder: /app/swarm-storage
+  ownDomain: ca-subroot.super-protocol.svc.cluster.local
+  ownChallenge:
+    type: tdx
+  certParams:
+    ocspUrl: https://ocsp.certs.superprotocol.com/v1/ocsp
+  keyStorage:
+    type: trusted
+    storage:
+      type: super
+      keysPath: /app/keys
+  mode:
+    role: subroot
+    attestationServiceSource:
+      type: swarm
+      mode: init
+      storage:
+        storageType: file
+        storageFolder: /app/swarm-storage

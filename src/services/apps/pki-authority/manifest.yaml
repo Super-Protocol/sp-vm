@@ -1,0 +1,94 @@
+name: pki-authority
+version: 1.0.0
+commands:
+  - init
+  - apply
+  - health
+  - finalize
+  - destroy
+healthcheckIntervalSecs: 60
+entrypoint: main.py
+stateExpr:
+  engine: jq
+  query: |
+    ($swarmdb.clusters[] | select(.id == "{{ clusterId }}" and .deleted_ts == null)) as $cluster |
+
+    ([$swarmdb.clusternodes[] | select(.cluster == "{{ clusterId }}" and .deleted_ts == null)]) as $pkiClusterNodes |
+
+    ($pkiClusterNodes | map(.node)) as $pkiNodeIds |
+
+    # Find Redis cluster
+    (
+      $swarmdb.clusters[] |
+      select(.cluster_policy == "redis" and .deleted_ts == null)
+    ) as $redisCluster |
+
+    # Get Redis cluster nodes
+    ([$swarmdb.clusternodes[] | select(.cluster == $redisCluster.id and .deleted_ts == null)]) as $redisClusterNodes |
+
+    ($redisClusterNodes | map(.node)) as $redisNodeIds |
+
+    # Find WireGuard cluster that contains PKI nodes
+    (
+      $swarmdb.clusters[] |
+      select(.cluster_policy == "wireguard" and .deleted_ts == null) |
+      . as $currentCluster |
+      select(
+        (
+          [$swarmdb.clusternodes[] | select(.cluster == $currentCluster.id and .deleted_ts == null and (.node | IN($pkiNodeIds[])))] |
+          length > 0
+        )
+      )
+    ) as $wgCluster |
+
+    {
+      cluster: {
+        id: $cluster.id,
+        cluster_policy: $cluster.cluster_policy,
+        leader_node: $cluster.leader_node
+      },
+
+      clusterNodes: [
+        $pkiClusterNodes[] |
+        {id, node_id: .node, cluster}
+      ] | sort_by(.id, .node_id, .cluster),
+
+      redisCluster: {
+        id: $redisCluster.id
+      },
+
+      redisNodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith($redisCluster.id)) and
+          .deleted_ts == null and
+          .name == "redis_node_ready"
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
+      wgCluster: {
+        id: $wgCluster.id
+      },
+
+      wgNodeProperties: [
+        $swarmdb.clusternodeproperties[] |
+        select(
+          (.cluster_node | startswith($wgCluster.id)) and
+          .deleted_ts == null and
+          .name == "tunnel_ip"
+        ) |
+        {cluster_node, name, value, node_id: ( .cluster_node as $cn | $swarmdb.clusternodes[] | select(.id == $cn)) | .node}
+      ] | sort_by(.cluster_node, .name, .value, .node_id),
+
+      authorityServiceProperties: [
+        $swarmdb.clusterproperties[] |
+        select(
+          .cluster == $cluster.id and
+          .deleted_ts == null and
+          (.name | startswith("pki_authority_"))
+        ) |
+        {name, value}
+      ] | sort_by(.name)
+    }
+
