@@ -3,16 +3,11 @@ Description=NVIDIA Persistence Daemon
 Wants=syslog.target
 StopWhenUnneeded=true
 Before=systemd-backlight@backlight:nvidia_0.service
-ConditionPathExists=/dev/nvidiactl
-ConditionPathExists=/usr/bin/nvidia-smi
 
 [Service]
 Type=forking
-ExecStartPre=/usr/bin/nvidia-persistenced --uvm-persistence-mode --verbose --user root
+ExecStartPre=/usr/bin/nvidia-persistenced --uvm-persistence-mode --verbose
 ExecStart=/usr/bin/nvidia-smi conf-compute -srs 1
 ExecStopPost=/bin/rm -rf /var/run/nvidia-persistenced
 TimeoutStartSec=1000
 TimeoutStopSec=1000
-
-[Install]
-WantedBy=multi-user.target
