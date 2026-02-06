@@ -269,8 +269,10 @@ def read_network_type_from_certificate(cert_path: Path = STORAGE_PATH / "basic_c
         cert_path: Path to PEM certificate file.
     
     Returns:
-        NetworkType.TRUSTED or NetworkType.UNTRUSTED based on OID 1.3.6.1.3.8888.4 value.
-        Defaults to NetworkType.TRUSTED if OID is not present or has other value.
+        NetworkType.TRUSTED or NetworkType.UNTRUSTED based on the value of the
+        custom extension identified by OID_CUSTOM_EXTENSION_NETWORK_TYPE.
+        Defaults to NetworkType.TRUSTED if the extension is not present or has
+        another value.
     """
     try:
         if not cert_path.exists():

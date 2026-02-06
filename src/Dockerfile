@@ -260,8 +260,9 @@ RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
 ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
 
+ARG PKI_AUTHORITY_SERVICE_LXC_TAG=build-21720130629
 RUN mkdir -p "${OUTPUTDIR}/etc/super/containers/pki-authority"
-COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-21720130629 /pki-authority.tar "${OUTPUTDIR}/etc/super/containers/pki-authority/pki-authority.tar"
+COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:${PKI_AUTHORITY_SERVICE_LXC_TAG} /pki-authority.tar "${OUTPUTDIR}/etc/super/containers/pki-authority/pki-authority.tar"
 ADD rootfs/files/configs/pki-service/conf/lxc-swarm-template.yaml "${OUTPUTDIR}/etc/super/containers/pki-authority/lxc-swarm-template.yaml"
 ADD rootfs/files/configs/pki-service/conf/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
 ADD rootfs/files/configs/pki-service/conf/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
