@@ -208,6 +208,20 @@ ENV RKE2_INSTALL_SHA256=${RKE2_INSTALL_SHA256}
 ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
 RUN --security=insecure /buildroot/files/scripts/install_rke2.sh
 
+RUN mkdir -p "${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests"
+ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/server/manifests/k8s-swarm.yaml \
+    ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests/k8s-swarm.yaml
+RUN mkdir -p "${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/agent/etc/containerd"
+ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl \
+    ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl
+
+ADD rootfs/files/configs/usr/local/bin/sync-varlib.sh ${OUTPUTDIR}/usr/local/bin/sync-varlib.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/sync-varlib.sh
+ADD rootfs/files/configs/etc/systemd/system/sync-varlib.service \
+    ${OUTPUTDIR}/etc/systemd/system/sync-varlib.service
+RUN ln -sf /etc/systemd/system/sync-varlib.service \
+    "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sync-varlib.service"
+
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
 RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
 # ensure system boots into multi-user.target instead of graphical.target
