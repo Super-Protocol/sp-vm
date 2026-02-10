@@ -1,8 +1,8 @@
 [Unit]
 Description=PKI authority lxc-container
-After=pki-authority-init.service pki-authority-sync.service nvidia-persistenced.service pccs.service
+After=pki-authority-init.service pki-authority-sync.service pccs.service
 Requires=pki-authority-init.service pccs.service
-Wants=nvidia-persistenced.service pki-authority-sync.service
+Wants=pki-authority-sync.service
 
 [Service]
 Type=simple

@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from pki_helpers import (
     log, LogLevel, detect_cpu_type, detect_vm_mode, detect_network_type,
-    patch_yaml_config, patch_lxc_config, get_pki_authority_param,
+    patch_yaml_config, patch_lxc_config, mount_vm_certs, get_pki_authority_param,
     setup_iptables, update_pccs_url, generate_swarm_key, load_swarm_key,
     read_network_type_from_certificate,
     PKI_SERVICE_NAME, VMMode, NetworkType, STORAGE_PATH
@@ -96,6 +96,9 @@ def main():
         
         patch_lxc_config(cpu_type)
         log(LogLevel.INFO, "LXC config patched successfully")
+
+        if vm_mode == VMMode.SWARM_NORMAL:
+            mount_vm_certs()
         
         # Setup iptables rules
         setup_iptables()
