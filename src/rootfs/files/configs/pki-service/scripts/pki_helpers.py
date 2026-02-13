@@ -32,8 +32,9 @@ STORAGE_PATH = Path(f"{CONTAINER_ROOTFS}/app/swarm-storage")
 IPTABLES_RULE_COMMENT = f"{PKI_SERVICE_NAME}-rule"
 SWARM_ENV_YAML = "/sp/swarm/swarm-env.yaml"
 VM_CERTS_HOST_DIR = "/etc/super/certs/vm"
+VM_CERTS_CONTAINER_DIR = "app/vm-certs"  # Relative path for lxc.mount.entry
 VM_CERT_FILE_NAME = "vm_cert.pem"
-VM_CERT_CONTAINER_FILE = f"/app/{VM_CERT_FILE_NAME}"
+VM_CERT_CONTAINER_FILE = f"/{VM_CERTS_CONTAINER_DIR}/{VM_CERT_FILE_NAME}"
 SWARM_KEY_FILE = "/etc/swarm/swarm.key"
 OID_CUSTOM_EXTENSION_NETWORK_TYPE = "1.3.6.1.3.8888.4"
 
@@ -627,16 +628,31 @@ def patch_lxc_config(cpu_type: str):
                 )
 
 def mount_vm_certs():
-    """Copy vm_cert.pem into rootfs and patch YAML config with vmCertificatePath."""
-    src_cert = Path(VM_CERTS_HOST_DIR) / VM_CERT_FILE_NAME
-    if not src_cert.exists():
-        log(LogLevel.ERROR, f"Error: {src_cert} not found")
+    """Mount vm certs directory into container and patch YAML config with vmCertificatePath."""
+    src_dir = Path(VM_CERTS_HOST_DIR)
+    if not src_dir.exists():
+        log(LogLevel.ERROR, f"Error: {src_dir} not found")
         sys.exit(1)
 
-    dst_cert = Path(f"{CONTAINER_ROOTFS}{VM_CERT_CONTAINER_FILE}")
-    dst_cert.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src_cert, dst_cert)
+    # Add mount entry to LXC config
+    config_file = Path(f"/var/lib/lxc/{PKI_SERVICE_NAME}/config")
+    mount_entry = f"lxc.mount.entry = {VM_CERTS_HOST_DIR} {VM_CERTS_CONTAINER_DIR} none bind,ro,create=dir\n"
+    
+    if config_file.exists():
+        with open(config_file, "r", encoding="utf-8") as file:
+            content = file.read()
+        
+        if mount_entry.strip() not in content:
+            with open(config_file, "a", encoding="utf-8") as file:
+                file.write(mount_entry)
+            log(LogLevel.INFO, f"Added mount entry for {VM_CERTS_HOST_DIR}")
+        else:
+            log(LogLevel.INFO, f"Mount entry for {VM_CERTS_HOST_DIR} already exists")
+    else:
+        log(LogLevel.ERROR, f"Error: LXC config file {config_file} not found")
+        sys.exit(1)
 
+    # Update YAML config with vmCertificatePath
     dst_yaml = Path(f"{CONTAINER_ROOTFS}/app/conf/lxc.yaml")
 
     if not dst_yaml.exists():
