@@ -8,8 +8,8 @@ set -euo pipefail;
 
 # private
 BUILDROOT="/buildroot";
-RKE2_VERSION="v1.35.0+rke2r3";
-SHA_CHECKSUMS_TXT="f2e78be16715b30e93a8aea4e7d64eda4a59c2615fb3c3a2f35a7f464fdbb384";
+RKE2_VERSION="v1.30.3+rke2r1";
+SHA_CHECKSUMS_TXT="445ead9865914fa2e6d6a59affd00babc462480efebf438d207961f740ab83a2";
 SHA_INSTALL_SH="2d24db2184dd6b1a5e281fa45cc9a8234c889394721746f89b5fe953fdaaf40a";
 
 # init loggggging;
@@ -28,7 +28,7 @@ function download_rke2() {
         "https://github.com/rancher/rke2/releases/download/${RKE2_VERSION}/sha256sum-amd64.txt" \
         -O "$OUTPUTDIR/root/rke2/sha256sum-amd64.txt";
     wget \
-        "https://raw.githubusercontent.com/rancher/rke2/refs/tags/${RKE2_VERSION}/install.sh" \
+        "https://get.rke2.io" \
         -O "$OUTPUTDIR/root/rke2/rke2-install.sh";
 }
 
