@@ -1,0 +1,21 @@
+[Unit]
+Description=PKI authority sync client service
+ConditionKernelCommandLine=!vm_mode=swarm-init
+After=network-online.target pki-authority-init.service nvidia-persistenced.service
+Wants=network-online.target nvidia-persistenced.service
+
+[Service]
+Type=oneshot
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node /usr/bin/pki-sync-client sync \
+    --config /etc/super/pki-authority-sync/secrets-config.yaml \
+    --swarm-env /sp/swarm/swarm-env.yaml \
+    --save-certs-to-dir /etc/super/certs/vm \
+    --save-certs-prefix vm \
+    --disable-server-identity-check \
+    -v
+Restart=on-failure
+RestartSec=60s
+
+[Install]
+WantedBy=multi-user.target

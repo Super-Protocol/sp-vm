@@ -1,8 +1,8 @@
 [Unit]
 Description=PKI authority lxc-container
-After=lxc.service lxc-net.service lxc-monitord.service nvidia-persistenced.service 
-Requires=lxc.service lxc-net.service lxc-monitord.service
-Wants=nvidia-persistenced.service
+After=pki-authority-init.service pki-authority-sync.service pccs.service
+Requires=pki-authority-init.service pccs.service
+Wants=pki-authority-sync.service
 
 [Service]
 Type=simple
@@ -10,7 +10,7 @@ Restart=always
 RestartSec=5
 TimeoutStartSec=3min
 
-ExecStartPre=/usr/local/bin/create-and-configure-pki.sh
+ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure.py
 
 ExecStart=/usr/bin/lxc-start -n pki-authority -F
 

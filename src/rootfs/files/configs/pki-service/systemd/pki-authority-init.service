@@ -1,0 +1,12 @@
+[Unit]
+Description=PKI authority initialization
+After=lxc.service lxc-net.service lxc-monitord.service
+Requires=lxc.service lxc-net.service lxc-monitord.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/local/bin/pki-authority/pki_init.py
+
+[Install]
+WantedBy=multi-user.target

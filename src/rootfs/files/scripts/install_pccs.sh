@@ -67,10 +67,10 @@ function move_pccs_to_custom_location() {
 
 function create_pccs_config() {
     log_info "creating PCCS configuration directory";
-    mkdir -p "${OUTPUTDIR}${PCCS_INSTALL_DIR}/config/";
+    mkdir -p "${OUTPUTDIR}${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}/config/";
 
     log_info "creating PCCS configuration file";
-    cat > "${OUTPUTDIR}${PCCS_INSTALL_DIR}/config/default.json" << EOL
+    cat > "${OUTPUTDIR}${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}/config/default.json" << EOL
 {
     "HTTPS_PORT" : ${PCCS_PORT},
     "hosts" : "127.0.0.1",
@@ -80,7 +80,7 @@ function create_pccs_config() {
     "RefreshSchedule": "0 0 1 * *",
     "UserTokenHash" : "${USER_TOKEN}",
     "AdminTokenHash" : "${USER_TOKEN}",
-    "CachingFillMode" : "REQ",
+    "CachingFillMode" : "LAZY",
     "LogLevel" : "debug",
     "DB_CONFIG" : "sqlite",
     "sqlite" : {
@@ -105,6 +105,16 @@ function create_pccs_config() {
     }
 }
 EOL
+}
+
+function generate_ssl_keys() {
+    log_info "generating SSL keys for PCCS";
+    mkdir -p "${OUTPUTDIR}${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}/ssl_key";
+    
+    chroot "${OUTPUTDIR}" /bin/bash -c "cd ${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME} && \
+        openssl genrsa -out ssl_key/private.pem 2048 && \
+        openssl req -new -key ssl_key/private.pem -out ssl_key/csr.pem -subj '/CN=localhost' && \
+        openssl x509 -req -days 365 -in ssl_key/csr.pem -signkey ssl_key/private.pem -out ssl_key/file.crt";
 }
 
 function set_pccs_permissions() {
@@ -141,10 +151,11 @@ function enable_pccs_service() {
 chroot_init;
 add_intel_sgx_repository;
 install_pccs_package;
-move_pccs_to_custom_location;
 create_pccs_config;
+generate_ssl_keys;
 update_pccs_service;
 enable_pccs_service;
+move_pccs_to_custom_location;
 set_pccs_permissions;
 chroot_deinit;
 
