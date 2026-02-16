@@ -10,7 +10,7 @@ set -euo pipefail;
 BUILDROOT="/buildroot";
 RKE2_VERSION="v1.30.3+rke2r1";
 SHA_CHECKSUMS_TXT="445ead9865914fa2e6d6a59affd00babc462480efebf438d207961f740ab83a2";
-SHA_INSTALL_SH="2d24db2184dd6b1a5e281fa45cc9a8234c889394721746f89b5fe953fdaaf40a";
+SHA_INSTALL_SH="dbb5bebfa34d96464def41c6159efc8b661aedb9af074010e3b42334a7a4f068";
 
 # init loggggging;
 source "$BUILDROOT/files/scripts/log.sh";
