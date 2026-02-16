@@ -15,7 +15,7 @@ ExecStart=/usr/bin/node /usr/bin/pki-sync-client sync \
     --disable-server-identity-check \
     -v
 Restart=on-failure
-RestartSec=10s
+RestartSec=60s
 
 [Install]
 WantedBy=multi-user.target
