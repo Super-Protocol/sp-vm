@@ -260,7 +260,6 @@ RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
 ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
 
-ARG PKI_AUTHORITY_SERVICE_LXC_TAG=build-21720130629
 RUN mkdir -p "${OUTPUTDIR}/etc/super/containers/pki-authority"
 COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-22040031427 /pki-authority.tar "${OUTPUTDIR}/etc/super/containers/pki-authority/pki-authority.tar"
 ADD rootfs/files/configs/pki-service/conf/lxc-swarm-template.yaml "${OUTPUTDIR}/etc/super/containers/pki-authority/lxc-swarm-template.yaml"
@@ -383,7 +382,7 @@ RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 
 # install pki-sync-client npm package globally (requires python3-venv from setup_runtime_tools)
-ARG PKI_SYNC_CLIENT_VERSION=2.0.6
+ARG PKI_SYNC_CLIENT_VERSION=2.0.7
 ADD rootfs/files/scripts/install_sync_client.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_sync_client.sh
 RUN --security=insecure /buildroot/files/scripts/install_sync_client.sh "${PKI_SYNC_CLIENT_VERSION}"
