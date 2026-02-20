@@ -1,0 +1,17 @@
+[Unit]
+Description=SP Swarm Service - auth-service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/chmod +x /usr/local/bin/sp-svc-auth-service.sh
+ExecStart=/usr/local/bin/sp-svc-auth-service.sh
+Environment=NODE_ENV=production CONFIG_FILE=/etc/auth-service/apps/auth-service/configuration.yaml
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/sp-svc-auth-service.log
+StandardError=append:/var/log/sp-svc-auth-service-err.log
+
+[Install]
+WantedBy=multi-user.target

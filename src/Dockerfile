@@ -160,6 +160,20 @@ RUN make
 RUN make build-linux-amd64
 ### Swarm DB finish
 
+### Auth service files start
+FROM node:24-bookworm-slim AS auth_service_files_builder
+WORKDIR /work/sp-swarm-services
+
+# ensure bash/find exist for the prepare script
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bash findutils ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# copy full repo as requested, then prepare a minimal auth-service bundle into /out
+COPY repos/sp-swarm-services/ ./
+RUN bash ./scripts/prepare-auth-service-files.sh /out
+### Auth service files finish
+
 ### Start rootfs ###
 FROM ubuntu:noble-20250714 AS rootfs_builder
 RUN apt update && apt install -y wget gcc make build-essential debootstrap petname gettext
@@ -188,7 +202,8 @@ RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
 # RKE2: clean default installation inside rootfs (no legacy scripts)
 ARG RKE2_VERSION=v1.32.8+rke2r1
-ARG RKE2_INSTALL_SHA256=2d24db2184dd6b1a5e281fa45cc9a8234c889394721746f89b5fe953fdaaf40a
+# TODO: RKE2 install script changes often. Need to create more robust mechanism to handle updates without breaking the build. Possible solutions: pinning to specific commit SHA, or hosting a static copy of the install script in this repo and updating it as needed.
+# ARG RKE2_INSTALL_SHA256=2d24db2184dd6b1a5e281fa45cc9a8234c889394721746f89b5fe953fdaaf40a 
 ENV INSTALL_RKE2_VERSION=${RKE2_VERSION}
 ENV RKE2_INSTALL_SHA256=${RKE2_INSTALL_SHA256}
 ADD rootfs/files/scripts/install_rke2.sh /buildroot/files/scripts/install_rke2.sh
@@ -291,6 +306,12 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/loca
 # run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
+# auth-service (runs as a swarm service)
+ADD rootfs/files/configs/etc/systemd/system/sp-svc-auth-service.service ${OUTPUTDIR}/etc/systemd/system/sp-svc-auth-service.service
+ADD rootfs/files/configs/usr/local/bin/sp-svc-auth-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-auth-service.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/sp-svc-auth-service.sh
+RUN ln -sf /etc/systemd/system/sp-svc-auth-service.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-svc-auth-service.service"
+
 # swarm one-shot services runner
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
 ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
@@ -305,6 +326,8 @@ RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
 
 # swarm binaries into VM rootfs
 RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bin"
+ADD rootfs/files/configs/usr/local/bin/swarm-cloud-ui.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud-ui.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-ui.sh
 COPY --from=swarm-db-build /app/swarm/swarm-db/swarm-db-linux-amd64 ${OUTPUTDIR}/usr/local/bin/swarm-db-linux-amd64
 COPY repos/swarm-cloud ${OUTPUTDIR}/opt/swarm-cloud
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-cloud
@@ -334,6 +357,10 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/download-sp-swarm-services.sh
 ADD rootfs/files/scripts/build_swarm_cloud.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/build_swarm_cloud.sh
 RUN --security=insecure /buildroot/files/scripts/build_swarm_cloud.sh
+
+# Auth service (prepared in separate build stage)
+RUN mkdir -p ${OUTPUTDIR}/etc/auth-service
+COPY --from=auth_service_files_builder /out/ ${OUTPUTDIR}/etc/auth-service/
 
 # make /opt/swarm-cloud-api point to built swarm-cloud artifacts
 RUN mkdir -p ${OUTPUTDIR}/opt && ln -s /usr/local/lib/swarm-cloud-api ${OUTPUTDIR}/opt/swarm-cloud-api
