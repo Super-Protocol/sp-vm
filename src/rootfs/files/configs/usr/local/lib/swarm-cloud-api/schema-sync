@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+
+# Run the bundled schema-sync CLI for swarm-cloud-api from the shared
+# /opt/swarm-cloud-api monorepo dist directory.
+cd /usr/local/lib/swarm-cloud
+exec node ./apps/swarm-cloud-api/dist/cli/schema-sync.js "$@"
