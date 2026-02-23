@@ -8,7 +8,7 @@ insmod part_gpt
 search --label bls_boot --set=root
 
 menuentry 'SP Linux Prod' --class ubuntu --class gnu-linux --class gnu --class os {
-    linux ${kernel_path} root=LABEL=rootfs ro clearcpuid=mtrr rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} build=${build}
+    linux ${kernel_path} root=LABEL=rootfs ro console=ttyS0 clearcpuid=mtrr rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} build=${build}
 }
 
 function boot_sp_debug {
