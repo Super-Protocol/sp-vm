@@ -310,8 +310,19 @@ def force_local_primary(local_ip: str) -> Tuple[bool, Optional[str]]:
     # In mongosh, numeric BSON fields (e.g. secondaryDelaySecs) may be represented
     # as nested objects and break rs.reconfig() validation.
     # Build a minimal valid member definition instead.
+    # Preserve existing member _id for local host to avoid host/_id mismatch errors
+    # when the same host already exists in the old configuration.
+    local_member_id = 0
+    for m in (cfg.get("members") or []):
+        if m.get("host") == local_host:
+            try:
+                local_member_id = int(m.get("_id"))
+            except Exception:
+                local_member_id = 0
+            break
+
     local_member = {
-        "_id": 0,
+        "_id": local_member_id,
         "host": local_host,
         "priority": 1,
         "votes": 1,
