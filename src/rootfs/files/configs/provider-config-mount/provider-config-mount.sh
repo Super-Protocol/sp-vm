@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
+SYS_VENDOR="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || echo '')"
+if [[ "$SYS_VENDOR" != "Google" ]] && [[ "$SYS_VENDOR" != "Google Compute Engine" ]]; then
+    echo "Not running in GCP. Skipping provider-config-mount."
+    exit 0
+fi
+
 ACCESS_KEY=$(curl -s "http://169.254.169.254/computeMetadata/v1/instance/attributes/s3-access-key" -H "Metadata-Flavor: Google")
 SECRET_KEY=$(curl -s "http://169.254.169.254/computeMetadata/v1/instance/attributes/s3-secret-key" -H "Metadata-Flavor: Google")
 BUCKET=$(curl -s "http://169.254.169.254/computeMetadata/v1/instance/attributes/s3-bucket" -H "Metadata-Flavor: Google")

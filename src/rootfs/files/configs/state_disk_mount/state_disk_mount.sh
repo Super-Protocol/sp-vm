@@ -2,6 +2,12 @@
 
 set -euo pipefail;
 
+SYS_VENDOR="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || echo '')"
+if [[ "$SYS_VENDOR" == "Google" ]] || [[ "$SYS_VENDOR" == "Google Compute Engine" ]]; then
+    echo "Running in GCP. Skipping state_disk_mount."
+    exit 0
+fi
+
 # Looking for state and provider disk block device:
 # 1. Get main system disk device name, e.g. 'vda', from veritysetup, their count can't be > 1
 # 2. Get provider config block device from ext4 label 'provider_config'

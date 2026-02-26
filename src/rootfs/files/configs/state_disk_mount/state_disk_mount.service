@@ -4,7 +4,6 @@ DefaultDependencies=no
 Before=local-fs.target cryptsetup.target
 After=systemd-udevd.service
 Conflicts=shutdown.target
-RequiresMountsFor=/dev/vdb
 
 [Service]
 Type=oneshot
