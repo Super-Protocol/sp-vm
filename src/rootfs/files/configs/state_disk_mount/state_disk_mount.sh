@@ -3,7 +3,8 @@
 set -euo pipefail;
 
 SYS_VENDOR="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || echo '')"
-if [[ "$SYS_VENDOR" == "Google" ]] || [[ "$SYS_VENDOR" == "Google Compute Engine" ]]; then
+VIRT_TYPE="$(systemd-detect-virt 2>/dev/null || echo '')"
+if [[ "$SYS_VENDOR" == "Google" ]] || [[ "$SYS_VENDOR" == "Google Compute Engine" ]] || [[ "$VIRT_TYPE" == "google" ]]; then
     echo "Running in GCP. Skipping state_disk_mount."
     exit 0
 fi
