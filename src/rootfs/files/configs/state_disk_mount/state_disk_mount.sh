@@ -4,7 +4,25 @@ set -euo pipefail;
 
 SYS_VENDOR="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || echo '')"
 VIRT_TYPE="$(systemd-detect-virt 2>/dev/null || echo '')"
-if [[ "$SYS_VENDOR" == "Google" ]] || [[ "$SYS_VENDOR" == "Google Compute Engine" ]] || [[ "$VIRT_TYPE" == "google" ]]; then
+PRODUCT_NAME="$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo '')"
+
+IS_GCP=false
+if [[ "$SYS_VENDOR" == "Google" ]] || \
+   [[ "$SYS_VENDOR" == "Google Compute Engine" ]] || \
+   [[ "$VIRT_TYPE" == "google" ]] || \
+   [[ "$PRODUCT_NAME" == "Google Compute Engine" ]]; then
+    IS_GCP=true
+fi
+
+# Fallback: try to reach the GCP metadata endpoint, which is only reachable inside GCP
+if [[ "$IS_GCP" == "false" ]]; then
+    if curl -s --connect-timeout 2 -H "Metadata-Flavor: Google" \
+            "http://169.254.169.254/computeMetadata/v1/instance/id" &>/dev/null; then
+        IS_GCP=true
+    fi
+fi
+
+if [[ "$IS_GCP" == "true" ]]; then
     echo "Running in GCP. Skipping state_disk_mount."
     exit 0
 fi
