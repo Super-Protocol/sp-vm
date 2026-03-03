@@ -13,7 +13,7 @@ ExecStart=/usr/bin/node /usr/bin/pki-sync-client sync \
     --save-certs-to-dir /etc/super/certs/vm \
     --save-certs-prefix vm \
     --disable-server-identity-check \
-    -v
+    --log-level debug
 Restart=on-failure
 RestartSec=60s
 
