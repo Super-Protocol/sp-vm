@@ -131,7 +131,7 @@ if [ -n "$HOST_AGENT_TAG" ]; then
     TMP=$(mktemp -d)
     download_github_asset "Super-Protocol" "swarm-cloud" "$RELEASE_TAG" "$FILENAME" "$TMP/host-agent.tar.gz"
     tar xzf "$TMP/host-agent.tar.gz" -C "$TMP"
-    EXTRACT_DIR=$(tar -tzf "$TMP/host-agent.tar.gz" | head -1 | cut -f1 -d"/")
+    EXTRACT_DIR=$(ls -1 "$TMP" | grep -v 'host-agent\.tar\.gz' | head -1)
     install -m 755 "$TMP/$EXTRACT_DIR/swarm-host-agent" /usr/local/bin/swarm-host-agent
     mkdir -p /etc/swarm
     cp "$TMP/$EXTRACT_DIR/host-agent.yaml" /etc/swarm/host-agent.yaml
