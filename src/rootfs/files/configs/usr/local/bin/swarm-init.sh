@@ -26,28 +26,9 @@ SDK_TAG=$(cfg "tags.sdk")
 SWARM_CLOUD_API_TAG=$(cfg "tags.swarm_cloud_api")
 SWARM_CLOUD_UI_TAG=$(cfg "tags.swarm_cloud_ui")
 AUTH_SERVICE_TAG=$(cfg "tags.auth_service")
-NODE_NAME=$(cfg "swarm_db.node_name")
-ADVERTISE_ADDR=$(cfg "swarm_db.advertise_addr")
 POWERDNS_API_URL=$(cfg "powerdns_api_url")
 POWERDNS_API_KEY=$(cfg "powerdns_api_key")
 BASE_DOMAIN=$(cfg "base_domain")
-
-# Resolve node name
-[ -z "$NODE_NAME" ] && NODE_NAME=$(hostname)
-
-# Auto-detect external IP if not configured
-if [ -z "$ADVERTISE_ADDR" ]; then
-    log "auto-detecting external IP..."
-    ADVERTISE_ADDR=$(curl -sf --max-time 5 https://myip.wtf/json \
-        | python3 -c "import sys,json; print(json.load(sys.stdin).get('YourFuckingIPAddress',''))" 2>/dev/null || true)
-    [ -z "$ADVERTISE_ADDR" ] && \
-        ADVERTISE_ADDR=$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null || true)
-    if [ -z "$ADVERTISE_ADDR" ]; then
-        log "WARNING: could not detect external IP, using 127.0.0.1"
-        ADVERTISE_ADDR="127.0.0.1"
-    fi
-    log "detected advertise_addr: $ADVERTISE_ADDR"
-fi
 
 # Download a GitHub release asset to a local file path
 # Usage: download_github_asset <owner> <repo> <tag> <filename> <dest>
@@ -87,21 +68,25 @@ for a in data.get('assets', []):
         "https://api.github.com/repos/$owner/$repo/releases/assets/$asset_id"
 }
 
-# Install swarm-db binary from GitHub Releases
+# Install swarm-db binary from GitHub Releases (idempotent: skip if already installed)
 if [ -n "$SWARM_DB_TAG" ]; then
-    log "installing swarm-db $SWARM_DB_TAG..."
-    FILENAME="swarm-db-${SWARM_DB_TAG}-linux-amd64.tar.gz"
-    TMP=$(mktemp -d)
-    download_github_asset "Super-Protocol" "swarm-db" "$SWARM_DB_TAG" "$FILENAME" "$TMP/swarm-db.tar.gz"
-    tar xzf "$TMP/swarm-db.tar.gz" -C "$TMP"
-    install -m 755 "$TMP/swarm-db" /usr/local/bin/swarm-db-linux-amd64
-    rm -rf "$TMP"
-    log "swarm-db $SWARM_DB_TAG installed"
+    if [ -f "/usr/local/bin/swarm-db-linux-amd64" ]; then
+        log "swarm-db already installed, skipping"
+    else
+        log "installing swarm-db $SWARM_DB_TAG..."
+        FILENAME="swarm-db-${SWARM_DB_TAG}-linux-amd64.tar.gz"
+        TMP=$(mktemp -d)
+        download_github_asset "Super-Protocol" "swarm-db" "$SWARM_DB_TAG" "$FILENAME" "$TMP/swarm-db.tar.gz"
+        tar xzf "$TMP/swarm-db.tar.gz" -C "$TMP"
+        install -m 755 "$TMP/swarm-db" /usr/local/bin/swarm-db-linux-amd64
+        rm -rf "$TMP"
+        log "swarm-db $SWARM_DB_TAG installed"
+    fi
 else
     log "tags.swarm_db not set, using built-in swarm-db binary"
 fi
 
-# Install provision-plugin-sdk from GitHub Releases
+# Install provision-plugin-sdk from GitHub Releases (pip install is idempotent)
 if [ -n "$SDK_TAG" ]; then
     log "installing provision-plugin-sdk $SDK_TAG..."
     FILENAME="provision-plugin-sdk-${SDK_TAG}.tar.gz"
@@ -115,37 +100,41 @@ else
     log "tags.sdk not set, using built-in provision-plugin-sdk"
 fi
 
-# Install swarm-host-agent from GitHub Releases
+# Install swarm-host-agent from GitHub Releases (idempotent: skip if already installed)
 # Tag format: "host-agent-vX.Y.Z" → release tag "release-vX.Y.Z"
 if [ -n "$HOST_AGENT_TAG" ]; then
-    log "installing swarm-host-agent $HOST_AGENT_TAG..."
-    if [[ "$HOST_AGENT_TAG" == release-* ]]; then
-        RELEASE_TAG="$HOST_AGENT_TAG"
-    elif [[ "$HOST_AGENT_TAG" == host-agent-* ]]; then
-        VERSION="${HOST_AGENT_TAG#host-agent-}"
-        RELEASE_TAG="release-$VERSION"
+    if [ -f "/usr/local/bin/swarm-host-agent" ]; then
+        log "swarm-host-agent already installed, skipping"
     else
-        RELEASE_TAG="release-$HOST_AGENT_TAG"
+        log "installing swarm-host-agent $HOST_AGENT_TAG..."
+        if [[ "$HOST_AGENT_TAG" == release-* ]]; then
+            RELEASE_TAG="$HOST_AGENT_TAG"
+        elif [[ "$HOST_AGENT_TAG" == host-agent-* ]]; then
+            VERSION="${HOST_AGENT_TAG#host-agent-}"
+            RELEASE_TAG="release-$VERSION"
+        else
+            RELEASE_TAG="release-$HOST_AGENT_TAG"
+        fi
+        FILENAME="swarm-host-agent-${RELEASE_TAG}-linux-amd64.tar.gz"
+        TMP=$(mktemp -d)
+        download_github_asset "Super-Protocol" "swarm-cloud" "$RELEASE_TAG" "$FILENAME" "$TMP/host-agent.tar.gz"
+        tar xzf "$TMP/host-agent.tar.gz" -C "$TMP"
+        EXTRACT_DIR=$(ls -1 "$TMP" | grep -v 'host-agent\.tar\.gz' | head -1)
+        install -m 755 "$TMP/$EXTRACT_DIR/swarm-host-agent" /usr/local/bin/swarm-host-agent
+        mkdir -p /etc/swarm
+        cp "$TMP/$EXTRACT_DIR/host-agent.yaml" /etc/swarm/host-agent.yaml
+        cp "$TMP/$EXTRACT_DIR/swarm-host-agent.service" /etc/systemd/system/swarm-host-agent.service
+        rm -rf "$TMP"
+        log "swarm-host-agent $RELEASE_TAG installed"
+        systemctl daemon-reload
+        systemctl enable swarm-host-agent.service
     fi
-    FILENAME="swarm-host-agent-${RELEASE_TAG}-linux-amd64.tar.gz"
-    TMP=$(mktemp -d)
-    download_github_asset "Super-Protocol" "swarm-cloud" "$RELEASE_TAG" "$FILENAME" "$TMP/host-agent.tar.gz"
-    tar xzf "$TMP/host-agent.tar.gz" -C "$TMP"
-    EXTRACT_DIR=$(ls -1 "$TMP" | grep -v 'host-agent\.tar\.gz' | head -1)
-    install -m 755 "$TMP/$EXTRACT_DIR/swarm-host-agent" /usr/local/bin/swarm-host-agent
-    mkdir -p /etc/swarm
-    cp "$TMP/$EXTRACT_DIR/host-agent.yaml" /etc/swarm/host-agent.yaml
-    cp "$TMP/$EXTRACT_DIR/swarm-host-agent.service" /etc/systemd/system/swarm-host-agent.service
-    rm -rf "$TMP"
-    log "swarm-host-agent $RELEASE_TAG installed"
-    systemctl daemon-reload
-    systemctl enable swarm-host-agent.service
 else
     log "ERROR: tags.host_agent is required"
     exit 1
 fi
 
-# Authenticate to ghcr.io for pulling swarm-node container image
+# Authenticate to ghcr.io for pulling swarm-node container image (idempotent)
 if [ -n "$GITHUB_TOKEN" ]; then
     log "authenticating to ghcr.io..."
     echo "$GITHUB_TOKEN" | podman login ghcr.io -u oauth2 --password-stdin
@@ -154,7 +143,7 @@ else
     log "WARNING: github.token not set, skipping ghcr.io login (image must be publicly accessible)"
 fi
 
-# Generate /etc/swarm/swarm-node.env for swarm-node.service EnvironmentFile
+# Generate /etc/swarm/swarm-node.env for swarm-node.service EnvironmentFile (idempotent)
 log "generating /etc/swarm/swarm-node.env..."
 mkdir -p /etc/swarm
 cat > /etc/swarm/swarm-node.env << EOF
@@ -164,56 +153,7 @@ SWARM_CLOUD_UI_TAG=${SWARM_CLOUD_UI_TAG}
 AUTH_SERVICE_TAG=${AUTH_SERVICE_TAG}
 EOF
 
-# Generate /etc/swarm-db/config.yaml from /sp/swarm/config.yaml parameters
-log "generating /etc/swarm-db/config.yaml (node=$NODE_NAME, advertise=$ADVERTISE_ADDR)..."
-mkdir -p /etc/swarm-db /var/lib/swarm-db
-
-NODE_NAME_VAL="$NODE_NAME" ADVERTISE_ADDR_VAL="$ADVERTISE_ADDR" \
-python3 - << 'PYEOF'
-import yaml, os
-
-with open('/sp/swarm/config.yaml') as f:
-    swarm_cfg = yaml.safe_load(f) or {}
-
-join_addresses = (swarm_cfg.get('swarm_db') or {}).get('join_addresses') or []
-
-config = {
-    'node': {
-        'name': os.environ['NODE_NAME_VAL'],
-        'host': '0.0.0.0',
-        'port': 8001,
-        'data_dir': '/var/lib/swarm-db',
-        'schema_file': '/etc/swarm-db/schema.yaml',
-    },
-    'memberlist': {
-        'bind_addr': '0.0.0.0',
-        'bind_port': 7946,
-        'advertise_addr': os.environ['ADVERTISE_ADDR_VAL'],
-        'advertise_port': 7946,
-        'join_addresses': join_addresses,
-        'gossip_interval': '200ms',
-        'probe_interval': '1s',
-        'probe_timeout': '500ms',
-        'suspicion_max_time_multiplier': 6,
-    },
-    'sql': {
-        'enabled': True,
-        'host': '0.0.0.0',
-        'port': 3306,
-        'system_database': 'swarmdb',
-    },
-    'jq': {
-        'enabled': True,
-        'host': '0.0.0.0',
-        'port': 8080,
-    },
-}
-
-with open('/etc/swarm-db/config.yaml', 'w') as f:
-    yaml.dump(config, f, default_flow_style=False)
-PYEOF
-
-# Wait for swarm-db MySQL to become available, then insert SwarmSecrets
+# Wait for swarm-db MySQL — fail (and let systemd restart us) if not available
 log "waiting for swarm-db MySQL to become available..."
 mysql_host="127.0.0.1"
 mysql_port="3306"
@@ -226,18 +166,20 @@ while true; do
     fi
     elapsed=$(( $(date +%s) - start_ts ))
     if [ "$elapsed" -ge "$wait_timeout" ]; then
-        log "WARNING: MySQL not available after ${wait_timeout}s, skipping SwarmSecrets insertion"
-        break
+        log "ERROR: MySQL not available after ${wait_timeout}s, will retry"
+        exit 1
     fi
     sleep 1
 done
 
+# Insert SwarmSecrets (idempotent: INSERT IGNORE skips existing keys)
 log "inserting SwarmSecrets into swarm-db..."
 AUTH_SERVICE_YAML=""
 AUTH_SERVICE_YAML_PATH="/sp/swarm/auth-service.yaml"
 [ -f "$AUTH_SERVICE_YAML_PATH" ] && AUTH_SERVICE_YAML=$(cat "$AUTH_SERVICE_YAML_PATH")
 
 # Generate RSA 4096 private key (PKCS8 PEM) for evidence signing.
+# INSERT IGNORE ensures only the first run inserts it; subsequent runs are no-ops.
 # TODO: should we use subroot (intermediate CA) key hierarchy?
 log "generating evidence signing key (RSA 4096)..."
 EVIDENCE_SIGN_KEY=$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 2>/dev/null)

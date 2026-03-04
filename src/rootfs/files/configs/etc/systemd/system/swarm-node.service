@@ -1,8 +1,8 @@
 [Unit]
 Description=Swarm Node Service (Podman Container)
-After=network-online.target swarm-init.service swarm-db.service swarm-host-agent.service
+After=network-online.target swarm-db.service swarm-host-agent.service
 Wants=network-online.target
-Requires=swarm-init.service swarm-db.service swarm-host-agent.service
+Requires=swarm-db.service swarm-host-agent.service
 
 [Service]
 Type=simple

@@ -225,12 +225,15 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
 # run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
-# swarm-init: downloads binaries (swarm-db, SDK) and generates swarm-db config at VM startup
+# swarm-init: downloads binaries and seeds swarm-db (restarts until MySQL is available)
+# generate-swarm-db-config: generates /etc/swarm-db/config.yaml at swarm-db start (ExecStartPre)
 # configuration is read from /sp/swarm/config.yaml (attached via provider config disk at boot)
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm" "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-node"
 ADD rootfs/files/configs/etc/swarm-node/config.yaml ${OUTPUTDIR}/etc/swarm-node/config.yaml
 ADD rootfs/files/configs/usr/local/bin/swarm-init.sh ${OUTPUTDIR}/usr/local/bin/swarm-init.sh
-RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-init.sh
+ADD rootfs/files/configs/usr/local/bin/generate-swarm-db-config.sh ${OUTPUTDIR}/usr/local/bin/generate-swarm-db-config.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-init.sh \
+          ${OUTPUTDIR}/usr/local/bin/generate-swarm-db-config.sh
 ADD rootfs/files/configs/etc/systemd/system/swarm-init.service ${OUTPUTDIR}/etc/systemd/system/swarm-init.service
 RUN ln -sf /etc/systemd/system/swarm-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-init.service"
 
