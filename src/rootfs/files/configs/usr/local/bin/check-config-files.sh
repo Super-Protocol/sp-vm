@@ -34,13 +34,13 @@ K8S_MAIN_MANIFEST="/var/lib/rancher/rke2/server/manifests/k8s.yaml"
 # Overriding hauler int IP
 NODE_DEFAULT_IFACE="$({ ip route get 8.8.8.8 2>/dev/null | awk '{print $5}' | grep '.'; } || echo)";
 if [[ -z "$NODE_DEFAULT_IFACE" ]]; then
-    echo "Failed to get default network interface, please ensure your VM has an internet access";
-    exit 1;
+    echo "WARNING: Failed to get default network interface, skipping IP-dependent steps";
+    exit 0;
 fi
 NODE_IP="$({ ip a show "$NODE_DEFAULT_IFACE" 2>/dev/null | grep 'inet ' | awk '{print $2}' | awk -F '/' '{print $1}'; } || echo)";
 if [[ -z "$NODE_IP" ]]; then
-    echo "Failed to get ip of the default network interface $NODE_DEFAULT_IFACE, please ensure your VM has an internet access";
-    exit 1;
+    echo "WARNING: Failed to get IP of the default network interface $NODE_DEFAULT_IFACE, skipping IP-dependent steps";
+    exit 0;
 fi
 
 if [[ ! -f "$K8S_MAIN_MANIFEST" ]]; then
