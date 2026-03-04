@@ -99,37 +99,6 @@ ADD initramfs/files/init.sh /initramfs-root/sbin/init.sh
 RUN gen_init_cpio /initramfs-root/initramfs.list | gzip -9 -n > /initramfs-root/initramfs.cpio.gz
 ### End  ###
 
-### Start certs ###
-FROM ubuntu:24.04 AS certs_builder
-RUN apt update && apt install -y openssl
-
-WORKDIR /buildroot
-ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
-RUN openssl genrsa \
-    -out "/buildroot/${SUPER_REGISTRY_HOST}.ca.key" 2048;
-RUN openssl req -x509 -new -nodes \
-    -key "/buildroot/${SUPER_REGISTRY_HOST}.ca.key" \
-    -sha256 -days 3650 \
-    -out "/buildroot/${SUPER_REGISTRY_HOST}.ca.crt" \
-    -subj "/ST=Milk Galaxy/L=Planet Earth/O=SuperProtocol/OU=MyUnit/CN=SuperProtocol.com"
-RUN openssl genrsa \
-    -out "/buildroot/${SUPER_REGISTRY_HOST}.key" 2048;
-RUN printf "[req]\ndefault_bits = 2048\nprompt = no\ndistinguished_name = req_distinguished_name\nreq_extensions = req_ext\n[req_distinguished_name]\nC = US\nST = Milk Galaxy\nL = Planet Earth\nO = SuperProtocol\nOU = MyUnit\nCN = ${SUPER_REGISTRY_HOST}\n[req_ext]\nsubjectAltName = @alt_names\n[alt_names]\nDNS.1 = ${SUPER_REGISTRY_HOST}\n[v3_ext]\nsubjectAltName = @alt_names\nbasicConstraints = CA:FALSE\nkeyUsage = digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment\n" > "/buildroot/san.cnf"
-RUN openssl req -new \
-    -key "/buildroot/${SUPER_REGISTRY_HOST}.key" \
-    -out "/buildroot/${SUPER_REGISTRY_HOST}.csr" \
-    -config /buildroot/san.cnf
-RUN openssl x509 -req \
-    -in "/buildroot/${SUPER_REGISTRY_HOST}.csr" \
-    -CA "/buildroot/${SUPER_REGISTRY_HOST}.ca.crt" \
-    -CAkey "/buildroot/${SUPER_REGISTRY_HOST}.ca.key" \
-    -CAcreateserial \
-    -out "/buildroot/${SUPER_REGISTRY_HOST}.crt" \
-    -days 3650 -sha256 \
-    -extfile "/buildroot/san.cnf" \
-    -extensions v3_ext
-### End certs ###
-
 ### Start kernel ###
 FROM ubuntu:24.04 AS kernel_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential curl libssl-dev bc elfutils libelf-dev bison flex cpio kmod rsync debhelper
@@ -212,22 +181,6 @@ RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
 RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
 
-RUN mkdir -p "${OUTPUTDIR}/etc/super/certs"
-COPY --from=certs_builder /buildroot/registry.superprotocol.local.ca.crt ${OUTPUTDIR}/usr/local/share/ca-certificates/registry.superprotocol.local.ca.crt
-COPY --from=certs_builder /buildroot/registry.superprotocol.local.ca.crt ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.ca.crt
-COPY --from=certs_builder /buildroot/registry.superprotocol.local.key ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.key
-COPY --from=certs_builder /buildroot/registry.superprotocol.local.crt ${OUTPUTDIR}/etc/super/certs/registry.superprotocol.local.crt
-# ADD rootfs/files/configs/cert/superprotocol-certs.sh ${OUTPUTDIR}/usr/local/bin/
-# ADD rootfs/files/configs/cert/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system
-# RUN ln -s /etc/systemd/system/superprotocol-certs.service ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/superprotocol-certs.service
-ADD rootfs/files/scripts/refresh_ca_certs.sh /buildroot/files/scripts/refresh_ca_certs.sh
-RUN --security=insecure /buildroot/files/scripts/refresh_ca_certs.sh
-
-# check for presence of trusted self-signed CA from Super Protocol
-RUN awk -v cmd='openssl x509 -noout -subject' '/BEGIN/{close(cmd)};{print | cmd}' < ${OUTPUTDIR}/etc/ssl/certs/ca-certificates.crt | grep -i 'super'
-
-ARG SUPER_REGISTRY_HOST=registry.superprotocol.local
-RUN echo "127.0.0.1 $SUPER_REGISTRY_HOST $LOCAL_REGISTRY_HOST" >> "${OUTPUTDIR}/etc/hosts"
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
 ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/etc/sysctl.d/99-zzz-override_cilium.conf
 ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
@@ -258,10 +211,6 @@ ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
 
 RUN mkdir -p "${OUTPUTDIR}/sp"
-# Enable only the timer; service will be triggered by it
-ADD rootfs/files/configs/etc/systemd/system/local-registry.service ${OUTPUTDIR}/etc/systemd/system/local-registry.service
-ADD rootfs/files/configs/usr/local/bin/local-registry.sh ${OUTPUTDIR}/usr/local/bin/local-registry.sh
-RUN ln -sf /etc/systemd/system/local-registry.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/local-registry.service"
 ADD rootfs/files/configs/etc/systemd/system/hardening-vm.service ${OUTPUTDIR}/etc/systemd/system/hardening-vm.service
 ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bin/hardening-vm.sh
 RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
@@ -343,14 +292,6 @@ RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
-# MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
-ADD rootfs/files/scripts/install_mongodb.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/install_mongodb.sh
-# disable autostart without requiring systemd during build (remove enable symlinks for MongoDB)
-RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongod.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongod.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongodb.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongodb.service
 # cleanup apt lists and policy-rc.d
 RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
     && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
