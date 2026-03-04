@@ -328,6 +328,10 @@ RUN chmod +x \
     ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/swarm-cloud-api \
     ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
 
+# install Node.js (required by PCCS npm install and swarm-cloud-api)
+ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_nodejs.sh
+
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
 ADD rootfs/files/configs/pccs-init/ /buildroot/files/configs/pccs-init/
