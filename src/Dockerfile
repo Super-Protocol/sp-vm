@@ -290,10 +290,6 @@ ADD rootfs/files/configs/etc/systemd/system/swarm-host-agent.service ${OUTPUTDIR
 
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm-service-launchers"
 
-# auth-service launcher script (service file managed at runtime)
-ADD rootfs/files/configs/usr/local/bin/sp-svc-auth-service.sh ${OUTPUTDIR}/usr/local/bin/sp-svc-auth-service.sh
-RUN chmod +x ${OUTPUTDIR}/usr/local/bin/sp-svc-auth-service.sh
-
 # swarm one-shot services runner
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
 ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
