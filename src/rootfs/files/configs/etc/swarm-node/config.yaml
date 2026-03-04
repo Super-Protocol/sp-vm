@@ -1,0 +1,27 @@
+port: 4001
+host: "0.0.0.0"
+
+db:
+  host: "127.0.0.1"
+  port: 3306
+  username: "root"
+  password: ""
+  database: "swarmdb"
+  synchronize: false
+  autoLoadEntities: true
+
+leaderElection:
+  enabled: true
+  leaseMs: 60000
+  guardMs: 10000
+  renewGuardMs: 30000
+  propagationGuardMs: 5000
+  electionIntervalMs: 1000
+  leaderScore: 1.0
+  graceDownMs: 5000
+
+provision:
+  enabled: true
+  swarmDbApiUrl: "http://127.0.0.1:8080"
+  servicesDir: "/etc/swarm-cloud/services"
+  localDbPath: "/var/lib/swarm-node/provision.db"
