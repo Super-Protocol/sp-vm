@@ -187,7 +187,8 @@ ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
 
 ADD rootfs/files/configs/state_disk_mount/state_disk_mount.service ${OUTPUTDIR}/etc/systemd/system/
 ADD rootfs/files/configs/state_disk_mount/state_disk_mount.sh ${OUTPUTDIR}/usr/local/bin/
-RUN ln -s /etc/systemd/system/state_disk_mount.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.requires/state_disk_mount.service"
+RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/multi-user.target.requires" \
+    && ln -s /etc/systemd/system/state_disk_mount.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.requires/state_disk_mount.service"
 ADD rootfs/files/configs/provider-config-mount/provider-config-mount.service ${OUTPUTDIR}/etc/systemd/system/
 ADD rootfs/files/configs/provider-config-mount/provider-config-mount.sh ${OUTPUTDIR}/usr/local/bin/
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/provider-config-mount.sh
