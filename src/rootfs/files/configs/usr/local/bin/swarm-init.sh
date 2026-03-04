@@ -1,13 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-CONFIG="/etc/swarm/config.yaml"
+CONFIG="/sp/swarm/config.yaml"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [swarm-init] $*"; }
 
 log "starting swarm initialization"
 
-# Read a scalar value from /etc/swarm/config.yaml via python3+pyyaml
+# Read a scalar value from /sp/swarm/config.yaml via python3+pyyaml
 cfg() {
     python3 -c "
 import yaml
@@ -28,6 +28,9 @@ SWARM_CLOUD_UI_TAG=$(cfg "tags.swarm_cloud_ui")
 AUTH_SERVICE_TAG=$(cfg "tags.auth_service")
 NODE_NAME=$(cfg "swarm_db.node_name")
 ADVERTISE_ADDR=$(cfg "swarm_db.advertise_addr")
+POWERDNS_API_URL=$(cfg "powerdns_api_url")
+POWERDNS_API_KEY=$(cfg "powerdns_api_key")
+BASE_DOMAIN=$(cfg "base_domain")
 
 # Resolve node name
 [ -z "$NODE_NAME" ] && NODE_NAME=$(hostname)
@@ -161,7 +164,7 @@ SWARM_CLOUD_UI_TAG=${SWARM_CLOUD_UI_TAG}
 AUTH_SERVICE_TAG=${AUTH_SERVICE_TAG}
 EOF
 
-# Generate /etc/swarm-db/config.yaml from /etc/swarm/config.yaml parameters
+# Generate /etc/swarm-db/config.yaml from /sp/swarm/config.yaml parameters
 log "generating /etc/swarm-db/config.yaml (node=$NODE_NAME, advertise=$ADVERTISE_ADDR)..."
 mkdir -p /etc/swarm-db /var/lib/swarm-db
 
@@ -169,7 +172,7 @@ NODE_NAME_VAL="$NODE_NAME" ADVERTISE_ADDR_VAL="$ADVERTISE_ADDR" \
 python3 - << 'PYEOF'
 import yaml, os
 
-with open('/etc/swarm/config.yaml') as f:
+with open('/sp/swarm/config.yaml') as f:
     swarm_cfg = yaml.safe_load(f) or {}
 
 join_addresses = (swarm_cfg.get('swarm_db') or {}).get('join_addresses') or []
@@ -208,6 +211,60 @@ config = {
 
 with open('/etc/swarm-db/config.yaml', 'w') as f:
     yaml.dump(config, f, default_flow_style=False)
+PYEOF
+
+# Wait for swarm-db MySQL to become available, then insert SwarmSecrets
+log "waiting for swarm-db MySQL to become available..."
+mysql_host="127.0.0.1"
+mysql_port="3306"
+wait_timeout="120"
+start_ts="$(date +%s)"
+while true; do
+    if (exec 3<>/dev/tcp/"$mysql_host"/"$mysql_port") 2>/dev/null; then
+        exec 3>&- 3<&-
+        break
+    fi
+    elapsed=$(( $(date +%s) - start_ts ))
+    if [ "$elapsed" -ge "$wait_timeout" ]; then
+        log "WARNING: MySQL not available after ${wait_timeout}s, skipping SwarmSecrets insertion"
+        break
+    fi
+    sleep 1
+done
+
+log "inserting SwarmSecrets into swarm-db..."
+AUTH_SERVICE_YAML=""
+AUTH_SERVICE_YAML_PATH="/sp/swarm/auth-service.yaml"
+[ -f "$AUTH_SERVICE_YAML_PATH" ] && AUTH_SERVICE_YAML=$(cat "$AUTH_SERVICE_YAML_PATH")
+
+# Generate RSA 4096 private key (PKCS8 PEM) for evidence signing.
+# TODO: should we use subroot (intermediate CA) key hierarchy?
+log "generating evidence signing key (RSA 4096)..."
+EVIDENCE_SIGN_KEY=$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 2>/dev/null)
+
+POWERDNS_API_URL="$POWERDNS_API_URL" \
+POWERDNS_API_KEY="$POWERDNS_API_KEY" \
+BASE_DOMAIN="$BASE_DOMAIN" \
+AUTH_SERVICE_YAML="$AUTH_SERVICE_YAML" \
+EVIDENCE_SIGN_KEY="$EVIDENCE_SIGN_KEY" \
+python3 - << 'PYEOF'
+import subprocess, os
+
+def insert_secret(key, value):
+    if not value:
+        return
+    escaped = value.replace("'", "''")
+    sql = f"INSERT IGNORE INTO SwarmSecrets (id, value) VALUES ('{key}', '{escaped}');\n"
+    subprocess.run(
+        ["mysql", "-h", "127.0.0.1", "-P", "3306", "-u", "root", "swarmdb"],
+        input=sql, text=True, check=True,
+    )
+
+insert_secret("powerdns_api_url",  os.environ.get("POWERDNS_API_URL", ""))
+insert_secret("powerdns_api_key",  os.environ.get("POWERDNS_API_KEY", ""))
+insert_secret("base_domain",       os.environ.get("BASE_DOMAIN", ""))
+insert_secret("auth_service_yaml", os.environ.get("AUTH_SERVICE_YAML", ""))
+insert_secret("evidence_sign_key", os.environ.get("EVIDENCE_SIGN_KEY", ""))
 PYEOF
 
 log "swarm-init completed successfully"

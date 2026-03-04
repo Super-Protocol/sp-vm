@@ -277,9 +277,8 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
 # swarm-init: downloads binaries (swarm-db, SDK) and generates swarm-db config at VM startup
-# configuration is read from /etc/swarm/config.yaml (tags, node params)
+# configuration is read from /sp/swarm/config.yaml (attached via provider config disk at boot)
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm" "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-node"
-ADD rootfs/files/configs/etc/swarm/config.yaml ${OUTPUTDIR}/etc/swarm/config.yaml
 ADD rootfs/files/configs/etc/swarm-node/config.yaml ${OUTPUTDIR}/etc/swarm-node/config.yaml
 ADD rootfs/files/configs/usr/local/bin/swarm-init.sh ${OUTPUTDIR}/usr/local/bin/swarm-init.sh
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-init.sh
@@ -311,7 +310,7 @@ ADD rootfs/files/configs/usr/local/bin/swarm-cloud-ui.sh ${OUTPUTDIR}/usr/local/
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-ui.sh
 ADD rootfs/files/configs/usr/local/bin/kubectl ${OUTPUTDIR}/usr/local/bin/kubectl
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/kubectl
-# swarm-db binary is downloaded at runtime by swarm-init (tags.swarm_db in /etc/swarm/config.yaml)
+# swarm-db binary is downloaded at runtime by swarm-init (tags.swarm_db in /sp/swarm/config.yaml)
 # provision plugins at /etc/swarm-cloud/services are mounted into the swarm-node container at runtime
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-cloud/services"
 COPY repos/swarm-cloud/apps/swarm-node-e2e/fixtures/schema.yaml ${OUTPUTDIR}/etc/swarm-db/schema.yaml
