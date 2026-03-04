@@ -6,26 +6,28 @@ Requires=swarm-db.service swarm-host-agent.service
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/swarm/swarm-node.env
+EnvironmentFile=-/etc/swarm/swarm-node.env
 ExecStartPre=-/usr/bin/podman stop swarm-node
 ExecStartPre=-/usr/bin/podman rm swarm-node
 ExecStartPre=mkdir -p /var/lib/swarm-node
-ExecStart=/usr/bin/podman run \
-    --name swarm-node \
-    --rm \
-    --network host \
-    -v /etc/swarm-node:/etc/swarm-node:ro \
-    -v /etc/swarm-cloud/services:/etc/swarm-cloud/services:ro \
-    -v /var/lib/swarm-node:/var/lib/swarm-node \
-    -v /var/run/swarm-agent.sock:/var/run/swarm-agent.sock \
-    -e NODE_ENV=production \
-    -e SWC_NODE_CONFIG_PATH=/etc/swarm-node/config.yaml \
-    -e SWARM_CLOUD_API_TAG=$SWARM_CLOUD_API_TAG \
-    -e SWARM_CLOUD_UI_TAG=$SWARM_CLOUD_UI_TAG \
-    -e AUTH_SERVICE_TAG=$AUTH_SERVICE_TAG \
-    -e SWARM_HOST_AGENT_SOCKET=/var/run/swarm-agent.sock \
-    ghcr.io/super-protocol/swarm-cloud/swarm-node:$SWARM_NODE_TAG \
-    apps/swarm-node/dist/main.js
+ExecStart=/bin/bash -c '\
+    test -n "${SWARM_NODE_TAG}" || { echo "SWARM_NODE_TAG not set, waiting for swarm-init"; exit 1; }; \
+    exec /usr/bin/podman run \
+        --name swarm-node \
+        --rm \
+        --network host \
+        -v /etc/swarm-node:/etc/swarm-node:ro \
+        -v /etc/swarm-cloud/services:/etc/swarm-cloud/services:ro \
+        -v /var/lib/swarm-node:/var/lib/swarm-node \
+        -v /var/run/swarm-agent.sock:/var/run/swarm-agent.sock \
+        -e NODE_ENV=production \
+        -e SWC_NODE_CONFIG_PATH=/etc/swarm-node/config.yaml \
+        -e SWARM_CLOUD_API_TAG="${SWARM_CLOUD_API_TAG}" \
+        -e SWARM_CLOUD_UI_TAG="${SWARM_CLOUD_UI_TAG}" \
+        -e AUTH_SERVICE_TAG="${AUTH_SERVICE_TAG}" \
+        -e SWARM_HOST_AGENT_SOCKET=/var/run/swarm-agent.sock \
+        "ghcr.io/super-protocol/swarm-cloud/swarm-node:${SWARM_NODE_TAG}" \
+        apps/swarm-node/dist/main.js'
 ExecStop=/usr/bin/podman stop swarm-node
 Restart=always
 RestartSec=10

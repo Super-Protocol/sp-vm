@@ -20,7 +20,7 @@ function setup_runtime_tools() {
     log_info "installing runtime packages into rootfs (python3, mysql client, openssl, netcat, dns tools)"
     chroot "${OUTPUTDIR}" /usr/bin/apt update
     chroot "${OUTPUTDIR}" /usr/bin/apt install -y --no-install-recommends \
-        mysql-client python3 python3-pip openssl netcat-openbsd dnsutils
+        mysql-client python3 python3-pip openssl netcat-openbsd dnsutils nano
     chroot "${OUTPUTDIR}" /usr/bin/apt clean
 
     log_info "installing Python runtime dependencies"
