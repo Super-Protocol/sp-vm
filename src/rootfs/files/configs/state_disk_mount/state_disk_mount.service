@@ -2,9 +2,9 @@
 Description=Create LUKS partition with session key
 DefaultDependencies=no
 Before=local-fs.target cryptsetup.target
-After=systemd-udevd.service
+After=systemd-udevd.service network-online.target
+Wants=network-online.target
 Conflicts=shutdown.target
-RequiresMountsFor=/dev/vdb
 
 [Service]
 Type=oneshot

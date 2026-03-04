@@ -187,7 +187,12 @@ ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
 
 ADD rootfs/files/configs/state_disk_mount/state_disk_mount.service ${OUTPUTDIR}/etc/systemd/system/
 ADD rootfs/files/configs/state_disk_mount/state_disk_mount.sh ${OUTPUTDIR}/usr/local/bin/
-RUN ln -s /etc/systemd/system/state_disk_mount.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/state_disk_mount.service"
+RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/multi-user.target.requires" \
+    && ln -s /etc/systemd/system/state_disk_mount.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.requires/state_disk_mount.service"
+ADD rootfs/files/configs/provider-config-mount/provider-config-mount.service ${OUTPUTDIR}/etc/systemd/system/
+ADD rootfs/files/configs/provider-config-mount/provider-config-mount.sh ${OUTPUTDIR}/usr/local/bin/
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/provider-config-mount.sh
+RUN ln -s /etc/systemd/system/provider-config-mount.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/provider-config-mount.service"
 RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
 RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
@@ -274,9 +279,7 @@ ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bi
 RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
 ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
-# disabling serial getty
-ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
-RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
+# serial console enabled by default
 
 # Build info
 ARG SP_VM_IMAGE_VERSION

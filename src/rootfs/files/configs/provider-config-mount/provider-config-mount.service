@@ -1,0 +1,12 @@
+[Unit]
+Description=Mount provider_config from GCS to /sp via S3FS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/provider-config-mount.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
