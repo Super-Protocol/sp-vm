@@ -1,7 +1,8 @@
 [Unit]
 Description=Swarm DB service
-After=network-online.target local-fs.target
+After=network-online.target local-fs.target provider-config-s3fs.service
 Wants=network-online.target
+Requires=provider-config-s3fs.service
 RequiresMountsFor=/var /var/lib /var/lib/swarm-db
 ConditionPathExists=/usr/local/bin/swarm-db-linux-amd64
 ConditionPathExists=/sp/swarm/node-db.yaml

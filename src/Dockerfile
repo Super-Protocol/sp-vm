@@ -186,6 +186,11 @@ RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
 ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
 RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
+# Install s3fs-fuse for provider_config S3 bucket mounting
+RUN --security=insecure chroot ${OUTPUTDIR} apt-get install -y s3fs
+# Allow user_allow_other so s3fs -o allow_other works for non-root processes
+RUN echo 'user_allow_other' >> ${OUTPUTDIR}/etc/fuse.conf
+
 # RKE2: clean default installation inside rootfs (no legacy scripts)
 ARG RKE2_VERSION=v1.32.8+rke2r1
 ARG RKE2_INSTALL_SHA256=2d24db2184dd6b1a5e281fa45cc9a8234c889394721746f89b5fe953fdaaf40a
@@ -279,6 +284,13 @@ RUN ln -sf /etc/systemd/system/local-registry.service "${OUTPUTDIR}/etc/systemd/
 ADD rootfs/files/configs/etc/systemd/system/hardening-vm.service ${OUTPUTDIR}/etc/systemd/system/hardening-vm.service
 ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bin/hardening-vm.sh
 RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
+
+# provider-config s3fs mount service (replaces physical provider_config disk)
+ADD rootfs/files/configs/etc/systemd/system/provider-config-s3fs.service ${OUTPUTDIR}/etc/systemd/system/provider-config-s3fs.service
+ADD rootfs/files/configs/usr/local/bin/mount-provider-config.sh ${OUTPUTDIR}/usr/local/bin/mount-provider-config.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/mount-provider-config.sh
+RUN ln -sf /etc/systemd/system/provider-config-s3fs.service \
+    "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/provider-config-s3fs.service"
 
 # swarm services
 ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service

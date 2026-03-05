@@ -1,7 +1,7 @@
 [Unit]
 Description=Download and stage Swarm services pack (run once)
-After=network-online.target
-Wants=network-online.target
+After=network-online.target provider-config-s3fs.service
+Wants=network-online.target provider-config-s3fs.service
 ConditionPathExists=!/etc/sp-swarm-services/.downloaded
 
 [Service]
