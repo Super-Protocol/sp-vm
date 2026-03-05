@@ -10,6 +10,7 @@ EnvironmentFile=-/etc/swarm/swarm-node.env
 ExecStartPre=-/usr/bin/podman stop swarm-node
 ExecStartPre=-/usr/bin/podman rm swarm-node
 ExecStartPre=mkdir -p /var/lib/swarm-node
+ExecStartPre=chown -R 1001:1001 /var/lib/swarm-node
 ExecStart=/bin/bash -c '\
     test -n "${SWARM_NODE_TAG}" || { echo "SWARM_NODE_TAG not set, waiting for swarm-init"; exit 1; }; \
     exec /usr/bin/podman run \
@@ -17,7 +18,7 @@ ExecStart=/bin/bash -c '\
         --rm \
         --network host \
         -v /etc/swarm-node:/etc/swarm-node:ro \
-        -v /etc/swarm-cloud/services:/etc/swarm-cloud/services:ro \
+        -v /etc/swarm-services:/etc/swarm-services:ro \
         -v /var/lib/swarm-node:/var/lib/swarm-node \
         -v /var/run/swarm-agent.sock:/var/run/swarm-agent.sock \
         -e NODE_ENV=production \

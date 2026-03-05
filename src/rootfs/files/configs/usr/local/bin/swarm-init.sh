@@ -23,6 +23,7 @@ SWARM_DB_TAG=$(cfg "tags.swarm_db")
 HOST_AGENT_TAG=$(cfg "tags.host_agent")
 SWARM_NODE_TAG=$(cfg "tags.swarm_node")
 SDK_TAG=$(cfg "tags.sdk")
+SERVICES_TAG=$(cfg "tags.services")
 SWARM_CLOUD_API_TAG=$(cfg "tags.swarm_cloud_api")
 SWARM_CLOUD_UI_TAG=$(cfg "tags.swarm_cloud_ui")
 AUTH_SERVICE_TAG=$(cfg "tags.auth_service")
@@ -98,6 +99,76 @@ if [ -n "$SDK_TAG" ]; then
     log "provision-plugin-sdk $SDK_TAG installed"
 else
     log "tags.sdk not set, using built-in provision-plugin-sdk"
+fi
+
+# Download swarm-services from GitHub Release into /etc/swarm-services (always overwrite)
+if [ -n "$SERVICES_TAG" ]; then
+    log "downloading swarm-services $SERVICES_TAG..."
+    TMP=$(mktemp -d)
+    REL_FILE=$(mktemp)
+    auth_curl_args=()
+    [ -n "$GITHUB_TOKEN" ] && auth_curl_args=(-H "Authorization: token $GITHUB_TOKEN")
+
+    if ! curl -sf "${auth_curl_args[@]}" \
+            "https://api.github.com/repos/Super-Protocol/swarm-cloud/releases/tags/$SERVICES_TAG" \
+            -o "$REL_FILE"; then
+        rm -f "$REL_FILE"
+        log "ERROR: failed to fetch release info for swarm-services $SERVICES_TAG"
+        exit 1
+    fi
+
+    GITHUB_TOKEN="$GITHUB_TOKEN" REL_FILE="$REL_FILE" TMP_DIR="$TMP" \
+    python3 - << 'PYEOF'
+import json, os, subprocess, re, zipfile
+
+github_token = os.environ.get('GITHUB_TOKEN', '')
+rel_file = os.environ['REL_FILE']
+tmp_dir = os.environ['TMP_DIR']
+services_dir = '/etc/swarm-services'
+
+with open(rel_file) as f:
+    data = json.load(f)
+os.unlink(rel_file)
+
+os.makedirs(services_dir, exist_ok=True)
+auth_headers = ['-H', f'Authorization: token {github_token}'] if github_token else []
+
+for asset in data.get('assets', []):
+    name = asset['name']
+    if not name.endswith('.zip'):
+        continue
+    asset_id = asset['id']
+    service_name = re.sub(r'^(.+?)-v[\d][^/]*\.zip$', r'\1', name)
+    dest = os.path.join(tmp_dir, name)
+
+    subprocess.run(
+        ['curl', '-sfL'] + auth_headers + [
+            '-H', 'Accept: application/octet-stream',
+            '-o', dest,
+            f'https://api.github.com/repos/Super-Protocol/swarm-cloud/releases/assets/{asset_id}',
+        ],
+        check=True,
+    )
+
+    svc_dir = os.path.join(services_dir, service_name)
+    os.makedirs(svc_dir, exist_ok=True)
+    with zipfile.ZipFile(dest, 'r') as zf:
+        zf.extractall(svc_dir)
+
+    if not os.path.exists(os.path.join(svc_dir, 'manifest.yaml')):
+        print(f'ERROR: manifest.yaml not found in {service_name}', flush=True)
+        raise SystemExit(1)
+
+    main_py = os.path.join(svc_dir, 'main.py')
+    if os.path.exists(main_py):
+        os.chmod(main_py, 0o755)
+
+    print(f'installed service: {service_name}', flush=True)
+PYEOF
+    rm -rf "$TMP"
+    log "swarm-services $SERVICES_TAG installed"
+else
+    log "tags.services not set, skipping swarm-services download"
 fi
 
 # Install swarm-host-agent from GitHub Releases (idempotent: skip if already installed)

@@ -23,5 +23,5 @@ leaderElection:
 provision:
   enabled: true
   swarmDbApiUrl: "http://127.0.0.1:8080"
-  servicesDir: "/etc/swarm-cloud/services"
+  servicesDir: "/etc/swarm-services"
   localDbPath: "/var/lib/swarm-node/provision.db"

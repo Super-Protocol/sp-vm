@@ -241,6 +241,7 @@ RUN ln -sf /etc/systemd/system/swarm-init.service "${OUTPUTDIR}/etc/systemd/syst
 ADD rootfs/files/configs/etc/systemd/system/swarm-host-agent.service ${OUTPUTDIR}/etc/systemd/system/swarm-host-agent.service
 
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm-service-launchers"
+COPY swarm-scripts ${OUTPUTDIR}/etc/swarm-service-launchers/
 
 # swarm one-shot services runner
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
@@ -260,7 +261,7 @@ ADD rootfs/files/configs/usr/local/bin/kubectl ${OUTPUTDIR}/usr/local/bin/kubect
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/kubectl
 # swarm-db binary is downloaded at runtime by swarm-init (tags.swarm_db in /sp/swarm/config.yaml)
 # provision plugins at /etc/swarm-cloud/services are mounted into the swarm-node container at runtime
-RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-cloud/services"
+RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-services"
 COPY repos/swarm-cloud/apps/swarm-node-e2e/fixtures/schema.yaml ${OUTPUTDIR}/etc/swarm-db/schema.yaml
 
 
