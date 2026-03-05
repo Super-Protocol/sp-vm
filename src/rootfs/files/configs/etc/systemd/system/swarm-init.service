@@ -4,7 +4,7 @@ After=network-online.target swarm-db.service
 Wants=network-online.target swarm-db.service
 
 [Service]
-Type=simple
+Type=oneshot
 ExecStart=/bin/bash /usr/local/bin/swarm-init.sh
 Restart=on-failure
 RestartSec=10
