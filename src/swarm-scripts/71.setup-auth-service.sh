@@ -26,9 +26,9 @@ CLUSTER_ID=${CLUSTER_ID:-auth-service}
 
 # Location stored in ClusterServices; must exist on all nodes.
 # The service provisioner (manifest.yaml + main.py) is baked into the image under
-# /etc/swarm-cloud/services/${SERVICE_NAME}. The application payload lives under
+# /etc/swarm-services/${SERVICE_NAME}. The application payload lives under
 # /etc/auth-service and is referenced by the provisioner.
-LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
 MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
