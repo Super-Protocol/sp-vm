@@ -1,7 +1,7 @@
 [Unit]
 Description=Swarm Initialization (download binaries, configure services, seed swarm-db)
-After=network-online.target swarm-db.service
-Wants=network-online.target swarm-db.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot

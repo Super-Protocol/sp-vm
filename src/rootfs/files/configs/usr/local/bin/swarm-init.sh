@@ -27,9 +27,6 @@ SERVICES_TAG=$(cfg "tags.services")
 SWARM_CLOUD_API_TAG=$(cfg "tags.swarm_cloud_api")
 SWARM_CLOUD_UI_TAG=$(cfg "tags.swarm_cloud_ui")
 AUTH_SERVICE_TAG=$(cfg "tags.auth_service")
-POWERDNS_API_URL=$(cfg "powerdns_api_url")
-POWERDNS_API_KEY=$(cfg "powerdns_api_key")
-BASE_DOMAIN=$(cfg "base_domain")
 
 # Download a GitHub release asset to a local file path
 # Usage: download_github_asset <owner> <repo> <tag> <filename> <dest>
@@ -226,61 +223,5 @@ SWARM_CLOUD_API_TAG=${SWARM_CLOUD_API_TAG}
 SWARM_CLOUD_UI_TAG=${SWARM_CLOUD_UI_TAG}
 AUTH_SERVICE_TAG=${AUTH_SERVICE_TAG}
 EOF
-
-# Wait for swarm-db MySQL — fail (and let systemd restart us) if not available
-log "waiting for swarm-db MySQL to become available..."
-mysql_host="127.0.0.1"
-mysql_port="3306"
-wait_timeout="240"
-start_ts="$(date +%s)"
-while true; do
-    if (exec 3<>/dev/tcp/"$mysql_host"/"$mysql_port") 2>/dev/null; then
-        exec 3>&- 3<&-
-        break
-    fi
-    elapsed=$(( $(date +%s) - start_ts ))
-    if [ "$elapsed" -ge "$wait_timeout" ]; then
-        log "ERROR: MySQL not available after ${wait_timeout}s, will retry"
-        exit 1
-    fi
-    sleep 1
-done
-
-# Insert SwarmSecrets (idempotent: INSERT IGNORE skips existing keys)
-log "inserting SwarmSecrets into swarm-db..."
-AUTH_SERVICE_YAML=""
-AUTH_SERVICE_YAML_PATH="/sp/swarm/auth-service.yaml"
-[ -f "$AUTH_SERVICE_YAML_PATH" ] && AUTH_SERVICE_YAML=$(cat "$AUTH_SERVICE_YAML_PATH")
-
-# Generate RSA 4096 private key (PKCS8 PEM) for evidence signing.
-# INSERT IGNORE ensures only the first run inserts it; subsequent runs are no-ops.
-# TODO: should we use subroot (intermediate CA) key hierarchy?
-log "generating evidence signing key (RSA 4096)..."
-EVIDENCE_SIGN_KEY=$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 2>/dev/null)
-
-POWERDNS_API_URL="$POWERDNS_API_URL" \
-POWERDNS_API_KEY="$POWERDNS_API_KEY" \
-BASE_DOMAIN="$BASE_DOMAIN" \
-AUTH_SERVICE_YAML="$AUTH_SERVICE_YAML" \
-EVIDENCE_SIGN_KEY="$EVIDENCE_SIGN_KEY" \
-python3 - << 'PYEOF'
-import subprocess, os
-
-def insert_secret(key, value):
-    if not value:
-        return
-    escaped = value.replace("'", "''")
-    sql = f"INSERT IGNORE INTO SwarmSecrets (id, value) VALUES ('{key}', '{escaped}');\n"
-    subprocess.run(
-        ["mysql", "-h", "127.0.0.1", "-P", "3306", "-u", "root", "swarmdb"],
-        input=sql, text=True, check=True,
-    )
-
-insert_secret("powerdns_api_url",  os.environ.get("POWERDNS_API_URL", ""))
-insert_secret("powerdns_api_key",  os.environ.get("POWERDNS_API_KEY", ""))
-insert_secret("base_domain",       os.environ.get("BASE_DOMAIN", ""))
-insert_secret("auth_service_yaml", os.environ.get("AUTH_SERVICE_YAML", ""))
-insert_secret("evidence_sign_key", os.environ.get("EVIDENCE_SIGN_KEY", ""))
-PYEOF
 
 log "swarm-init completed successfully"
