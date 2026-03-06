@@ -1,19 +1,39 @@
 [Unit]
-Description=Swarm Node service
-After=network-online.target swarm-db.service
+Description=Swarm Node Service (Podman Container)
+After=network-online.target swarm-db.service swarm-host-agent.service
 Wants=network-online.target
-Requires=swarm-db.service
+Requires=swarm-db.service swarm-host-agent.service
 
 [Service]
 Type=simple
-WorkingDirectory=/usr/local/lib/swarm-cloud
-ExecStartPre=mkdir -p /var/lib/swarm-cloud-api/data
-ExecStart=/usr/local/bin/swarm-node.sh
+EnvironmentFile=-/etc/swarm/swarm-node.env
+ExecStartPre=-/usr/bin/podman stop swarm-node
+ExecStartPre=-/usr/bin/podman rm swarm-node
+ExecStartPre=mkdir -p /var/lib/swarm-node
+ExecStartPre=chown -R 1001:1001 /var/lib/swarm-node
+ExecStart=/bin/bash -c '\
+    test -n "${SWARM_NODE_TAG}" || { echo "SWARM_NODE_TAG not set, waiting for swarm-init"; exit 1; }; \
+    exec /usr/bin/podman run \
+        --name swarm-node \
+        --rm \
+        --network host \
+        -v /etc/swarm-node:/etc/swarm-node:ro \
+        -v /etc/swarm-services:/etc/swarm-services:ro \
+        -v /var/lib/swarm-node:/var/lib/swarm-node \
+        -v /var/run/swarm-agent.sock:/var/run/swarm-agent.sock \
+        -e NODE_ENV=production \
+        -e SWC_NODE_CONFIG_PATH=/etc/swarm-node/config.yaml \
+        -e SWARM_CLOUD_API_TAG="${SWARM_CLOUD_API_TAG}" \
+        -e SWARM_CLOUD_UI_TAG="${SWARM_CLOUD_UI_TAG}" \
+        -e AUTH_SERVICE_TAG="${AUTH_SERVICE_TAG}" \
+        -e SWARM_HOST_AGENT_SOCKET=/var/run/swarm-agent.sock \
+        "ghcr.io/super-protocol/swarm-cloud/swarm-node:${SWARM_NODE_TAG}" \
+        apps/swarm-node/dist/main.js'
+ExecStop=/usr/bin/podman stop swarm-node
+Restart=always
+RestartSec=10
 StandardOutput=append:/var/log/swarm-node-api.log
 StandardError=append:/var/log/swarm-node-api-err.log
-Restart=always
-RestartSec=5
-Environment=NODE_ENV=production SWC_NODE_CONFIG_PATH=/sp/swarm/api.yaml
 
 [Install]
 WantedBy=multi-user.target
