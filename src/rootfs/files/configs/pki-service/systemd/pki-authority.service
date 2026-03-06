@@ -1,22 +1,20 @@
 [Unit]
-Description=PKI authority lxc-container
-After=pki-authority-init.service pki-authority-sync.service pccs.service
-Requires=pki-authority-init.service pccs.service
+Description=PKI authority container
+After=pki-authority-init.service pki-authority-sync.service
+Requires=pki-authority-init.service
 Wants=pki-authority-sync.service
 
 [Service]
 Type=simple
-Restart=always
-RestartSec=5
+KillMode=process
+Restart=on-failure
+RestartSec=10s
 TimeoutStartSec=3min
 
-ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure.py
+ExecStartPre=/usr/bin/podman play kube --network podman --replace /etc/pki-authority/pod.yaml
+ExecStart=/usr/bin/podman wait tee-pki-authority
 
-ExecStart=/usr/bin/lxc-start -n pki-authority -F
-
-ExecStop=/usr/bin/lxc-stop -n pki-authority
-
-KillMode=control-group
+ExecStop=/usr/bin/podman play kube --down /etc/pki-authority/pod.yaml
 
 [Install]
 WantedBy=multi-user.target
