@@ -194,7 +194,6 @@ if [ -n "$HOST_AGENT_TAG" ]; then
         install -m 755 "$TMP/$EXTRACT_DIR/swarm-host-agent" /usr/local/bin/swarm-host-agent
         mkdir -p /etc/swarm
         cp "$TMP/$EXTRACT_DIR/host-agent.yaml" /etc/swarm/host-agent.yaml
-        cp "$TMP/$EXTRACT_DIR/swarm-host-agent.service" /etc/systemd/system/swarm-host-agent.service
         rm -rf "$TMP"
         log "swarm-host-agent $RELEASE_TAG installed"
         systemctl daemon-reload
