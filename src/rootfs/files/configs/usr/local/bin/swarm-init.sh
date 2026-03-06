@@ -196,7 +196,6 @@ if [ -n "$HOST_AGENT_TAG" ]; then
         cp "$TMP/$EXTRACT_DIR/host-agent.yaml" /etc/swarm/host-agent.yaml
         rm -rf "$TMP"
         log "swarm-host-agent $RELEASE_TAG installed"
-        systemctl daemon-reload
         systemctl enable swarm-host-agent.service
     fi
 else
@@ -232,7 +231,7 @@ EOF
 log "waiting for swarm-db MySQL to become available..."
 mysql_host="127.0.0.1"
 mysql_port="3306"
-wait_timeout="120"
+wait_timeout="240"
 start_ts="$(date +%s)"
 while true; do
     if (exec 3<>/dev/tcp/"$mysql_host"/"$mysql_port") 2>/dev/null; then
