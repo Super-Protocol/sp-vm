@@ -72,7 +72,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterService '$REDIS_SERVICE_PK'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$REDIS_SERVICE_PK" --name="$REDIS_SERVICE_NAME" --cluster_policy="$REDIS_CLUSTER_POLICY" --version="$REDIS_SERVICE_VERSION" --location="$REDIS_LOCATION_PATH" --omit-command-init
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$REDIS_SERVICE_PK" --name="$REDIS_SERVICE_NAME" --cluster_policy="$REDIS_CLUSTER_POLICY" --version="$REDIS_SERVICE_VERSION" --location="$REDIS_LOCATION_PATH"
 fi
 
 echo "Ensuring ClusterService '$SENTINEL_SERVICE_PK'..."
@@ -82,7 +82,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterService '$SENTINEL_SERVICE_PK'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SENTINEL_SERVICE_PK" --name="$SENTINEL_SERVICE_NAME" --cluster_policy="$SENTINEL_CLUSTER_POLICY" --version="$SENTINEL_SERVICE_VERSION" --location="$SENTINEL_LOCATION_PATH" --omit-command-init
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SENTINEL_SERVICE_PK" --name="$SENTINEL_SERVICE_NAME" --cluster_policy="$SENTINEL_CLUSTER_POLICY" --version="$SENTINEL_SERVICE_VERSION" --location="$SENTINEL_LOCATION_PATH"
 fi
 
 echo "Done. The provision worker will reconcile '$REDIS_SERVICE_NAME' shortly."
