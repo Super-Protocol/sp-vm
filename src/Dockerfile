@@ -311,9 +311,12 @@ RUN ln -sf /etc/systemd/system/swarm-services.service "${OUTPUTDIR}/etc/systemd/
 ADD rootfs/files/configs/etc/systemd/system/download-sp-swarm-services.service ${OUTPUTDIR}/etc/systemd/system/download-sp-swarm-services.service
 RUN ln -sf /etc/systemd/system/download-sp-swarm-services.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/download-sp-swarm-services.service"
 
-# disabling serial getty
-ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
-RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
+# Keep serial getty for debugging
+# ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
+# RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
+
+# Debugging: set root password
+RUN echo "root:supersecret" | chpasswd -R ${OUTPUTDIR}
 
 # swarm binaries into VM rootfs
 RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bin"
