@@ -177,8 +177,8 @@ ADD rootfs/files/configs/tdx-attest.conf ${OUTPUTDIR}/etc/
 ADD rootfs/files/configs/chrony/chrony.conf ${OUTPUTDIR}/etc/chrony/
 ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
 
-RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
-RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
+# RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
+# RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
 
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
@@ -238,7 +238,7 @@ ADD rootfs/files/configs/etc/systemd/system/swarm-init.service ${OUTPUTDIR}/etc/
 RUN ln -sf /etc/systemd/system/swarm-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-init.service"
 
 # swarm-host-agent: placeholder service file (binary + real service installed by swarm-init at boot)
-ADD rootfs/files/configs/etc/systemd/system/swarm-host-agent.service ${OUTPUTDIR}/etc/systemd/system/swarm-host-agent.service
+COPY rootfs/files/configs/etc/systemd/system/swarm-host-agent.service ${OUTPUTDIR}/etc/systemd/system/swarm-host-agent.service
 
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm-service-launchers"
 COPY swarm-scripts ${OUTPUTDIR}/etc/swarm-service-launchers/
