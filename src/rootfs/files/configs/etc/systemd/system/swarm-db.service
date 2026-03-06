@@ -1,7 +1,7 @@
 [Unit]
 Description=Swarm DB service
-After=network-online.target local-fs.target
-Wants=network-online.target
+After=network-online.target local-fs.target swarm-init.service
+Wants=network-online.target swarm-init.service swarm-services.service
 ConditionPathExists=/usr/local/bin/swarm-db-linux-amd64
 
 [Service]
