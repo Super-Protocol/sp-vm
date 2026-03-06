@@ -219,6 +219,11 @@ log "generating /etc/swarm/swarm-node.env..."
 mkdir -p /etc/swarm
 cat > /etc/swarm/swarm-node.env << EOF
 SWARM_NODE_TAG=${SWARM_NODE_TAG}
+EOF
+
+# Generate /etc/swarm/swarm-host-agent.env for swarm-host-agent.service EnvironmentFile (idempotent)
+log "generating /etc/swarm/swarm-host-agent.env..."
+cat > /etc/swarm/swarm-host-agent.env << EOF
 SWARM_CLOUD_API_TAG=${SWARM_CLOUD_API_TAG}
 SWARM_CLOUD_UI_TAG=${SWARM_CLOUD_UI_TAG}
 AUTH_SERVICE_TAG=${AUTH_SERVICE_TAG}

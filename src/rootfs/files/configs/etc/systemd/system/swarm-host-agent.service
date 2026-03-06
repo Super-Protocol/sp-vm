@@ -5,6 +5,7 @@ Requires=swarm-init.service
 
 [Service]
 Type=simple
+EnvironmentFile=/etc/swarm/swarm-host-agent.env
 ExecStart=/usr/local/bin/swarm-host-agent
 Restart=always
 RestartSec=5
