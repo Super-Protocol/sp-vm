@@ -247,7 +247,6 @@ COPY swarm-scripts ${OUTPUTDIR}/etc/swarm-service-launchers/
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
 ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
-RUN ln -sf /etc/systemd/system/swarm-services.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-services.service"
 
 # disabling serial getty
 ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
@@ -296,9 +295,6 @@ RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
-# cleanup apt lists and policy-rc.d
-RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
-    && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
 
 
 # Python dependencies required by provision plugins (redis-py for rke2/redis plugins, podman-compose for container plugins)
@@ -318,6 +314,8 @@ ARG SP_VM_IMAGE_VERSION
 RUN bash -c '[[ -n "$SP_VM_IMAGE_VERSION" ]] && echo "$SP_VM_IMAGE_VERSION" > "${OUTPUTDIR}/etc/sp-release"'
 
 # after all!
+# cleanup apt lists and policy-rc.d
+RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d
 ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/cleanup_rootfs.sh
 ### End rootfs ###
