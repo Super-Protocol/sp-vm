@@ -227,8 +227,9 @@ ADD rootfs/files/configs/tdx-attest.conf ${OUTPUTDIR}/etc/
 ADD rootfs/files/configs/chrony/chrony.conf ${OUTPUTDIR}/etc/chrony/
 ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
 
-RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
-RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
+# Temporary debug: Allow root login (disable PAM restriction)
+# RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
+# RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
 
 RUN mkdir -p "${OUTPUTDIR}/etc/super/certs"
@@ -301,7 +302,8 @@ ADD rootfs/files/configs/usr/local/bin/swarm-node.sh ${OUTPUTDIR}/usr/local/bin/
 RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-node.service"
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-node.sh
 # run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
-ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
+# Temporary debug: Keep default securetty to allow ttyS0 root login
+# ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
 # swarm one-shot services runner
 ADD rootfs/files/configs/etc/systemd/system/swarm-services.service ${OUTPUTDIR}/etc/systemd/system/swarm-services.service
