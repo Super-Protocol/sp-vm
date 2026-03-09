@@ -60,15 +60,10 @@ root_device="$(get_device "$root_device_name")";
 # hash device can only be found by partition label (not fs label)
 hash_device_path="$(blkid -t PARTLABEL="rootfs_hash" --output device || echo)";
 
-provider_config_device_path="$(blkid -L provider_config --output device || echo)";
-
 # The root device should exist to be either verified then mounted or
 # just mounted when verification is disabled.
 if [ ! -e "${root_device}" ]; then
     log_fail "No root device ${root_device} found";
-fi
-if [ ! -e "${provider_config_device_path}" ]; then
-    log_fail "No provider config device ${provider_config_device_path} found";
 fi
 
 if [ "${rootfs_verifier}" = "dm-verity" ]; then
@@ -93,7 +88,7 @@ if [ -z "$main_block_device_name" ]; then
     log_fail "Failed to get main block device name from data part device path '$root_device'..";
 fi
 
-state_block_device_count="$(lsblk -d -n -o NAME | grep -v "$main_block_device_name" | grep -v "$(basename "$provider_config_device_path")" | wc -l)";
+state_block_device_count="$(lsblk -d -n -o NAME | grep -v "$main_block_device_name" | wc -l)";
 
 if [ "$state_block_device_count" -lt 1 ]; then
     log_fail "Failed to get state block device, please attach an extra disk to this VM";
@@ -102,7 +97,7 @@ if [ "$state_block_device_count" -gt 1 ]; then
     log_fail "Found more than one state block device, please remove an extra block device and restart the VM";
 fi
 
-state_block_device_name="$(lsblk -d -n -o NAME | grep -v "$main_block_device_name" | grep -v "$(basename "$provider_config_device_path")")";
+state_block_device_name="$(lsblk -d -n -o NAME | grep -v "$main_block_device_name")";
 if [ -z "$state_block_device_name" ]; then
     log_fail "Failed to get state block device, this error is abnomal and you should notify the SuperProtocol support team if you see this..";
 fi
@@ -134,9 +129,9 @@ mount -t overlay overlay \
   -o lowerdir=/sysroot-ro,upperdir=/sysroot-rw/upper,workdir=/sysroot-rw/work \
   /mnt || log_fail "Mounting overlay FS failed";
 
+# /sp will be mounted via s3fs by provider-config-s3fs.service after boot;
+# create the empty mount point so switch_root can find it.
 [ -d /mnt/sp ] || mkdir /mnt/sp
-log_info "Mounting provider config";
-mount -t ext4 -o ro "$provider_config_device_path" /mnt/sp || log_fail "Mounting provider config failed";
 
 # we can't do overlay over overlay, so, moving whole /var to upper-level fs
 [ -d /mnt/var ] || mkdir /mnt/var

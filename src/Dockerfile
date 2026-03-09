@@ -148,6 +148,10 @@ RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
 ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
 RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
+# Install s3fs-fuse for provider_config S3 bucket mounting
+RUN --security=insecure chroot ${OUTPUTDIR} apt-get install -y s3fs
+# Allow user_allow_other so s3fs -o allow_other works for non-root processes
+RUN echo 'user_allow_other' >> ${OUTPUTDIR}/etc/fuse.conf
 
 RUN mkdir -p "${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests"
 ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/server/manifests/k8s-swarm.yaml \
@@ -177,8 +181,9 @@ ADD rootfs/files/configs/tdx-attest.conf ${OUTPUTDIR}/etc/
 ADD rootfs/files/configs/chrony/chrony.conf ${OUTPUTDIR}/etc/chrony/
 ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
 
-RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
-RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
+# Temporary debug: Allow root login (disable PAM restriction)
+# RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
+# RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
 
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
@@ -215,6 +220,13 @@ ADD rootfs/files/configs/etc/systemd/system/hardening-vm.service ${OUTPUTDIR}/et
 ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bin/hardening-vm.sh
 RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
 
+# provider-config s3fs mount service (replaces physical provider_config disk)
+ADD rootfs/files/configs/etc/systemd/system/provider-config-s3fs.service ${OUTPUTDIR}/etc/systemd/system/provider-config-s3fs.service
+ADD rootfs/files/configs/usr/local/bin/mount-provider-config.sh ${OUTPUTDIR}/usr/local/bin/mount-provider-config.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/mount-provider-config.sh
+RUN ln -sf /etc/systemd/system/provider-config-s3fs.service \
+    "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/provider-config-s3fs.service"
+
 # swarm services
 ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
 RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
@@ -223,7 +235,8 @@ ADD rootfs/files/configs/etc/systemd/system/swarm-node.service ${OUTPUTDIR}/etc/
 RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-node.service"
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
 # run-state directories are prepared in state_disk_mount.sh; bind mounts via fstab
-ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
+# Temporary debug: Keep default securetty to allow ttyS0 root login
+# ADD rootfs/files/configs/etc/securetty "${OUTPUTDIR}/etc/securetty"
 
 # swarm-init: downloads binaries and seeds swarm-db (restarts until MySQL is available)
 # generate-swarm-db-config: generates /etc/swarm-db/config.yaml at swarm-db start (ExecStartPre)
@@ -249,9 +262,12 @@ ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
 RUN ln -sf /etc/systemd/system/swarm-services.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-services.service"
 
-# disabling serial getty
-ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
-RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
+# Keep serial getty for debugging
+# ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
+# RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
+
+# Debugging: set root password
+RUN echo "root:supersecret" | chpasswd -R ${OUTPUTDIR}
 
 # swarm binaries into VM rootfs
 RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bin"
