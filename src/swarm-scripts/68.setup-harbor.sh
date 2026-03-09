@@ -7,7 +7,7 @@ set -euo pipefail
 #
 # Notes:
 # - The harbor manifest and main.py are provided by the image at:
-#     /etc/swarm-cloud/harbor/{manifest.yaml, main.py}
+#     /etc/swarm-services/harbor/{manifest.yaml, main.py}
 #   This script only registers ClusterPolicy and ClusterService.
 # - harbor depends on WireGuard and runs only on leader nodes as expressed
 #   in its manifest and provision plugin.
@@ -26,8 +26,8 @@ CLUSTER_ID=${CLUSTER_ID:-harbor}
 
 # Location and manifest inside the container.
 # IMPORTANT: This script runs only on one node. All nodes must have the same location available already
-# (baked into the image), so we point to /etc/swarm-cloud/${SERVICE_NAME}.
-LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/${SERVICE_NAME}}
+# (baked into the image), so we point to /etc/swarm-services/${SERVICE_NAME}.
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
 MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
