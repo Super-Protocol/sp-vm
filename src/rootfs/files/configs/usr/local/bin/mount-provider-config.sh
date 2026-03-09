@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+if [[ -d /sp ]]; then
+    log "/sp already exists, skipping mount provider config"
+    exit 0
+fi
+
 METADATA_URL="http://169.254.169.254/computeMetadata/v1/instance/attributes"
 META_HEADER="Metadata-Flavor: Google"
 PASSWD_FILE="/etc/passwd-s3fs"
