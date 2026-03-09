@@ -4,8 +4,8 @@ set -euo pipefail
 log() { echo "[mount-provider-config] $*"; }
 log_err() { echo "[mount-provider-config] ERROR: $*" >&2; }
 
-if [[ -d /sp ]]; then
-    log "/sp already exists, skipping mount provider config"
+if [[ -d /sp ]] && [[ -n "$(ls -A /sp 2>/dev/null)" ]]; then
+    log "/sp already exists and is not empty, skipping mount provider config"
     exit 0
 fi
 
