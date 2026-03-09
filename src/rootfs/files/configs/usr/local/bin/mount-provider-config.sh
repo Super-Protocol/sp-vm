@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+log() { echo "[mount-provider-config] $*"; }
+log_err() { echo "[mount-provider-config] ERROR: $*" >&2; }
+
 if [[ -d /sp ]]; then
     log "/sp already exists, skipping mount provider config"
     exit 0
@@ -9,9 +12,6 @@ fi
 METADATA_URL="http://169.254.169.254/computeMetadata/v1/instance/attributes"
 META_HEADER="Metadata-Flavor: Google"
 PASSWD_FILE="/etc/passwd-s3fs"
-
-log() { echo "[mount-provider-config] $*"; }
-log_err() { echo "[mount-provider-config] ERROR: $*" >&2; }
 
 ACCESS_KEY="$(curl -sf "${METADATA_URL}/s3-access-key" -H "${META_HEADER}" || true)"
 SECRET_KEY="$(curl -sf "${METADATA_URL}/s3-secret-key" -H "${META_HEADER}" || true)"
