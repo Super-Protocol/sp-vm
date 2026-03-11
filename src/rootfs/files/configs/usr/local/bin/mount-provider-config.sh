@@ -40,6 +40,9 @@ s3fs "${BUCKET}" /sp \
     -o nonempty \
     -o retries=5 \
     -o connect_timeout=30 \
+    -o uid=0 \
+    -o gid=0 \
+    -o umask=0022 \
     -o logfile=/var/log/s3fs-provider-config.log
 
 log "Mounted OK. Contents: $(ls /sp/ 2>/dev/null | head -10 | tr '\n' ' ')"
