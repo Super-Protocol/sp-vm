@@ -324,54 +324,9 @@ ADD rootfs/files/scripts/install_sync_client.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_sync_client.sh
 RUN --security=insecure /buildroot/files/scripts/install_sync_client.sh "${PKI_SYNC_CLIENT_VERSION}"
 
-# MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
-ADD rootfs/files/scripts/install_mongodb.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/install_mongodb.sh
-# disable autostart without requiring systemd during build (remove enable symlinks for MongoDB)
-RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongod.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongod.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongodb.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongodb.service
-# NATS (install nats-server 2.12.2 into VM rootfs)
-ADD rootfs/files/scripts/install_nats.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/install_nats.sh
-# disable autostart without requiring systemd during build (ensure no enable symlinks for nats)
-RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/nats-server.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/nats-server.service || true
-# CockroachDB (install cockroach binary into VM rootfs)
-ADD rootfs/files/scripts/install_cockroachdb.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/install_cockroachdb.sh
-# Knot DNS (install knot into VM rootfs)
-ADD rootfs/files/scripts/install_knot.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/install_knot.sh
-# disable autostart without requiring systemd during build (ensure no enable symlinks for knot)
-RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/knot.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/knot.service || true
-# OpenResty (install into VM rootfs so provisioner only configures and manages it)
-ADD rootfs/files/scripts/install_openresty.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/install_openresty.sh
-# disable autostart without requiring systemd during build (ensure no enable symlinks for openresty)
-RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/openresty.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/openresty.service || true
-RUN mkdir -p ${OUTPUTDIR}/etc/resty-auto-ssl/storage \
-    && chown -R www-data:www-data ${OUTPUTDIR}/etc/resty-auto-ssl
-# disable autostart without requiring systemd during build (remove enable symlinks)
-RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
-    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service \
-    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-sentinel.service \
-    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-sentinel.service
-# ensure swarm-cloud-api, cockroachdb and wireguard are disabled by default (no systemd enable symlinks)
-RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/cockroachdb.service \
-    && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/wg-quick@wg0.service
-
-
 # cleanup apt lists and policy-rc.d
 RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
     && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
-
-ADD rootfs/files/scripts/install_provision_plugin_sdk.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/install_provision_plugin_sdk.sh
-
 
 # Python dependencies required by provision plugins (redis-py for rke2/redis plugins, podman-compose for container plugins)
 ADD rootfs/files/scripts/install_python_deps.sh /buildroot/files/scripts/
