@@ -324,10 +324,6 @@ ADD rootfs/files/scripts/install_sync_client.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_sync_client.sh
 RUN --security=insecure /buildroot/files/scripts/install_sync_client.sh "${PKI_SYNC_CLIENT_VERSION}"
 
-# cleanup apt lists and policy-rc.d
-RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
-    && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
-
 # Python dependencies required by provision plugins (redis-py for rke2/redis plugins, podman-compose for container plugins)
 ADD rootfs/files/scripts/install_python_deps.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_python_deps.sh
