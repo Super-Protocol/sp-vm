@@ -1,0 +1,21 @@
+github:
+  token: ""  # GitHub personal access token (required for private repos and ghcr.io)
+
+tags:
+  swarm_db: ""        # e.g. "v0.1.0" — downloads and replaces built-in binary; empty = use built-in
+  host_agent: ""      # e.g. "host-agent-v1.0.0" — required; downloads binary + service + config
+  swarm_node: ""      # e.g. "v1.2.3" — Docker image tag for ghcr.io/.../swarm-node
+  sdk: ""             # e.g. "v1.2.3" — downloads and replaces built-in SDK; empty = use built-in
+  services: ""        # e.g. "v1.2.3" — downloads all service .zip archives into /etc/swarm-services
+  swarm_cloud_api: "" # passed as env var to swarm-node container
+  swarm_cloud_ui: ""  # passed as env var to swarm-node container
+  auth_service: ""    # passed as env var to swarm-node container
+
+swarm_db:
+  node_name: ""        # defaults to hostname
+  advertise_addr: ""   # defaults to auto-detected external IP
+  join_addresses: []   # e.g. ["192.168.1.2:7946", "192.168.1.3:7946"]
+
+powerdns_api_url: ""   # e.g. "http://ns1.example.com:8081"
+powerdns_api_key: ""   # PowerDNS API key
+base_domain: ""        # e.g. "example.com"

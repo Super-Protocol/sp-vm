@@ -38,10 +38,8 @@ iptables -A INPUT -p udp --dport 7946 -j ACCEPT
 # Allow DHCP for LXC containers (client:68 -> server:67)
 iptables -A INPUT -i lxcbr0 -p udp --sport 68 --dport 67 -j ACCEPT
 
-# if NOT DEBUG, then close VM via firewall
-if grep -q 'sp-debug=true' /proc/cmdline; then
-    # Allow SSH (TCP 22)
-    iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+# TODO: disable on production build https://superprotocol.atlassian.net/browse/SP-7564
+# Allow SSH (TCP 22)
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
 
-    systemctl start ssh
-fi
+systemctl start ssh

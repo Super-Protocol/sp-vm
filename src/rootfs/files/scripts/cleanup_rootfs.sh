@@ -37,7 +37,8 @@ function cleanup_rootfs() {
     rm -f "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/ssh.service"
     rm -f "${OUTPUTDIR}/etc/systemd/system/sockets.target.wants/ssh.socket"
     rm -f "${OUTPUTDIR}/etc/systemd/system/ssh.service.requires/ssh.socket"
-    rm -f "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"
+    # Keep serial console for debugging
+    # rm -f "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"
 }
 
 chroot_init;

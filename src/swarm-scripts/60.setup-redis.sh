@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Note:
 # - The redis manifest and main.py are provided by the image at:
-#     /etc/swarm-cloud/services/redis/{manifest.yaml, main.py}
+#     /etc/swarm-services/redis/{manifest.yaml, main.py}
 #   This script only registers service records in SwarmDB.
 # - redis depends on a WireGuard cluster existing and sharing nodes with it.
 #   When bootstrapping WireGuard, prefer ClusterPolicy id 'wireguard' to match redis's stateExpr.
@@ -28,9 +28,9 @@ SENTINEL_CLUSTER_POLICY=${SENTINEL_CLUSTER_POLICY:-redis-sentinel}
 SENTINEL_MAX_SIZE=${SENTINEL_MAX_SIZE:-3}
 
 # Location stored in ClusterServices; must exist on all nodes (baked into image)
-REDIS_LOCATION_PATH=${REDIS_LOCATION_PATH:-/etc/swarm-cloud/services/${REDIS_SERVICE_NAME}}
+REDIS_LOCATION_PATH=${REDIS_LOCATION_PATH:-/etc/swarm-services/${REDIS_SERVICE_NAME}}
 REDIS_MANIFEST_PATH=${REDIS_MANIFEST_PATH:-${REDIS_LOCATION_PATH}/manifest.yaml}
-SENTINEL_LOCATION_PATH=${SENTINEL_LOCATION_PATH:-/etc/swarm-cloud/services/${SENTINEL_SERVICE_NAME}}
+SENTINEL_LOCATION_PATH=${SENTINEL_LOCATION_PATH:-/etc/swarm-services/${SENTINEL_SERVICE_NAME}}
 SENTINEL_MANIFEST_PATH=${SENTINEL_MANIFEST_PATH:-${SENTINEL_LOCATION_PATH}/manifest.yaml}
 REDIS_SERVICE_PK="${REDIS_CLUSTER_POLICY}:${REDIS_SERVICE_NAME}"
 SENTINEL_SERVICE_PK="${SENTINEL_CLUSTER_POLICY}:${SENTINEL_SERVICE_NAME}"
@@ -72,7 +72,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterService '$REDIS_SERVICE_PK'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$REDIS_SERVICE_PK" --name="$REDIS_SERVICE_NAME" --cluster_policy="$REDIS_CLUSTER_POLICY" --version="$REDIS_SERVICE_VERSION" --location="$REDIS_LOCATION_PATH" --omit-command-init
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$REDIS_SERVICE_PK" --name="$REDIS_SERVICE_NAME" --cluster_policy="$REDIS_CLUSTER_POLICY" --version="$REDIS_SERVICE_VERSION" --location="$REDIS_LOCATION_PATH"
 fi
 
 echo "Ensuring ClusterService '$SENTINEL_SERVICE_PK'..."
@@ -82,7 +82,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterService '$SENTINEL_SERVICE_PK'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SENTINEL_SERVICE_PK" --name="$SENTINEL_SERVICE_NAME" --cluster_policy="$SENTINEL_CLUSTER_POLICY" --version="$SENTINEL_SERVICE_VERSION" --location="$SENTINEL_LOCATION_PATH" --omit-command-init
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SENTINEL_SERVICE_PK" --name="$SENTINEL_SERVICE_NAME" --cluster_policy="$SENTINEL_CLUSTER_POLICY" --version="$SENTINEL_SERVICE_VERSION" --location="$SENTINEL_LOCATION_PATH"
 fi
 
 echo "Done. The provision worker will reconcile '$REDIS_SERVICE_NAME' shortly."
