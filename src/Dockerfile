@@ -257,14 +257,8 @@ RUN /buildroot/files/scripts/setup_sshd_config.sh
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
 
 # copy pki-authority service files
-ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
-RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
-
 RUN mkdir -p "${OUTPUTDIR}/etc/super/containers/pki-authority"
-COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-22637173282 /pki-authority.tar "${OUTPUTDIR}/etc/super/containers/pki-authority/pki-authority.tar"
-ADD rootfs/files/configs/pki-service/conf/lxc-swarm-template.yaml "${OUTPUTDIR}/etc/super/containers/pki-authority/lxc-swarm-template.yaml"
-ADD rootfs/files/configs/pki-service/conf/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
-ADD rootfs/files/configs/pki-service/conf/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
+ADD rootfs/files/configs/pki-service/conf/pki-authority-template.yaml "${OUTPUTDIR}/etc/super/containers/pki-authority/pki-authority-template.yaml"
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin/pki-authority"
 ADD rootfs/files/configs/pki-service/scripts/*.py "${OUTPUTDIR}/usr/local/bin/pki-authority/"
 ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pki-authority/"
@@ -426,6 +420,8 @@ RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.s
 # ensure swarm-cloud-api, cockroachdb and wireguard are disabled by default (no systemd enable symlinks)
 RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/cockroachdb.service \
     && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/wg-quick@wg0.service
+
+
 # cleanup apt lists and policy-rc.d
 RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
     && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
