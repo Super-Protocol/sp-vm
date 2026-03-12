@@ -149,7 +149,8 @@ ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
 RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
 # Install s3fs-fuse for provider_config S3 bucket mounting
-RUN --security=insecure chroot ${OUTPUTDIR} apt-get install -y s3fs
+ADD rootfs/files/scripts/install_s3fs.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/install_s3fs.sh
 # Allow user_allow_other so s3fs -o allow_other works for non-root processes
 RUN echo 'user_allow_other' >> ${OUTPUTDIR}/etc/fuse.conf
 
