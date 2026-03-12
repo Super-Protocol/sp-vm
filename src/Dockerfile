@@ -200,16 +200,20 @@ RUN /buildroot/files/scripts/setup_sshd_config.sh
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
 
 # copy pki-authority service files
-ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
-ADD rootfs/files/configs/pki-service/pki-authority.service "${OUTPUTDIR}/etc/systemd/system"
+RUN mkdir -p "${OUTPUTDIR}/etc/super/containers/pki-authority"
+ADD rootfs/files/configs/pki-service/conf/pki-authority-template.yaml "${OUTPUTDIR}/etc/super/containers/pki-authority/pki-authority-template.yaml"
+RUN mkdir -p "${OUTPUTDIR}/usr/local/bin/pki-authority"
+ADD rootfs/files/configs/pki-service/scripts/*.py "${OUTPUTDIR}/usr/local/bin/pki-authority/"
+ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pki-authority/"
+ADD rootfs/files/configs/pki-service/systemd/pki-authority-init.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/systemd/pki-authority.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/systemd/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system"
+RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-authority-sync"
+ADD rootfs/files/configs/pki-service/conf/secrets-config.yaml "${OUTPUTDIR}/etc/super/pki-authority-sync/secrets-config.yaml"
+RUN chmod +x "${OUTPUTDIR}"/usr/local/bin/pki-authority/*.py
+RUN ln -s /etc/systemd/system/pki-authority-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-init.service"
 RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
-ADD rootfs/files/configs/pki-service/create-and-configure-pki.sh "${OUTPUTDIR}/usr/local/bin"
-RUN mkdir -p "${OUTPUTDIR}/root/containers"
-COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-18725490828 /pki-authority.tar "${OUTPUTDIR}/root/containers/pki-authority.tar"
-ADD rootfs/files/configs/pki-service/lxc-template.yaml "${OUTPUTDIR}/root/containers/lxc-template.yaml"
-ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
-ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
-RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
+RUN ln -s /etc/systemd/system/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-sync.service"
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
@@ -229,6 +233,8 @@ RUN ln -sf /etc/systemd/system/provider-config-s3fs.service \
 # swarm services
 ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
 RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
+ADD rootfs/files/scripts/prepare_swarm_db_config.py ${OUTPUTDIR}/usr/local/bin/prepare_swarm_db_config.py
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/prepare_swarm_db_config.py
 ADD rootfs/files/configs/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
 ADD rootfs/files/configs/etc/systemd/system/swarm-node.service ${OUTPUTDIR}/etc/systemd/system/swarm-node.service
 RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-node.service"
@@ -311,6 +317,60 @@ RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
+
+# install pki-sync-client npm package globally (requires python3-venv from setup_runtime_tools)
+ARG PKI_SYNC_CLIENT_VERSION=2.0.12
+ADD rootfs/files/scripts/install_sync_client.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/install_sync_client.sh
+RUN --security=insecure /buildroot/files/scripts/install_sync_client.sh "${PKI_SYNC_CLIENT_VERSION}"
+
+# MongoDB (install official mongodb-org 7.0 via Jammy repository inside VM rootfs)
+ADD rootfs/files/scripts/install_mongodb.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_mongodb.sh
+# disable autostart without requiring systemd during build (remove enable symlinks for MongoDB)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongod.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongod.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/mongodb.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/mongodb.service
+# NATS (install nats-server 2.12.2 into VM rootfs)
+ADD rootfs/files/scripts/install_nats.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_nats.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for nats)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/nats-server.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/nats-server.service || true
+# CockroachDB (install cockroach binary into VM rootfs)
+ADD rootfs/files/scripts/install_cockroachdb.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_cockroachdb.sh
+# Knot DNS (install knot into VM rootfs)
+ADD rootfs/files/scripts/install_knot.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_knot.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for knot)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/knot.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/knot.service || true
+# OpenResty (install into VM rootfs so provisioner only configures and manages it)
+ADD rootfs/files/scripts/install_openresty.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_openresty.sh
+# disable autostart without requiring systemd during build (ensure no enable symlinks for openresty)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/openresty.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/openresty.service || true
+RUN mkdir -p ${OUTPUTDIR}/etc/resty-auto-ssl/storage \
+    && chown -R www-data:www-data ${OUTPUTDIR}/etc/resty-auto-ssl
+# disable autostart without requiring systemd during build (remove enable symlinks)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-server.service \
+    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-server.service \
+    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/redis-sentinel.service \
+    &&  rm -f ${OUTPUTDIR}/etc/systemd/system/default.target.wants/redis-sentinel.service
+# ensure swarm-cloud-api, cockroachdb and wireguard are disabled by default (no systemd enable symlinks)
+RUN rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/cockroachdb.service \
+    && rm -f ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/wg-quick@wg0.service
+
+
+# cleanup apt lists and policy-rc.d
+RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d \
+    && rm -rf ${OUTPUTDIR}/var/lib/apt/lists/*
+
+ADD rootfs/files/scripts/install_provision_plugin_sdk.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_provision_plugin_sdk.sh
 
 
 # Python dependencies required by provision plugins (redis-py for rke2/redis plugins, podman-compose for container plugins)
