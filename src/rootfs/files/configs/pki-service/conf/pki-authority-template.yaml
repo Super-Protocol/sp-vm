@@ -1,0 +1,46 @@
+api:
+    httpsPort: 443
+    httpPort: 80
+    enabledApis:
+    - secrets
+    - pki
+pki:
+  allowedChallenges:
+    - token
+    - tdx
+    - sev-snp
+  validateParamRules:
+    - type: tdx
+      signatureVerification: github
+    - type: sev-snp
+      signatureVerification: github
+  tokenStorage:
+    storageType: file
+    storageFolder: /app/swarm-storage
+  ownDomain: ca-subroot.super-protocol.svc.cluster.local
+  ownChallenge:
+    type: tdx
+  certParams:
+    ocspUrl: ''
+  keyStorage:
+    type: trusted
+    storage:
+      type: super
+      keysPath: /app/keys
+  mode:
+    role: swarm
+    swarmMode: init
+    storage:
+        storageType: file
+        storageFolder: /app/swarm-storage
+    networkSettings:
+      networkType: trusted
+secretsStorage:
+  static:
+    swarmKey: dummy-swarm-key
+  storage:
+    storageType: file
+    storageFolder: /app/swarm-storage
+  validationCaBundle:
+    type: pki
+

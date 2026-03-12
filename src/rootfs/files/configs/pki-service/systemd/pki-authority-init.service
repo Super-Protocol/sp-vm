@@ -1,0 +1,15 @@
+[Unit]
+Description=PKI authority container initialization
+After=network-online.target pccs.service podman.service
+Wants=network-online.target
+Requires=pccs.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=PKI_CONTAINER_IMAGE=ghcr.io/super-protocol/tee-pki-authority-service:build-22734492513
+ExecStart=/usr/bin/podman pull ${PKI_CONTAINER_IMAGE}
+ExecStart=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure.py --image ${PKI_CONTAINER_IMAGE}
+
+[Install]
+WantedBy=multi-user.target
