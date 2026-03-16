@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 ExecStart=/bin/bash /usr/local/bin/swarm-init.sh
 Restart=on-failure
 RestartSec=10
