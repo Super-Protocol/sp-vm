@@ -1,7 +1,8 @@
 [Unit]
 Description=Swarm Initialization (download binaries, configure services, seed swarm-db)
-After=network-online.target
+After=network-online.target provider-config-s3fs.service
 Wants=network-online.target
+Requires=provider-config-s3fs.service
 
 [Service]
 Type=oneshot
