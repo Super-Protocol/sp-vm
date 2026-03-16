@@ -1,0 +1,103 @@
+certificates:
+  - id: root_basic
+    certRole: root
+    certType: basic
+    ownChallenge: auto
+    networkType: trusted
+    outputPath: /etc/super/certs/swarm-init/
+    certParams:
+      lifetimeDays: 3650
+      commonName: 'Super Swarm Root CA'
+      countryName: 'US'
+      stateName: 'NY'
+      localityName: 'New York'
+      organizationName: 'SuperProtocol'
+      organizationUnitName: 'IT'
+
+  - id: root_lite
+    certRole: root
+    certType: lite
+    ownChallenge: auto
+    networkType: trusted
+    outputPath: /etc/super/certs/swarm-init/
+    certParams:
+      lifetimeDays: 3650
+      commonName: 'Super Swarm Root CA'
+      countryName: 'US'
+      stateName: 'NY'
+      localityName: 'New York'
+      organizationName: 'SuperProtocol'
+      organizationUnitName: 'IT'
+
+  - id: subroot_device_basic
+    certRole: subroot
+    certType: basic
+    signer: root_basic
+    outputPath: /etc/super/certs/swarm-init/
+    certParams:
+      lifetimeDays: 90
+      commonName: 'Super Swarm Device Enrollment Subroot CA'
+      countryName: 'US'
+      stateName: 'NY'
+      localityName: 'New York'
+      organizationName: 'SuperProtocol'
+      organizationUnitName: 'IT'
+
+  - id: subroot_device_lite
+    certRole: subroot
+    certType: lite
+    signer: root_lite
+    outputPath: /etc/super/certs/swarm-init/
+    certParams:
+      lifetimeDays: 90
+      commonName: 'Super Swarm Device Enrollment Subroot CA'
+      countryName: 'US'
+      stateName: 'NY'
+      localityName: 'New York'
+      organizationName: 'SuperProtocol'
+      organizationUnitName: 'IT'
+
+  - id: subroot_evidence_basic
+    certRole: subroot
+    certType: basic
+    signer: root_basic
+    outputPath: /etc/super/certs/swarm-init/
+    certParams:
+      lifetimeDays: 90
+      commonName: 'Super Swarm Evidence Subroot CA'
+      countryName: 'US'
+      stateName: 'NY'
+      localityName: 'New York'
+      organizationName: 'SuperProtocol'
+      organizationUnitName: 'IT'
+
+  - id: subroot_evidence_lite
+    certRole: subroot
+    certType: lite
+    signer: root_lite
+    outputPath: /etc/super/certs/swarm-init/
+    certParams:
+      lifetimeDays: 90
+      commonName: 'Super Swarm Evidence Subroot CA'
+      countryName: 'US'
+      stateName: 'NY'
+      localityName: 'New York'
+      organizationName: 'SuperProtocol'
+      organizationUnitName: 'IT'
+
+  - id: vm
+    certRole: endentity
+    certType: basic
+    signer: subroot_device_basic
+    ownChallenge: auto
+    outputPath: /etc/super/certs/vm/
+    validated: true
+    certParams:
+      lifetimeDays: 365
+      commonName: 'Super Swarm Initial VM'
+      countryName: 'US'
+      stateName: 'NY'
+      localityName: 'New York'
+      organizationName: 'SuperProtocol'
+      organizationUnitName: 'IT'
+

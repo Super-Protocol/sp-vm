@@ -1,0 +1,21 @@
+[Unit]
+Description=PKI certificate initialization service
+ConditionKernelCommandLine=vm_mode=swarm-init
+After=nvidia-persistenced.service pccs.service
+Wants=nvidia-persistenced.service
+Requires=pccs.service
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_cert_gen_configure.py \
+    configure \
+    --template /etc/super/pki-cert-generator/cert-gen-config-template.yaml \
+    --output /etc/super/pki-cert-generator/cert-gen-config.yaml
+ExecStart=/usr/bin/pki-cert-generator generate-chain \
+    -c /etc/super/pki-cert-generator/cert-gen-config.yaml \
+    --log-level debug
+Restart=on-failure
+RestartSec=60s
+
+[Install]
+WantedBy=multi-user.target

@@ -39,6 +39,14 @@ function add_intel_sgx_repository() {
     rm "${OUTPUTDIR}/tmp/intel-sgx-deb.key";
 }
 
+function install_qpl_package() {
+    log_info "installing libsgx-dcap-default-qpl package";
+    chroot "${OUTPUTDIR}" /bin/bash -c 'apt-get install -y --no-install-recommends libsgx-dcap-default-qpl';
+
+    log_info "backing up original sgx_default_qcnl.conf";
+    cp "${OUTPUTDIR}/etc/sgx_default_qcnl.conf" "${OUTPUTDIR}/etc/sgx_default_qcnl.conf.bak";
+}
+
 function install_pccs_package() {
     log_info "downloading and unpacking PCCS package without postinst configuration";
     # Prevent overwriting /lib symlink by extracting to temp dir and using tar to copy contents
@@ -150,6 +158,7 @@ function enable_pccs_service() {
 
 chroot_init;
 add_intel_sgx_repository;
+install_qpl_package;
 install_pccs_package;
 create_pccs_config;
 generate_ssl_keys;
