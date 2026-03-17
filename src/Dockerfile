@@ -205,8 +205,6 @@ ADD rootfs/files/configs/pki-service/conf/pki-authority-template.yaml "${OUTPUTD
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin/pki-authority"
 ADD rootfs/files/configs/pki-service/scripts/*.py "${OUTPUTDIR}/usr/local/bin/pki-authority/"
 ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pki-authority/"
-ADD rootfs/files/configs/pki-service/systemd/pki-authority-init.service "${OUTPUTDIR}/etc/systemd/system"
-ADD rootfs/files/configs/pki-service/systemd/pki-authority.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-authority-sync"
@@ -214,8 +212,6 @@ ADD rootfs/files/configs/pki-service/conf/secrets-config.yaml "${OUTPUTDIR}/etc/
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-cert-generator"
 ADD rootfs/files/configs/pki-service/conf/cert-gen-config-template.yaml "${OUTPUTDIR}/etc/super/pki-cert-generator/cert-gen-config-template.yaml"
 RUN chmod +x "${OUTPUTDIR}"/usr/local/bin/pki-authority/*.py
-RUN ln -s /etc/systemd/system/pki-authority-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-init.service"
-RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
 RUN ln -s /etc/systemd/system/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-sync.service"
 RUN ln -s /etc/systemd/system/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-cert-init.service"
 

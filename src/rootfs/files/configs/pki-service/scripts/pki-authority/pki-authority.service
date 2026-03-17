@@ -1,0 +1,38 @@
+[Unit]
+Description=PKI Authority container
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=2min
+StartLimitBurst=10
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10s
+TimeoutStartSec=3min
+EnvironmentFile=/etc/pki-authority/env
+
+ExecStartPre=-/usr/bin/podman stop -t 30 pki-authority
+ExecStartPre=-/usr/bin/podman rm -f pki-authority
+ExecStart=/usr/bin/podman run \
+    --name pki-authority \
+    --rm \
+    --health-cmd='curl -fsS http://127.0.0.1:8000/healthcheck || exit 1' \
+    --health-interval=30s \
+    --health-timeout=10s \
+    --health-retries=3 \
+    --health-start-period=60s \
+    --health-on-failure=stop \
+    --stop-timeout=30 \
+    --network=host \
+    -v /etc/pki-authority/app-config.yaml:/app/conf/swarm.yaml:ro \
+    -v /etc/pki-authority/swarm-storage:/app/swarm-storage \
+    -v /etc/sgx_default_qcnl.conf:/etc/sgx_default_qcnl.conf:ro \
+    -v /etc/super/certs/vm:/app/vm-certs:ro \
+    --env-file /etc/pki-authority/env \
+    ${PKI_CONTAINER_IMAGE}
+
+ExecStop=/usr/bin/podman stop -t 30 pki-authority
+
+[Install]
+WantedBy=multi-user.target

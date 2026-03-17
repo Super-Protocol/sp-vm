@@ -3,7 +3,7 @@ Description=Mount provider_config from GCS S3 bucket via s3fs
 After=network-online.target
 Wants=network-online.target
 # Must be ready before any service that reads /sp
-Before=swarm-db.service swarm-node.service pki-authority.service download-sp-swarm-services.service
+Before=swarm-db.service swarm-node.service download-sp-swarm-services.service
 
 [Service]
 Type=oneshot

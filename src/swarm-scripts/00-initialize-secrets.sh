@@ -64,11 +64,15 @@ ensure_swarm_init_cert_secrets() {
   local cert_file
   local cert_path
   local secret_value
+  local pki_auth_token
 
   if ! is_swarm_init_mode; then
     echo "INFO: skip pki cert secrets initialization, vm_mode is not swarm-init" >&2
     return 0
   fi
+
+  pki_auth_token="$(openssl rand -base64 64)"
+  ensure_secret "pki_auth_token" "$pki_auth_token"
 
   for secret_key in "${SWARM_INIT_CERT_SECRET_KEYS[@]}"; do
     cert_file="${secret_key}.pem"

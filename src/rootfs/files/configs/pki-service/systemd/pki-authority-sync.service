@@ -1,7 +1,7 @@
 [Unit]
 Description=PKI authority sync client service
 ConditionKernelCommandLine=!vm_mode=swarm-init
-After=network-online.target pki-authority-init.service nvidia-persistenced.service
+After=network-online.target nvidia-persistenced.service
 Wants=network-online.target nvidia-persistenced.service
 
 [Service]
