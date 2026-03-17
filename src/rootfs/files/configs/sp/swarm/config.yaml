@@ -10,6 +10,7 @@ tags:
   swarm_cloud_api: "" # passed as env var to swarm-node container
   swarm_cloud_ui: ""  # passed as env var to swarm-node container
   auth_service: ""    # passed as env var to swarm-node container
+  pki_authority: ""   # PKI Authority container image tag; empty = use built-in default
 
 swarm_db:
   node_name: ""        # defaults to hostname

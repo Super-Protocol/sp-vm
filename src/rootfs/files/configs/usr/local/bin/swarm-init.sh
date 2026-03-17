@@ -27,6 +27,7 @@ SERVICES_TAG=$(cfg "tags.services")
 SWARM_CLOUD_API_TAG=$(cfg "tags.swarm_cloud_api")
 SWARM_CLOUD_UI_TAG=$(cfg "tags.swarm_cloud_ui")
 AUTH_SERVICE_TAG=$(cfg "tags.auth_service")
+PKI_AUTHORITY_TAG=$(cfg "tags.pki_authority")
 
 # Download a GitHub release asset to a local file path
 # Usage: download_github_asset <owner> <repo> <tag> <filename> <dest>
@@ -222,6 +223,7 @@ cat > /etc/swarm/swarm-host-agent.env << EOF
 SWARM_CLOUD_API_TAG=${SWARM_CLOUD_API_TAG}
 SWARM_CLOUD_UI_TAG=${SWARM_CLOUD_UI_TAG}
 AUTH_SERVICE_TAG=${AUTH_SERVICE_TAG}
+PKI_AUTHORITY_TAG=${PKI_AUTHORITY_TAG}
 EOF
 
 log "swarm-init completed successfully"

@@ -404,7 +404,6 @@ def write_env_file(image_ref: str) -> bool:
     SERVICE_ENV_FILE.write_text(content, encoding="utf-8")
     log(LogLevel.INFO, f"Env file written to {SERVICE_ENV_FILE}")
     return True
-    log(LogLevel.INFO, f"Env file written to {SERVICE_ENV_FILE}")
 
 
 def is_service_active() -> bool:
