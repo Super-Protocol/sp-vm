@@ -417,6 +417,38 @@ def is_service_active() -> bool:
 
 def restart_service() -> None:
     """Restart (or start) the PKI Authority systemd service."""
+    # Check whether systemd knows about the unit using `systemctl list-unit-files | grep`.
+    unit_known = False
+    try:
+        check = subprocess.run([
+            "bash", "-c",
+            f"systemctl list-unit-files | grep -F '{SERVICE_UNIT}'"
+        ], check=False, capture_output=True, text=True)
+        # grep returns 0 only if match found AND stdout is not empty
+        unit_known = (check.returncode == 0 and check.stdout.strip())
+    except Exception:
+        pass
+
+    if not unit_known:
+        log(LogLevel.INFO, f"[debug] systemd unit {SERVICE_UNIT} not found, attempting to install from local dir")
+        # Fall back to installing local unit file if available in the service dir.
+        local_unit = Path(__file__).parent / SERVICE_UNIT
+        if local_unit.exists():
+            target = Path("/etc/systemd/system") / SERVICE_UNIT
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(local_unit.read_text(encoding="utf-8"), encoding="utf-8")
+            log(LogLevel.INFO, f"Installed systemd unit from {local_unit} to {target}")
+            # Attempt to enable the unit (best-effort)
+            try:
+                subprocess.run(["systemctl", "enable", SERVICE_UNIT], check=False)
+            except Exception:
+                pass
+        else:
+            error_msg = f"Systemd unit {SERVICE_UNIT} not known and no local unit available to install from {local_unit}"
+            log(LogLevel.ERROR, error_msg)
+            raise FileNotFoundError(error_msg)
+
+    # Always daemon-reload before restart to ensure systemd has latest unit state
     subprocess.run(["systemctl", "daemon-reload"], check=True)
     subprocess.run(["systemctl", "restart", SERVICE_UNIT], check=True)
     log(LogLevel.INFO, f"Service '{SERVICE_UNIT}' restarted")

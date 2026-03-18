@@ -24,7 +24,7 @@ function setup_runtime_tools() {
     chroot "${OUTPUTDIR}" /usr/bin/apt clean
 
     log_info "installing Python runtime dependencies"
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'python3 -m pip install --break-system-packages SQLAlchemy PyMySQL requests redis'
+    chroot "${OUTPUTDIR}" /bin/bash -lc 'python3 -m pip install --break-system-packages SQLAlchemy PyMySQL requests redis cryptography'
 
 }
 

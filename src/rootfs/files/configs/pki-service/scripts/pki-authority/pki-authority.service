@@ -11,6 +11,8 @@ Restart=always
 RestartSec=10s
 TimeoutStartSec=3min
 EnvironmentFile=/etc/pki-authority/env
+StandardOutput=append:/var/log/pki-authority.log
+StandardError=append:/var/log/pki-authority.log
 
 ExecStartPre=-/usr/bin/podman stop -t 30 pki-authority
 ExecStartPre=-/usr/bin/podman rm -f pki-authority

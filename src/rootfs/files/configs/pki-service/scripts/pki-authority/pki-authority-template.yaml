@@ -3,7 +3,7 @@ logging:
     pino:
       type: pino
   currentLogger: pino
-  level: info
+  level: debug
 
 api:
     enabled: true

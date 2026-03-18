@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
 import argparse
+import secrets
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import yaml
 
-
+SWARM_KEY_FILE = "/etc/swarm/swarm.key"
 SERVICE_NAME = "pki-cert-init"
 
 
@@ -45,6 +46,7 @@ def run_configure(template_path: Path, output_path: Path):
         return 1
 
     try:
+        generate_swarm_key()
         log("INFO", f"Loading template from {template_path}")
         template_data = yaml.safe_load(template_path.read_text(encoding="utf-8"))
         if not isinstance(template_data, dict):
@@ -67,6 +69,31 @@ def run_configure(template_path: Path, output_path: Path):
         log("ERROR", f"Failed to render cert-gen config: {error}")
         return 1
 
+def generate_swarm_key(swarm_key_path: Path = Path(SWARM_KEY_FILE)) -> None:
+    """Generate a 32-byte swarm key once and reuse it on subsequent runs."""
+
+    if swarm_key_path.exists():
+        log("INFO", f"Swarm key file already exists at {swarm_key_path}, skipping generation")
+        return
+
+    log("INFO", "Generating new 32-byte swarm key")
+    swarm_key = secrets.token_hex(32)
+
+    try:
+        if not swarm_key_path.parent.exists():
+            swarm_key_path.parent.mkdir(parents=True, exist_ok=True)
+            log("INFO", f"Created directory {swarm_key_path.parent}")
+
+        with open(swarm_key_path, "w", encoding="utf-8") as file:
+            file.write(swarm_key)
+
+        swarm_key_path.chmod(0o600)
+
+        log("INFO", f"Swarm key generated and saved to {swarm_key_path}")
+    except Exception as error:
+        error_msg = f"Failed to save swarm key: {error}"
+        log("ERROR", error_msg)
+        raise Exception(error_msg) from error
 
 def main():
     parser = argparse.ArgumentParser(description="PKI cert-generator helper")
