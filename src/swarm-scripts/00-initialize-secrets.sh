@@ -34,6 +34,12 @@ ensure_secret() {
   local value="$2"
   [ -n "$value" ] || return 0
 
+  if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" get SwarmSecrets "$key" >/dev/null 2>&1; then
+    echo "SwarmSecret '$key' already exists, skipping creation."
+    return 0
+  fi
+
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
     python3 "$(dirname "$0")/swarm-cli.py" create SwarmSecrets "$key" --value "$value" >/dev/null
 }
