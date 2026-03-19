@@ -27,10 +27,19 @@ printf '%s:%s\n' "${ACCESS_KEY}" "${SECRET_KEY}" > "${PASSWD_FILE}"
 chmod 600 "${PASSWD_FILE}"
 
 log "Mounting gs://${BUCKET}${S3_PATH} → /sp (endpoint: ${ENDPOINT})"
-s3fs "${BUCKET}${S3_PATH}" /sp \
+
+# s3fs syntax for subdirectory: "BUCKET:/prefix" mounts only that prefix
+if [[ -n "${S3_PATH}" ]]; then
+    S3FS_BUCKET="${BUCKET}:${S3_PATH}"
+else
+    S3FS_BUCKET="${BUCKET}"
+fi
+
+s3fs "${S3FS_BUCKET}" /sp \
     -o url="${ENDPOINT}" \
     -o passwd_file="${PASSWD_FILE}" \
     -o use_path_request_style \
+    -o compat_dir \
     -o ro \
     -o allow_other \
     -o nonempty \
