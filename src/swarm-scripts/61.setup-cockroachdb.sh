@@ -21,6 +21,9 @@ SERVICE_NAME=${SERVICE_NAME:-cockroachdb}
 SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
 CLUSTER_POLICY=${CLUSTER_POLICY:-cockroachdb}
 CLUSTER_ID=${CLUSTER_ID:-cockroachdb}
+CLUSTER_MIN_SIZE=${CLUSTER_MIN_SIZE:-3}
+CLUSTER_MAX_SIZE=${CLUSTER_MAX_SIZE:-3}
+CLUSTER_MAX_CLUSTERS=${CLUSTER_MAX_CLUSTERS:-1}
 
 # Location and manifest inside the container.
 # IMPORTANT: This script runs only on one node. All nodes must have the same location available already
@@ -41,7 +44,24 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterPolicy '$CLUSTER_POLICY'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=3 --maxClusters=1
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize="$CLUSTER_MIN_SIZE" --maxSize="$CLUSTER_MAX_SIZE" --maxClusters="$CLUSTER_MAX_CLUSTERS"
+fi
+
+MEASUREMENT_RULE_ID="${CLUSTER_POLICY}:latency"
+echo "Ensuring ClusterPolicyMeasurementRule '$MEASUREMENT_RULE_ID'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyMeasurementRules "$MEASUREMENT_RULE_ID" >/dev/null 2>&1; then
+  echo "ClusterPolicyMeasurementRule '$MEASUREMENT_RULE_ID' already exists, skipping creation."
+else
+  echo "Creating ClusterPolicyMeasurementRule '$MEASUREMENT_RULE_ID'..."
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyMeasurementRules "$MEASUREMENT_RULE_ID" \
+      --name="latency" \
+      --cluster_policy="$CLUSTER_POLICY" \
+      --measurement_type="latency" \
+      --condition="less_than" \
+      --value="10.0" \
+      --jitter=10
 fi
 
 echo "Ensuring ClusterService '$SERVICE_PK'..."

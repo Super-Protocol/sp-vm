@@ -13,6 +13,9 @@ DB_NAME=${DB_NAME:-swarmdb}
 SERVICE_NAME=${SERVICE_NAME:-mongodb}
 SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
 CLUSTER_POLICY=${CLUSTER_POLICY:-mongodb}
+CLUSTER_MIN_SIZE=${CLUSTER_MIN_SIZE:-1}
+CLUSTER_MAX_SIZE=${CLUSTER_MAX_SIZE:-1}
+CLUSTER_MAX_CLUSTERS=${CLUSTER_MAX_CLUSTERS:-1}
 
 # Location and manifest inside the container.
 LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
@@ -31,7 +34,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterPolicy '$CLUSTER_POLICY'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=3 --maxClusters=1
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize="$CLUSTER_MIN_SIZE" --maxSize="$CLUSTER_MAX_SIZE" --maxClusters="$CLUSTER_MAX_CLUSTERS"
 fi
 
 echo "Ensuring ClusterService '$SERVICE_PK'..."
