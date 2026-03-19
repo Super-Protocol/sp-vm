@@ -323,6 +323,7 @@ RUN --security=insecure bash /buildroot/files/scripts/install_python_deps.sh
 # unzip: download-services.sh extracts service archives
 # netcat-openbsd: provision plugins use nc for port readiness checks (e.g. cockroachdb plugin)
 # dnsutils: DNS tools (nsupdate) used by rke2 plugin for Knot DNS updates
+ADD rootfs/files/configs/etc/dpkg/dpkg.cfg.d/force-confold ${OUTPUTDIR}/etc/dpkg/dpkg.cfg.d/force-confold
 ADD rootfs/files/scripts/install_extra_packages.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_extra_packages.sh
 
