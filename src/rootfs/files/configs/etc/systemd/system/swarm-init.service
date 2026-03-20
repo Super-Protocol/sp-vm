@@ -1,0 +1,17 @@
+[Unit]
+Description=Swarm Initialization (download binaries, configure services, seed swarm-db)
+After=network-online.target provider-config-s3fs.service
+Wants=network-online.target
+Requires=provider-config-s3fs.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash /usr/local/bin/swarm-init.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/swarm-init.log
+StandardError=append:/var/log/swarm-init.log
+
+[Install]
+WantedBy=multi-user.target

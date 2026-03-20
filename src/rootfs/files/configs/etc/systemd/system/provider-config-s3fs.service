@@ -1,0 +1,17 @@
+[Unit]
+Description=Mount provider_config from GCS S3 bucket via s3fs
+After=network-online.target
+Wants=network-online.target
+# Must be ready before any service that reads /sp
+Before=swarm-db.service swarm-node.service pki-authority.service download-sp-swarm-services.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/mount-provider-config.sh
+ExecStop=fusermount -uz /sp
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
