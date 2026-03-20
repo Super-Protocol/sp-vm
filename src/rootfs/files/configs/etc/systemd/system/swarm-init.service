@@ -1,0 +1,15 @@
+[Unit]
+Description=Swarm Initialization (download binaries, configure services, seed swarm-db)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/bin/swarm-init.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/swarm-init.log
+StandardError=append:/var/log/swarm-init.log
+
+[Install]
+WantedBy=multi-user.target

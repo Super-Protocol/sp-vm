@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Note:
 # - The hw-measurement manifest and main.py should be available inside the container at:
-#     /etc/swarm-cloud/services/hw-measurement/manifest.yaml and /etc/swarm-cloud/services/hw-measurement/main.py
+#     /etc/swarm-services/hw-measurement/manifest.yaml and /etc/swarm-services/hw-measurement/main.py
 #   (mount or copy them similarly to the wireguard service)
 #
 # - hw-measurement depends on a WireGuard cluster existing and sharing nodes with it.
@@ -24,8 +24,8 @@ CLUSTER_POLICY=${CLUSTER_POLICY:-hw-measurement}
 CLUSTER_ID=${CLUSTER_ID:-hw-measurement}
 
 # Path to manifest file INSIDE the container (configs are mounted to /configs)
-MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}/manifest.yaml}
-LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
+MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-services/${SERVICE_NAME}/manifest.yaml}
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
 if [ ! -f "$MANIFEST_PATH" ]; then
