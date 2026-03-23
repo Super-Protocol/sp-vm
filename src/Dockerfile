@@ -180,7 +180,9 @@ ADD rootfs/files/configs/fstab ${OUTPUTDIR}/etc/
 ADD rootfs/files/configs/tdx-attest.conf ${OUTPUTDIR}/etc/
 
 ADD rootfs/files/configs/chrony/chrony.conf ${OUTPUTDIR}/etc/chrony/
-ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
+ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/etc/systemd/system/chrony.service
+RUN ln -sf /etc/systemd/system/chrony.service \
+    "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/chrony.service"
 
 RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
 RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
