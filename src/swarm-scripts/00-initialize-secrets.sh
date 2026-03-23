@@ -26,6 +26,7 @@ POWERDNS_API_URL=$(cfg "powerdns_api_url")
 POWERDNS_API_KEY=$(cfg "powerdns_api_key")
 BASE_DOMAIN=$(cfg "base_domain")
 SWARM_DOMAIN=$(cfg "swarm_domain")
+PKI_DOMAIN=$(cfg "pki_domain")
 
 AUTH_SERVICE_YAML=""
 AUTH_SERVICE_YAML_PATH="/sp/swarm/auth-service.yaml"
@@ -105,6 +106,7 @@ ensure_secret "powerdns_api_url" "$POWERDNS_API_URL"
 ensure_secret "powerdns_api_key" "$POWERDNS_API_KEY"
 ensure_secret "base_domain" "$BASE_DOMAIN"
 ensure_secret "swarm_domain" "$SWARM_DOMAIN"
+ensure_secret "pki_domain" "$PKI_DOMAIN"
 ensure_secret "auth_service_yaml" "$AUTH_SERVICE_YAML"
 ensure_secret "evidence_sign_key" "$EVIDENCE_SIGN_KEY"
 ensure_swarm_init_cert_secrets
