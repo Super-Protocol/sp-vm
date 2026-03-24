@@ -1,0 +1,7 @@
+{
+  "mrenclave": "a219467c06ea23baaaa5beb5e64393d2912f814bc57eeadf539713fb00694286",
+  "signature": "THBE/rXJ9i6HLjBLw/+pI66qKN/drlr/7xoTN0r9gsZe57WzkX+rFwZU5YIJtnqgjqpT43D4K0YgOyvwUy/EUCaaC2iGCdYtSo/fEvZjjw3UD64pbAXHz8Shz8RELIO3NK29Lx5Wit5TOzHoEPaGVBKRQod+kSqCo2z1ICkEl8KuUb4cq9Uy34FZHu6T6uctYRMm/BfFzCpgKIQ4z7/iItotnuoUATiANXMOR70322yEmVvZYoI/55+3Mt+V6YmS/ZNa/fS8GMPFEekJoM86XLWTrNdKmg2Jzc4p1otruM50Kl0xVIWdrfXSUS0J7l/If6a582VR0VUk6CMb4QwcXDPLoIHk3ZcgD+DvlMUzaeiN4FzdOgEL2A0oNik7keb0vr+XixkydZsBJ7lK7e0i0eqeGj92GTlhOhT7gW0nmMXeWJwgUYislzEtZeP86FiXB7fyn7msQpy6gKoi8Wwe8Si/AwYO3cqeVTIx9aa/T5WI3oHJjYVay7a/UzBxHxtF",
+  "build": "build-300",
+  "description": "test swarm local-build",
+  "creationDate": "2026-03-24T19:13:58.903Z"
+}
