@@ -6,9 +6,12 @@ Requires=pki-cert-init.service
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash /usr/local/bin/swarm-init.sh
-Restart=on-failure
-RestartSec=10
+RemainAfterExit=yes
+TimeoutStartSec=infinity
+ExecStart=/bin/bash -c 'until /bin/bash /usr/local/bin/swarm-init.sh; do \
+	echo "[swarm-init] failed, retry in 10s"; \
+	sleep 10; \
+done'
 StandardOutput=append:/var/log/swarm-init.log
 StandardError=append:/var/log/swarm-init.log
 

@@ -6,16 +6,19 @@ Wants=network-online.target nvidia-persistenced.service
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=infinity
 Environment=NODE_ENV=production
-ExecStart=/usr/bin/node /usr/bin/pki-sync-client sync \
+ExecStart=/bin/bash -c 'until /usr/bin/node /usr/bin/pki-sync-client sync \
     --config /etc/super/pki-authority-sync/secrets-config.yaml \
     --swarm-env /sp/swarm/config.yaml \
     --save-certs-to-dir /etc/super/certs/vm \
     --save-certs-prefix vm \
     --disable-server-identity-check \
-    --log-level debug
-Restart=on-failure
-RestartSec=60s
+    --log-level debug; do \
+    echo "[pki-authority-sync] remote not ready, retry in 60s"; \
+    sleep 60; \
+done'
 
 [Install]
 WantedBy=multi-user.target

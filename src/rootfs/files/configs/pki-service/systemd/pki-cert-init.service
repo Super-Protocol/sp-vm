@@ -7,15 +7,18 @@ Requires=pccs.service
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=infinity
 ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_cert_gen_configure.py \
     configure \
     --template /etc/super/pki-cert-generator/cert-gen-config-template.yaml \
     --output /etc/super/pki-cert-generator/cert-gen-config.yaml
-ExecStart=/usr/bin/pki-cert-generator generate-chain \
+ExecStart=/bin/bash -c 'until /usr/bin/pki-cert-generator generate-chain \
     -c /etc/super/pki-cert-generator/cert-gen-config.yaml \
-    --log-level debug
-Restart=on-failure
-RestartSec=60s
+    --log-level debug; do \
+    echo "[pki-cert-init] generation failed, retry in 60s"; \
+    sleep 60; \
+done'
 
 [Install]
 WantedBy=multi-user.target

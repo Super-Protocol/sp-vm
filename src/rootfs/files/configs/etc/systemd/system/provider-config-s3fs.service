@@ -8,7 +8,11 @@ Before=swarm-db.service swarm-node.service download-sp-swarm-services.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/bin/mount-provider-config.sh
+TimeoutStartSec=infinity
+ExecStart=/bin/bash -c 'until /usr/local/bin/mount-provider-config.sh; do \
+	echo "[provider-config-s3fs] mount failed, retry in 60s"; \
+	sleep 60; \
+done'
 ExecStop=fusermount -uz /sp
 StandardOutput=journal
 StandardError=journal
