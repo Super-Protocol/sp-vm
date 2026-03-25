@@ -101,7 +101,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.SP_VM_IMAGE_VERSION }}
-          release_name: Release ${{ env.SP_VM_IMAGE_VERSION }}
+          name: Release ${{ env.SP_VM_IMAGE_VERSION }}
           draft: false
           prerelease: true
           files: |
