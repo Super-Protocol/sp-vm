@@ -26,6 +26,8 @@ ExecStart=/bin/bash -c '\
         -e SWARM_CLOUD_API_TAG="${SWARM_CLOUD_API_TAG}" \
         -e SWARM_CLOUD_UI_TAG="${SWARM_CLOUD_UI_TAG}" \
         -e AUTH_SERVICE_TAG="${AUTH_SERVICE_TAG}" \
+        -e GATEKEEPER_S3_IMAGE="${GATEKEEPER_S3_IMAGE}" \
+        -e GATEKEEPER_HARBOR_IMAGE="${GATEKEEPER_HARBOR_IMAGE}" \
         -e SWARM_HOST_AGENT_SOCKET=/var/run/swarm-agent.sock \
         "ghcr.io/super-protocol/swarm-cloud/swarm-node:${SWARM_NODE_TAG}" \
         apps/swarm-node/dist/main.js'
