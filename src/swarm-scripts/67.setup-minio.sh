@@ -1,15 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# This script bootstraps the openresty service into SwarmDB via mysql client.
-# Run it INSIDE the container. Assumes mysql client is available.
-#
-# Note:
-# - The openresty manifest and main.py are provided by the image at:
-#     /etc/swarm-services/openresty/{manifest.yaml, main.py}
-#   This script only registers service records in SwarmDB.
-# - openresty depends on Redis + WireGuard clusters (see its stateExpr).
-#
+# This script bootstraps the minio service into SwarmDB via swarm-cli.
+# Run it INSIDE the container. Assumes mysql client and swarm-cli.py are available.
 
 DB_HOST=${DB_HOST:-127.0.0.1}
 DB_PORT=${DB_PORT:-3306}
@@ -17,14 +10,14 @@ DB_USER=${DB_USER:-root}
 DB_NAME=${DB_NAME:-swarmdb}
 
 # Service descriptors
-SERVICE_NAME=${SERVICE_NAME:-openresty}
+SERVICE_NAME=${SERVICE_NAME:-minio}
 SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
-CLUSTER_POLICY=${CLUSTER_POLICY:-openresty}
-CLUSTER_ID=${CLUSTER_ID:-openresty}
+CLUSTER_POLICY=${CLUSTER_POLICY:-minio}
+CLUSTER_MIN_SIZE=${CLUSTER_MIN_SIZE:-1}
+CLUSTER_MAX_SIZE=${CLUSTER_MAX_SIZE:-1}
+CLUSTER_MAX_CLUSTERS=${CLUSTER_MAX_CLUSTERS:-1}
 
 # Location and manifest inside the container.
-# IMPORTANT: This script runs only on one node. All nodes must have the same location available already
-# (baked into the image), so we point to /etc/swarm-services/${SERVICE_NAME}.
 LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
 MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
@@ -41,22 +34,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterPolicy '$CLUSTER_POLICY'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=3 --maxClusters=1
-fi
-
-AFFINITY_RULE_ID="${CLUSTER_POLICY}:redis-affinity"
-echo "Ensuring ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" >/dev/null 2>&1; then
-  echo "ClusterPolicyAffinityRule '$AFFINITY_RULE_ID' already exists, skipping creation."
-else
-  echo "Creating ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" \
-      --name="redis-affinity" \
-      --cluster_policy="$CLUSTER_POLICY" \
-      --target_cluster_policy="redis" \
-      --affinity_type="positive"
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize="$CLUSTER_MIN_SIZE" --maxSize="$CLUSTER_MAX_SIZE" --maxClusters="$CLUSTER_MAX_CLUSTERS"
 fi
 
 echo "Ensuring ClusterService '$SERVICE_PK'..."

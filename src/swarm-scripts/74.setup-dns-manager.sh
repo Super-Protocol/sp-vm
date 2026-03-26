@@ -1,8 +1,7 @@
-
 #!/bin/bash
 set -euo pipefail
 
-# This script bootstraps the auth-service into SwarmDB via swarm-cli.
+# This script bootstraps the dns-manager service into SwarmDB via swarm-cli.
 # Run it INSIDE the container. Assumes python3 and swarm-cli.py are available.
 #
 # Notes:
@@ -10,8 +9,8 @@ set -euo pipefail
 #     ${LOCATION_PATH}/manifest.yaml
 #   If you don't have a manifest yet, set ALLOW_MISSING_MANIFEST=1 to still
 #   register the ClusterService (manifest will be stored as NULL).
-# - auth-service dependencies (MongoDB/NATS/etc.) are expected to be expressed
-#   in the manifest (stateExpr/commands) and handled by provision workers.
+# - dns-manager dependencies are expected to be expressed in the manifest
+#   (stateExpr/commands) and handled by provision workers.
 
 DB_HOST=${DB_HOST:-127.0.0.1}
 DB_PORT=${DB_PORT:-3306}
@@ -19,15 +18,14 @@ DB_USER=${DB_USER:-root}
 DB_NAME=${DB_NAME:-swarmdb}
 
 # Service descriptors
-SERVICE_NAME=${SERVICE_NAME:-auth-service}
+SERVICE_NAME=${SERVICE_NAME:-dns-manager}
 SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
-CLUSTER_POLICY=${CLUSTER_POLICY:-auth-service}
-CLUSTER_ID=${CLUSTER_ID:-auth-service}
+CLUSTER_POLICY=${CLUSTER_POLICY:-dns-manager}
+CLUSTER_ID=${CLUSTER_ID:-dns-manager}
 
 # Location stored in ClusterServices; must exist on all nodes.
 # The service provisioner (manifest.yaml + main.py) is baked into the image under
-# /etc/swarm-services/${SERVICE_NAME}. The application payload lives under
-# /etc/auth-service and is referenced by the provisioner.
+# /etc/swarm-services/${SERVICE_NAME}.
 LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
 MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
@@ -54,21 +52,6 @@ else
 		python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=1 --maxClusters=1
 fi
 
-AFFINITY_RULE_ID="${CLUSTER_POLICY}:mongodb-affinity"
-echo "Ensuring ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-	python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" >/dev/null 2>&1; then
-	echo "ClusterPolicyAffinityRule '$AFFINITY_RULE_ID' already exists, skipping creation."
-else
-	echo "Creating ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-	DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-		python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" \
-			--name="mongodb-affinity" \
-			--cluster_policy="$CLUSTER_POLICY" \
-			--target_cluster_policy="mongodb" \
-			--affinity_type="positive"
-fi
-
 echo "Ensuring ClusterService '$SERVICE_PK'..."
 if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 	python3 "$(dirname "$0")/swarm-cli.py" get ClusterServices "$SERVICE_PK" >/dev/null 2>&1; then
@@ -84,4 +67,3 @@ else
 fi
 
 echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."
-

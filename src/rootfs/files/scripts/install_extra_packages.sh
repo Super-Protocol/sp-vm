@@ -23,7 +23,8 @@ function install_extra_packages() {
     # NOTE: mysql-client, netcat-openbsd, dnsutils are already installed by setup_runtime_tools.sh
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get install -y --no-install-recommends \
         podman \
-        unzip"
+        unzip \
+        chrony"
 
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get clean"
     log_info "extra packages installed successfully"

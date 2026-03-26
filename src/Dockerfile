@@ -149,7 +149,8 @@ ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
 RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
 # Install s3fs-fuse for provider_config S3 bucket mounting
-RUN --security=insecure chroot ${OUTPUTDIR} apt-get install -y s3fs
+ADD rootfs/files/scripts/install_s3fs.sh /buildroot/files/scripts/
+RUN --security=insecure /buildroot/files/scripts/install_s3fs.sh
 # Allow user_allow_other so s3fs -o allow_other works for non-root processes
 RUN echo 'user_allow_other' >> ${OUTPUTDIR}/etc/fuse.conf
 
@@ -179,7 +180,9 @@ ADD rootfs/files/configs/fstab ${OUTPUTDIR}/etc/
 ADD rootfs/files/configs/tdx-attest.conf ${OUTPUTDIR}/etc/
 
 ADD rootfs/files/configs/chrony/chrony.conf ${OUTPUTDIR}/etc/chrony/
-ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/lib/systemd/system/
+ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/etc/systemd/system/chrony.service
+RUN ln -sf /etc/systemd/system/chrony.service \
+    "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/chrony.service"
 
 RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
 RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
@@ -337,6 +340,7 @@ RUN --security=insecure bash /buildroot/files/scripts/install_python_deps.sh
 # unzip: download-services.sh extracts service archives
 # netcat-openbsd: provision plugins use nc for port readiness checks (e.g. cockroachdb plugin)
 # dnsutils: DNS tools (nsupdate) used by rke2 plugin for Knot DNS updates
+ADD rootfs/files/configs/etc/dpkg/dpkg.cfg.d/force-confold ${OUTPUTDIR}/etc/dpkg/dpkg.cfg.d/force-confold
 ADD rootfs/files/scripts/install_extra_packages.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_extra_packages.sh
 
@@ -430,22 +434,6 @@ ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/generate_vm_json.sh
 ### End vm_json_builder ###
 
-### Start vm_json_cloud_builder ###
-FROM ubuntu:24.04 AS vm_json_cloud_builder
-ARG SP_VM_IMAGE_VERSION
-ARG S3_BUCKET
-COPY --from=image_builder /output /output
-COPY --from=ovmf_builder_sev /buildroot/ovmf/Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd /output/OVMF_AMD.fd
-COPY --from=ovmf_builder_tdx /buildroot/edk2_build/Build/OvmfX64/RELEASE_GCC5/FV/OVMF.fd /output/OVMF.fd
-COPY --from=kernel_builder /output/boot/vmlinuz-6.12.13-nvidia-gpu-confidential /output/vmlinuz
-ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
-RUN /buildroot/files/scripts/generate_vm_json.sh
-### End vm_json_cloud_builder ###
-
-### Start sp_vm_cloud ###
-FROM scratch AS sp_vm_cloud
-COPY --from=vm_json_cloud_builder /output /
-### End sp_vm_cloud ###
 
 ### Start sp_vm ###
 FROM scratch AS sp_vm

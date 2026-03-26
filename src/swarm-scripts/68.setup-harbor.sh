@@ -1,17 +1,8 @@
 #!/bin/bash
-
 set -euo pipefail
 
 # This script bootstraps the harbor service into SwarmDB via swarm-cli.
 # Run it INSIDE the container. Assumes mysql client and swarm-cli.py are available.
-#
-# Notes:
-# - The harbor manifest and main.py are provided by the image at:
-#     /etc/swarm-services/harbor/{manifest.yaml, main.py}
-#   This script only registers ClusterPolicy and ClusterService.
-# - harbor depends on WireGuard and runs only on leader nodes as expressed
-#   in its manifest and provision plugin.
-#
 
 DB_HOST=${DB_HOST:-127.0.0.1}
 DB_PORT=${DB_PORT:-3306}
@@ -22,11 +13,11 @@ DB_NAME=${DB_NAME:-swarmdb}
 SERVICE_NAME=${SERVICE_NAME:-harbor}
 SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
 CLUSTER_POLICY=${CLUSTER_POLICY:-harbor}
-CLUSTER_ID=${CLUSTER_ID:-harbor}
+CLUSTER_MIN_SIZE=${CLUSTER_MIN_SIZE:-1}
+CLUSTER_MAX_SIZE=${CLUSTER_MAX_SIZE:-1}
+CLUSTER_MAX_CLUSTERS=${CLUSTER_MAX_CLUSTERS:-1}
 
 # Location and manifest inside the container.
-# IMPORTANT: This script runs only on one node. All nodes must have the same location available already
-# (baked into the image), so we point to /etc/swarm-services/${SERVICE_NAME}.
 LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
 MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
@@ -43,7 +34,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterPolicy '$CLUSTER_POLICY'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=1 --maxClusters=1
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize="$CLUSTER_MIN_SIZE" --maxSize="$CLUSTER_MAX_SIZE" --maxClusters="$CLUSTER_MAX_CLUSTERS"
 fi
 
 echo "Ensuring ClusterService '$SERVICE_PK'..."
@@ -53,13 +44,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterService '$SERVICE_PK'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SERVICE_PK" \
-      --name="$SERVICE_NAME" \
-      --cluster_policy="$CLUSTER_POLICY" \
-      --version="$SERVICE_VERSION" \
-      --location="$LOCATION_PATH" \
-      --omit-command-init
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SERVICE_PK" --name="$SERVICE_NAME" --cluster_policy="$CLUSTER_POLICY" --version="$SERVICE_VERSION" --location="$LOCATION_PATH"
 fi
 
 echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."
-

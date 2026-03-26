@@ -20,11 +20,13 @@ DB_NAME=${DB_NAME:-swarmdb}
 REDIS_SERVICE_NAME=${REDIS_SERVICE_NAME:-redis}
 REDIS_SERVICE_VERSION=${REDIS_SERVICE_VERSION:-1.0.0}
 REDIS_CLUSTER_POLICY=${REDIS_CLUSTER_POLICY:-redis}
-REDIS_MAX_SIZE=${REDIS_MAX_SIZE:-5}
+REDIS_MIN_SIZE=${REDIS_MIN_SIZE:-3}
+REDIS_MAX_SIZE=${REDIS_MAX_SIZE:-3}
 
 SENTINEL_SERVICE_NAME=${SENTINEL_SERVICE_NAME:-redis-sentinel}
 SENTINEL_SERVICE_VERSION=${SENTINEL_SERVICE_VERSION:-$REDIS_SERVICE_VERSION}
 SENTINEL_CLUSTER_POLICY=${SENTINEL_CLUSTER_POLICY:-redis-sentinel}
+SENTINEL_MIN_SIZE=${SENTINEL_MIN_SIZE:-3}
 SENTINEL_MAX_SIZE=${SENTINEL_MAX_SIZE:-3}
 
 # Location stored in ClusterServices; must exist on all nodes (baked into image)
@@ -52,7 +54,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterPolicy '$REDIS_CLUSTER_POLICY'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$REDIS_CLUSTER_POLICY" --minSize=1 --maxSize="$REDIS_MAX_SIZE" --maxClusters=1
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$REDIS_CLUSTER_POLICY" --minSize="$REDIS_MIN_SIZE" --maxSize="$REDIS_MAX_SIZE" --maxClusters=1
 fi
 
 echo "Ensuring ClusterPolicy '$SENTINEL_CLUSTER_POLICY'..."
@@ -62,7 +64,24 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterPolicy '$SENTINEL_CLUSTER_POLICY'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$SENTINEL_CLUSTER_POLICY" --minSize=1 --maxSize="$SENTINEL_MAX_SIZE" --maxClusters=1
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$SENTINEL_CLUSTER_POLICY" --minSize="$SENTINEL_MIN_SIZE" --maxSize="$SENTINEL_MAX_SIZE" --maxClusters=1
+fi
+
+REDIS_MEASUREMENT_RULE_ID="${REDIS_CLUSTER_POLICY}:latency"
+echo "Ensuring ClusterPolicyMeasurementRule '$REDIS_MEASUREMENT_RULE_ID'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyMeasurementRules "$REDIS_MEASUREMENT_RULE_ID" >/dev/null 2>&1; then
+  echo "ClusterPolicyMeasurementRule '$REDIS_MEASUREMENT_RULE_ID' already exists, skipping creation."
+else
+  echo "Creating ClusterPolicyMeasurementRule '$REDIS_MEASUREMENT_RULE_ID'..."
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyMeasurementRules "$REDIS_MEASUREMENT_RULE_ID" \
+      --name="latency" \
+      --cluster_policy="$REDIS_CLUSTER_POLICY" \
+      --measurement_type="latency" \
+      --condition="less_than" \
+      --value="10.0" \
+      --jitter=10
 fi
 
 echo "Ensuring ClusterService '$REDIS_SERVICE_PK'..."
