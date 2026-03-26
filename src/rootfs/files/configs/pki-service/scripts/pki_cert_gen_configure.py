@@ -22,30 +22,23 @@ def log(level: str, message: str):
 def detect_network_type() -> str:
     cpu_type_path = Path(SWARM_CPU_TYPE_FILE)
 
-    if cpu_type_path.exists():
-        lines = cpu_type_path.read_text(encoding="utf-8").splitlines()
-        if lines:
-            first_line = lines[0].strip()
-            if first_line != "":
-                return "untrusted" if first_line == "untrusted" else "trusted"
+    def read_cpu_type() -> str | None:
+        if cpu_type_path.exists():
+            first_line = cpu_type_path.read_text(encoding="utf-8").splitlines()[0].strip()
+            if first_line:
+                return first_line
+        return None
 
-    subprocess.run(
-        [
-            "/usr/bin/pki-cert-generator",
-            "get-cpu-type",
-            "--output",
-            SWARM_CPU_TYPE_FILE,
-        ],
-        check=True,
-    )
+    cpu_type = read_cpu_type()
+    if cpu_type is None:
+        subprocess.run(
+            ["/usr/bin/pki-cert-generator", "get-cpu-type", "--output", SWARM_CPU_TYPE_FILE],
+            check=True
+        )
+        cpu_type = read_cpu_type()
 
-    first_line = ""
-    if cpu_type_path.exists():
-        lines = cpu_type_path.read_text(encoding="utf-8").splitlines()
-        if lines:
-            first_line = lines[0].strip()
-
-    return "untrusted" if first_line == "untrusted" else "trusted"
+    # TODO: implement two types of virtual machine
+    return "untrusted" #if cpu_type == "untrusted" else "trusted"
 
 
 def patch_template(template: dict, network_type: str) -> dict:
