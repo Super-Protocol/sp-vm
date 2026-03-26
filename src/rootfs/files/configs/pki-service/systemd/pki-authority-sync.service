@@ -1,14 +1,15 @@
 [Unit]
 Description=PKI authority sync client service
-ConditionKernelCommandLine=!vm_mode=swarm-init
-After=network-online.target nvidia-persistenced.service
-Wants=network-online.target nvidia-persistenced.service
+After=network-online.target nvidia-persistenced.service pki-vm-mode.service
+Wants=network-online.target nvidia-persistenced.service pki-vm-mode.service
+Requires=pki-vm-mode.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 TimeoutStartSec=infinity
 Environment=NODE_ENV=production
+ExecCondition=/bin/bash -c '[[ "$(head -n1 /etc/swarm/swarm-vm-mode 2>/dev/null | tr -d "[:space:]")" == "normal" ]]'
 ExecStart=/bin/bash -c 'until /usr/bin/node /usr/bin/pki-sync-client sync \
     --config /etc/super/pki-authority-sync/secrets-config.yaml \
     --swarm-env /sp/swarm/config.yaml \

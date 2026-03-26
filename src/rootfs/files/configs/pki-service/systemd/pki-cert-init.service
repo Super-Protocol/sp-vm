@@ -1,14 +1,14 @@
 [Unit]
 Description=PKI certificate initialization service
-ConditionKernelCommandLine=vm_mode=swarm-init
-After=nvidia-persistenced.service pccs.service
-Wants=nvidia-persistenced.service
-Requires=pccs.service
+After=nvidia-persistenced.service pccs.service pki-vm-mode.service
+Wants=nvidia-persistenced.service pki-vm-mode.service
+Requires=pccs.service pki-vm-mode.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 TimeoutStartSec=infinity
+ExecCondition=/bin/bash -c '[[ "$(head -n1 /etc/swarm/swarm-vm-mode 2>/dev/null | tr -d "[:space:]")" == "init" ]]'
 ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_cert_gen_configure.py \
     configure \
     --template /etc/super/pki-cert-generator/cert-gen-config-template.yaml \

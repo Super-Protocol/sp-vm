@@ -2,6 +2,7 @@
 
 import argparse
 import secrets
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 import yaml
 
 SWARM_KEY_FILE = "/etc/swarm/swarm.key"
+SWARM_CPU_TYPE_FILE = "/etc/swarm/swarm-cpu-type"
 SERVICE_NAME = "pki-cert-init"
 
 
@@ -18,14 +20,32 @@ def log(level: str, message: str):
 
 
 def detect_network_type() -> str:
-    cmdline_path = Path("/proc/cmdline")
+    cpu_type_path = Path(SWARM_CPU_TYPE_FILE)
 
-    try:
-        cmdline = cmdline_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return "trusted"
+    if cpu_type_path.exists():
+        lines = cpu_type_path.read_text(encoding="utf-8").splitlines()
+        if lines:
+            first_line = lines[0].strip()
+            if first_line != "":
+                return "untrusted" if first_line == "untrusted" else "trusted"
 
-    return "untrusted" if "allow_untrusted=true" in cmdline else "trusted"
+    subprocess.run(
+        [
+            "/usr/bin/pki-cert-generator",
+            "get-cpu-type",
+            "--output",
+            SWARM_CPU_TYPE_FILE,
+        ],
+        check=True,
+    )
+
+    first_line = ""
+    if cpu_type_path.exists():
+        lines = cpu_type_path.read_text(encoding="utf-8").splitlines()
+        if lines:
+            first_line = lines[0].strip()
+
+    return "untrusted" if first_line == "untrusted" else "trusted"
 
 
 def patch_template(template: dict, network_type: str) -> dict:
@@ -38,6 +58,82 @@ def patch_template(template: dict, network_type: str) -> dict:
             cert["networkType"] = network_type
 
     return template
+
+
+def has_non_empty_value(value, field_name: str, value_type: type) -> bool:
+    if value is None:
+        return False
+
+    if value_type not in (list, str):
+        raise ValueError(f"Unsupported value type '{value_type.__name__}' for field '{field_name}'")
+
+    if not isinstance(value, value_type):
+        type_name = "list" if value_type is list else "string"
+        raise ValueError(f"Invalid config: '{field_name}' must be a {type_name} or null")
+
+    if value_type is str:
+        return value.strip() != ""
+
+    return len(value) > 0
+
+
+def detect_swarm_pki_state(config_data: dict) -> str:
+    swarm_db = config_data.get("swarm_db") or {}
+    if not isinstance(swarm_db, dict):
+        raise ValueError("Invalid config: 'swarm_db' must be a mapping")
+
+    pki_authority = config_data.get("pki_authority")
+    pki_authority = pki_authority or {}
+    if not isinstance(pki_authority, dict):
+        raise ValueError("Invalid config: 'pki_authority' must be a mapping")
+
+    has_join_addresses = has_non_empty_value(
+        swarm_db.get("join_addresses"),
+        "swarm_db.join_addresses",
+        list,
+    )
+    has_ca_bundle = has_non_empty_value(
+        pki_authority.get("caBundle"),
+        "pki_authority.caBundle",
+        str,
+    )
+    has_servers = has_non_empty_value(
+        pki_authority.get("servers"),
+        "pki_authority.servers",
+        list,
+    )
+
+    if not has_join_addresses and not has_ca_bundle and not has_servers:
+        return "init"
+
+    if has_join_addresses and has_ca_bundle and has_servers:
+        return "normal"
+
+    raise ValueError(
+        "Inconsistent /sp/swarm/config.yaml: 'swarm_db.join_addresses', "
+        "'pki_authority.caBundle' and 'pki_authority.servers' must be either all empty "
+        "or all non-empty"
+    )
+
+
+def run_get_vm_mode(config_path: Path, output_path: Path) -> int:
+    if not config_path.exists():
+        log("ERROR", f"Config file does not exist: {config_path}")
+        return 255
+
+    try:
+        config_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(config_data, dict):
+            raise ValueError("Invalid config: root must be a mapping")
+
+        vm_mode = detect_swarm_pki_state(config_data)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(f"{vm_mode}\n", encoding="utf-8")
+        log("INFO", f"Detected vm-mode '{vm_mode}' and saved to {output_path}")
+        return 0
+    except Exception as error:
+        log("ERROR", f"Failed to detect vm-mode from /sp/swarm/config.yaml: {error}")
+        return 255
 
 
 def run_configure(template_path: Path, output_path: Path):
@@ -68,6 +164,8 @@ def run_configure(template_path: Path, output_path: Path):
     except Exception as error:
         log("ERROR", f"Failed to render cert-gen config: {error}")
         return 1
+
+
 
 def generate_swarm_key(swarm_key_path: Path = Path(SWARM_KEY_FILE)) -> None:
     """Generate a 32-byte swarm key once and reuse it on subsequent runs."""
@@ -106,10 +204,28 @@ def main():
     configure_parser.add_argument("--template", required=True, help="Path to cert-gen config template")
     configure_parser.add_argument("--output", required=True, help="Path to rendered cert-gen config")
 
+    get_vm_mode_parser = subparsers.add_parser(
+        "get-vm-mode",
+        help="Detect vm-mode (init/normal) from /sp/swarm/config.yaml and save to file",
+    )
+    get_vm_mode_parser.add_argument(
+        "--config",
+        default="/sp/swarm/config.yaml",
+        help="Path to swarm config (default: /sp/swarm/config.yaml)",
+    )
+    get_vm_mode_parser.add_argument(
+        "--output",
+        required=True,
+        help="Path to output vm-mode file",
+    )
+
     args = parser.parse_args()
 
     if args.command == "configure":
         return run_configure(Path(args.template), Path(args.output))
+
+    if args.command == "get-vm-mode":
+        return run_get_vm_mode(Path(args.config), Path(args.output))
 
     log("ERROR", f"Unsupported command: {args.command}")
     return 1

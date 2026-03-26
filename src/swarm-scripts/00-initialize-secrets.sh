@@ -2,9 +2,11 @@
 set -euo pipefail
 
 CONFIG="/sp/swarm/config.yaml"
+VM_MODE_FILE="/etc/swarm/swarm-vm-mode"
 
 is_swarm_init_mode() {
-  grep -q 'vm_mode=swarm-init' /proc/cmdline
+  [ -f "$VM_MODE_FILE" ] || return 1
+  [ "$(head -n1 "$VM_MODE_FILE" | tr -d '[:space:]')" = "init" ]
 }
 
 cfg() {

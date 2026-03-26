@@ -207,6 +207,7 @@ ADD rootfs/files/configs/pki-service/scripts/*.py "${OUTPUTDIR}/usr/local/bin/pk
 ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pki-authority/"
 ADD rootfs/files/configs/pki-service/systemd/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/systemd/pki-vm-mode.service "${OUTPUTDIR}/etc/systemd/system"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-authority-sync"
 ADD rootfs/files/configs/pki-service/conf/secrets-config.yaml "${OUTPUTDIR}/etc/super/pki-authority-sync/secrets-config.yaml"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-cert-generator"
@@ -320,8 +321,8 @@ RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 
 # install PKI npm components globally (requires python3-venv from setup_runtime_tools)
-ARG PKI_SYNC_CLIENT_VERSION=3.0.1
-ARG PKI_CERT_GENERATOR_VERSION=3.0.6
+ARG PKI_SYNC_CLIENT_VERSION=3.0.2
+ARG PKI_CERT_GENERATOR_VERSION=3.0.7
 ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
 RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh \

@@ -1,0 +1,12 @@
+[Unit]
+Description=PKI VM mode detector service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/local/bin/pki-authority/pki_cert_gen_configure.py get-vm-mode --config /sp/swarm/config.yaml --output /etc/swarm/swarm-vm-mode
+
+[Install]
+WantedBy=multi-user.target
