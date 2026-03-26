@@ -19,7 +19,7 @@ Example:
     --data-disk-type pd-standard
 
 Parameters:
-    --raw <path> Path to raw disk (required)
+  --raw <path> Path to raw disk (required when creating or overwriting image)
     --bucket <bucket> GCS bucket (can be with gs://) (default: gs://sp-bucket-conf-vms)
     --image <name> GCE image name (default: sp-cloud-image, or \$IMAGE_NAME)
     --vm <name> VM name (default: sev-snp-guest-test, or \$INSTANCE_NAME)
@@ -33,6 +33,10 @@ Parameters:
     --provider-config <path> Path to the provider_config folder (default: ./provider_config, or \$PROVIDER_CONFIG_DIR)
     --provider-bucket <name> GCS bucket name for provider_config (default: s3-provider-config, or \$PROVIDER_CONFIG_BUCKET)
     --skip-provider-config Skip downloading provider_config
+    --force-overwrite Recreate image, VM, and data disk
+    --force-overwrite-image Recreate image if it already exists
+    --force-overwrite-vm Recreate VM if it already exists
+    --force-overwrite-disk Recreate data disk if it already exists
 EOF
 }
 
@@ -50,7 +54,9 @@ VM=""
 PROVIDER_CONFIG_DIR=""
 PROVIDER_CONFIG_BUCKET=""
 SKIP_PROVIDER_CONFIG=0
-FORCE_OVERWRITE=0
+FORCE_OVERWRITE_IMAGE=0
+FORCE_OVERWRITE_VM=0
+FORCE_OVERWRITE_DISK=0
 
 
 while [[ $# -gt 0 ]]; do
@@ -69,7 +75,10 @@ while [[ $# -gt 0 ]]; do
     --provider-config) PROVIDER_CONFIG_DIR="${2:-}"; shift 2;;
     --provider-bucket) PROVIDER_CONFIG_BUCKET="${2:-}"; shift 2;;
     --skip-provider-config) SKIP_PROVIDER_CONFIG=1; shift 1;;
-    --force-overwrite) FORCE_OVERWRITE=1; shift 1;;
+    --force-overwrite) FORCE_OVERWRITE_IMAGE=1; FORCE_OVERWRITE_VM=1; FORCE_OVERWRITE_DISK=1; shift 1;;
+    --force-overwrite-image) FORCE_OVERWRITE_IMAGE=1; shift 1;;
+    --force-overwrite-vm) FORCE_OVERWRITE_VM=1; shift 1;;
+    --force-overwrite-disk) FORCE_OVERWRITE_DISK=1; shift 1;;
     --dry-run) DRY_RUN=1; shift 1;;
     -h|--help) usage; exit 0;;
     *) die "Unknown argument: $1 (see --help)";;
@@ -100,8 +109,6 @@ PROVIDER_CONFIG_BUCKET="${PROVIDER_CONFIG_BUCKET:-s3-provider-config}"
 
 BUCKET="${BUCKET%/}"
 
-[[ -n "$RAW" ]] || die "You must provide --raw"
-[[ -f "$RAW" ]] || die "Raw file not found: $RAW"
 [[ -n "$BUCKET" ]] || die "You must provide --bucket"
 
 # Image: use CLI argument, or fallback to IMAGE_NAME or sp-cloud-image
@@ -207,17 +214,18 @@ TMPDIR="./tmpdir"
 #cleanup() { rm -rf "$TMPDIR"; }
 #trap cleanup EXIT
 
-cp -f "$RAW" "${TMPDIR}/disk.raw"
-
 echo "==> checking if image exists: ${IMAGE}"
 IMAGE_EXISTS=0
 if run gcloud compute images describe "${IMAGE}" --project "${PROJECT_ID}" >/dev/null 2>&1; then
   IMAGE_EXISTS=1
 fi
 
-if [[ "$IMAGE_EXISTS" -eq 1 ]] && [[ "$FORCE_OVERWRITE" -eq 0 ]]; then
-  echo "==> Image ${IMAGE} already exists and --force-overwrite not specified. Skipping upload and creation."
+if [[ "$IMAGE_EXISTS" -eq 1 ]] && [[ "$FORCE_OVERWRITE_IMAGE" -eq 0 ]]; then
+  echo "==> Image ${IMAGE} already exists and --force-overwrite-image not specified. Skipping upload and creation."
 else
+  [[ -n "$RAW" ]] || die "You must provide --raw (required when creating or overwriting image)"
+  [[ -f "$RAW" ]] || die "Raw file not found: $RAW"
+  cp -f "$RAW" "${TMPDIR}/disk.raw"
   echo "==> pack raw disk into ${TAR_BASENAME} (compress via: ${TAR_COMPRESS})"
   (
     cd "$TMPDIR"
@@ -250,7 +258,7 @@ if run gcloud compute instances describe "${VM}" --project "${PROJECT_ID}" --zon
   VM_EXISTS=1
 fi
 
-if [[ "$VM_EXISTS" -eq 1 ]] && [[ "$FORCE_OVERWRITE" -eq 1 ]]; then
+if [[ "$VM_EXISTS" -eq 1 ]] && [[ "$FORCE_OVERWRITE_VM" -eq 1 ]]; then
   echo "==> Deleting VM if it already exists: ${VM} (project ${PROJECT_ID}, zone ${ZONE})"
   run gcloud compute instances delete "${VM}" \
     --project "${PROJECT_ID}" \
@@ -267,8 +275,8 @@ if run gcloud compute disks describe "${DATA_DISK}" --project "${PROJECT_ID}" --
   DISK_EXISTS=1
 fi
 
-if [[ "$DISK_EXISTS" -eq 1 ]] && [[ "$FORCE_OVERWRITE" -eq 0 ]]; then
-    echo "==> Disk ${DATA_DISK} already exists and --force-overwrite not specified. Skipping creation."
+if [[ "$DISK_EXISTS" -eq 1 ]] && [[ "$FORCE_OVERWRITE_DISK" -eq 0 ]]; then
+  echo "==> Disk ${DATA_DISK} already exists and --force-overwrite-disk not specified. Skipping creation."
 else
   if [[ "$DISK_EXISTS" -eq 1 ]]; then
       echo "==> Deleting data disk if it already exists: ${DATA_DISK} (project ${PROJECT_ID}, zone ${ZONE})"
