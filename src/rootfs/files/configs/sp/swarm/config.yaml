@@ -11,6 +11,9 @@ tags:
   swarm_cloud_ui: ""  # passed as env var to swarm-node container
   auth_service: ""    # passed as env var to swarm-node container
   pki_authority: ""   # PKI Authority container image tag; empty = use built-in default
+  gatekeeper_s3_image: ""       # passed as env var to swarm-node container
+  gatekeeper_harbor_image: ""   # passed as env var to swarm-node container
+
 
 swarm_db:
   node_name: ""        # defaults to hostname

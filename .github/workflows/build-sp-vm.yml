@@ -1,11 +1,5 @@
 name: Build SuperProtocol OS image
 on:
-  workflow_call:
-    inputs:
-      build-type:
-        required: false
-        type: string
-        default: "main"
   workflow_dispatch:
     inputs:
       runs-on:
@@ -23,6 +17,11 @@ on:
         options:
           - debug
           # - production TODO: https://superprotocol.atlassian.net/browse/SP-7564
+      upload-to-gcp:
+        required: false
+        type: boolean
+        default: false
+        description: Upload image to GCP bucket and create compute image
 jobs:
   build-asset:
     runs-on: ${{ inputs.runs-on }}
@@ -97,11 +96,70 @@ jobs:
           upload_file "vmlinuz";
           upload_file "rootfs_hash.txt";
 
+      - name: Authenticate to GCP
+        if: ${{ inputs.upload-to-gcp }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_IMAGE_UPLOADER }}
+
+      - name: Set up Cloud SDK
+        if: ${{ inputs.upload-to-gcp }}
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install pigz
+        if: ${{ inputs.upload-to-gcp }}
+        run: DEBIAN_FRONTEND=noninteractive apt-get install -y pigz
+
+      - name: Upload image to GCP and create compute image
+        if: ${{ inputs.upload-to-gcp }}
+        working-directory: out
+        env:
+          GCP_SA_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_IMAGE_UPLOADER }}
+        run: |
+          GCP_PROJECT_ID="$(echo "${GCP_SA_JSON}" | jq -r '.project_id')"
+          GCS_BUCKET="gs://supa-swarm-bucket-conf-vms"
+          IMAGE_NAME="sp-vm-${SP_VM_IMAGE_VERSION}"
+          TAR_BASENAME="${IMAGE_NAME}.tar.gz"
+          SOURCE_URI="${GCS_BUCKET}/${TAR_BASENAME}"
+
+          if command -v pigz >/dev/null 2>&1; then
+            TAR_COMPRESS="pigz -p $(nproc)"
+          else
+            echo "WARNING: pigz not found, falling back to single-threaded gzip"
+            TAR_COMPRESS="gzip"
+          fi
+
+          mkdir -p tmpdir
+          echo "==> Copying image as disk.raw"
+          cp -f "sp-vm-${SP_VM_IMAGE_VERSION}.img" tmpdir/disk.raw
+
+          echo "==> Packing disk.raw into ${TAR_BASENAME}"
+          (cd tmpdir && tar -S --use-compress-program="${TAR_COMPRESS}" -cf "${TAR_BASENAME}" disk.raw)
+          mv "tmpdir/${TAR_BASENAME}" .
+          rm -rf tmpdir
+
+          echo "==> Uploading ${TAR_BASENAME} to GCS: ${SOURCE_URI}"
+          gsutil \
+            -o "GSUtil:parallel_composite_upload_threshold=150MB" \
+            -o "GSUtil:parallel_composite_upload_component_size=50MB" \
+            -m cp "${TAR_BASENAME}" "${GCS_BUCKET}/"
+
+          echo "==> Creating GCP compute image: ${IMAGE_NAME}"
+          gcloud compute images create "${IMAGE_NAME}" \
+            --project "${GCP_PROJECT_ID}" \
+            --source-uri "${SOURCE_URI}" \
+            --guest-os-features "UEFI_COMPATIBLE,TDX_CAPABLE,SEV_CAPABLE,SEV_SNP_CAPABLE,GVNIC" \
+            --labels "build_tag=${SP_VM_IMAGE_VERSION}" \
+            --description "Built from Super-Protocol/sp-vm ${SP_VM_IMAGE_VERSION}"
+
+          echo "==> Cleaning up temporary GCS object"
+          gsutil rm "${SOURCE_URI}"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.SP_VM_IMAGE_VERSION }}
-          name: Release ${{ env.SP_VM_IMAGE_VERSION }}
+          name: ${{ env.SP_VM_IMAGE_VERSION }}
           draft: false
           prerelease: true
           files: |

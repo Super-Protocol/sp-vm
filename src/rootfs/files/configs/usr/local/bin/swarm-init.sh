@@ -28,6 +28,8 @@ SWARM_CLOUD_API_TAG=$(cfg "tags.swarm_cloud_api")
 SWARM_CLOUD_UI_TAG=$(cfg "tags.swarm_cloud_ui")
 AUTH_SERVICE_TAG=$(cfg "tags.auth_service")
 PKI_AUTHORITY_TAG=$(cfg "tags.pki_authority")
+GATEKEEPER_S3_IMAGE=$(cfg "tags.gatekeeper_s3_image")
+GATEKEEPER_HARBOR_IMAGE=$(cfg "tags.gatekeeper_harbor_image")
 
 # Download a GitHub release asset to a local file path
 # Usage: download_github_asset <owner> <repo> <tag> <filename> <dest>
@@ -215,6 +217,11 @@ log "generating /etc/swarm/swarm-node.env..."
 mkdir -p /etc/swarm
 cat > /etc/swarm/swarm-node.env << EOF
 SWARM_NODE_TAG=${SWARM_NODE_TAG}
+SWARM_CLOUD_API_TAG=${SWARM_CLOUD_API_TAG}
+SWARM_CLOUD_UI_TAG=${SWARM_CLOUD_UI_TAG}
+AUTH_SERVICE_TAG=${AUTH_SERVICE_TAG}
+GATEKEEPER_S3_IMAGE=${GATEKEEPER_S3_IMAGE}
+GATEKEEPER_HARBOR_IMAGE=${GATEKEEPER_HARBOR_IMAGE}
 EOF
 
 # Generate /etc/swarm/swarm-host-agent.env for swarm-host-agent.service EnvironmentFile (idempotent)
@@ -224,6 +231,8 @@ SWARM_CLOUD_API_TAG=${SWARM_CLOUD_API_TAG}
 SWARM_CLOUD_UI_TAG=${SWARM_CLOUD_UI_TAG}
 AUTH_SERVICE_TAG=${AUTH_SERVICE_TAG}
 PKI_AUTHORITY_TAG=${PKI_AUTHORITY_TAG}
+GATEKEEPER_S3_IMAGE=${GATEKEEPER_S3_IMAGE}
+GATEKEEPER_HARBOR_IMAGE=${GATEKEEPER_HARBOR_IMAGE}
 EOF
 
 log "swarm-init completed successfully"

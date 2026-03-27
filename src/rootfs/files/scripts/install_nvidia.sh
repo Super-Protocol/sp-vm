@@ -27,11 +27,11 @@ function install_cuda_keyring() {
 }
 
 function install_nvidia_driver() {
-    log_info "installing nvidia driver";
+    log_info "installing nvidia driver and container toolkit for rke2";
     chroot \
         "$OUTPUTDIR" \
         /bin/bash \
-        -c 'DEBIAN_FRONTEND=noninteractive apt update && apt install -y --no-install-recommends nvidia-driver-575-open';
+        -c 'DEBIAN_FRONTEND=noninteractive apt update && apt install -y --no-install-recommends nvidia-driver-575-open nvidia-container-toolkit';
 }
 
 chroot_init;
