@@ -47,6 +47,23 @@ else
     python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize="$CLUSTER_MIN_SIZE" --maxSize="$CLUSTER_MAX_SIZE" --maxClusters="$CLUSTER_MAX_CLUSTERS"
 fi
 
+MEASUREMENT_RULE_ID="${CLUSTER_POLICY}:latency"
+echo "Ensuring ClusterPolicyMeasurementRule '$MEASUREMENT_RULE_ID'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyMeasurementRules "$MEASUREMENT_RULE_ID" >/dev/null 2>&1; then
+  echo "ClusterPolicyMeasurementRule '$MEASUREMENT_RULE_ID' already exists, skipping creation."
+else
+  echo "Creating ClusterPolicyMeasurementRule '$MEASUREMENT_RULE_ID'..."
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyMeasurementRules "$MEASUREMENT_RULE_ID" \
+      --name="latency" \
+      --cluster_policy="$CLUSTER_POLICY" \
+      --measurement_type="latency" \
+      --condition="less_than" \
+      --value="10.0" \
+      --jitter=10
+fi
+
 echo "Ensuring ClusterService '$SERVICE_PK'..."
 if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
   python3 "$(dirname "$0")/swarm-cli.py" get ClusterServices "$SERVICE_PK" >/dev/null 2>&1; then
