@@ -108,7 +108,7 @@ jobs:
 
       - name: Install pigz
         if: ${{ inputs.upload-to-gcp }}
-        run: sudo apt-get install -y pigz
+        run: DEBIAN_FRONTEND=noninteractive apt-get install -y pigz
 
       - name: Upload image to GCP and create compute image
         if: ${{ inputs.upload-to-gcp }}
