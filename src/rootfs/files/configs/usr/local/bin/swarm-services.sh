@@ -31,7 +31,7 @@ if [ ${#scripts[@]} -eq 0 ]; then
   exit 0
 fi
 
-IFS=$'\n' sorted=($(printf "%s\n" "${scripts[@]}" | sort))
+IFS=$'\n' sorted=($(printf "%s\n" "${scripts[@]}" | sort | grep -v '/ignore-[^/]*$'))
 unset IFS
 
 for script in "${sorted[@]}"; do
