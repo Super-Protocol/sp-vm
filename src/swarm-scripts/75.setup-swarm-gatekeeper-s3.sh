@@ -44,6 +44,36 @@ else
     python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize="$CLUSTER_MIN_SIZE" --maxSize="$CLUSTER_MAX_SIZE" --maxClusters="$CLUSTER_MAX_CLUSTERS"
 fi
 
+AFFINITY_RULE_ID="${CLUSTER_POLICY}:wireguard-affinity"
+echo "Ensuring ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" >/dev/null 2>&1; then
+  echo "ClusterPolicyAffinityRule '$AFFINITY_RULE_ID' already exists, skipping creation."
+else
+  echo "Creating ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" \
+      --name="wireguard-affinity" \
+      --cluster_policy="$CLUSTER_POLICY" \
+      --target_cluster_policy="wireguard" \
+      --affinity_type="positive"
+fi
+
+AFFINITY_RULE_ID="${CLUSTER_POLICY}:minio-affinity"
+echo "Ensuring ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" >/dev/null 2>&1; then
+  echo "ClusterPolicyAffinityRule '$AFFINITY_RULE_ID' already exists, skipping creation."
+else
+  echo "Creating ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" \
+      --name="minio-affinity" \
+      --cluster_policy="$CLUSTER_POLICY" \
+      --target_cluster_policy="minio" \
+      --affinity_type="positive"
+fi
+
 echo "Ensuring ClusterService '$SERVICE_PK'..."
 if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
   python3 "$(dirname "$0")/swarm-cli.py" get ClusterServices "$SERVICE_PK" >/dev/null 2>&1; then
