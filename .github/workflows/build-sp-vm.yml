@@ -106,10 +106,6 @@ jobs:
         if: ${{ inputs.upload-to-gcp }}
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Install pigz
-        if: ${{ inputs.upload-to-gcp }}
-        run: DEBIAN_FRONTEND=noninteractive apt-get install -y pigz
-
       - name: Upload image to GCP and create compute image
         if: ${{ inputs.upload-to-gcp }}
         working-directory: out
