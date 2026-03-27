@@ -106,6 +106,10 @@ jobs:
         if: ${{ inputs.upload-to-gcp }}
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Install pigz
+        if: ${{ inputs.upload-to-gcp }}
+        run: sudo apt-get install -y pigz
+
       - name: Upload image to GCP and create compute image
         if: ${{ inputs.upload-to-gcp }}
         working-directory: out
@@ -115,11 +119,30 @@ jobs:
           GCP_PROJECT_ID="$(echo "${GCP_SA_JSON}" | jq -r '.project_id')"
           GCS_BUCKET="gs://supa-swarm-bucket-conf-vms"
           IMAGE_NAME="sp-vm-${SP_VM_IMAGE_VERSION}"
-          SOURCE_OBJECT="${IMAGE_NAME}.raw"
-          SOURCE_URI="${GCS_BUCKET}/${SOURCE_OBJECT}"
+          TAR_BASENAME="${IMAGE_NAME}.tar.gz"
+          SOURCE_URI="${GCS_BUCKET}/${TAR_BASENAME}"
 
-          echo "==> Uploading image to GCS: ${SOURCE_URI}"
-          gsutil cp "sp-vm-${SP_VM_IMAGE_VERSION}.img" "${SOURCE_URI}"
+          if command -v pigz >/dev/null 2>&1; then
+            TAR_COMPRESS="pigz -p $(nproc)"
+          else
+            echo "WARNING: pigz not found, falling back to single-threaded gzip"
+            TAR_COMPRESS="gzip"
+          fi
+
+          mkdir -p tmpdir
+          echo "==> Copying image as disk.raw"
+          cp -f "sp-vm-${SP_VM_IMAGE_VERSION}.img" tmpdir/disk.raw
+
+          echo "==> Packing disk.raw into ${TAR_BASENAME}"
+          (cd tmpdir && tar -S --use-compress-program="${TAR_COMPRESS}" -cf "${TAR_BASENAME}" disk.raw)
+          mv "tmpdir/${TAR_BASENAME}" .
+          rm -rf tmpdir
+
+          echo "==> Uploading ${TAR_BASENAME} to GCS: ${SOURCE_URI}"
+          gsutil \
+            -o "GSUtil:parallel_composite_upload_threshold=150MB" \
+            -o "GSUtil:parallel_composite_upload_component_size=50MB" \
+            -m cp "${TAR_BASENAME}" "${GCS_BUCKET}/"
 
           echo "==> Creating GCP compute image: ${IMAGE_NAME}"
           gcloud compute images create "${IMAGE_NAME}" \
