@@ -9,7 +9,7 @@ Type=oneshot
 RemainAfterExit=yes
 TimeoutStartSec=infinity
 ExecCondition=/bin/bash -c '[[ "$(head -n1 /etc/swarm/swarm-vm-mode 2>/dev/null | tr -d "[:space:]")" == "init" ]]'
-ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_cert_gen_configure.py \
+ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure_helper.py \
     configure \
     --template /etc/super/pki-cert-generator/cert-gen-config-template.yaml \
     --output /etc/super/pki-cert-generator/cert-gen-config.yaml

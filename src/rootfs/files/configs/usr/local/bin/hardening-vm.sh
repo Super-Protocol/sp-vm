@@ -22,6 +22,9 @@ iptables -A INPUT -p tcp --dport 443 -j ACCEPT
 # Allow HTTP (TCP 80)
 iptables -A INPUT -p tcp --dport 80 -j ACCEPT
 
+# Allow HTTPS for PKI service
+iptables -A INPUT -p tcp --dport 9443 -j ACCEPT
+
 # Allow incoming traffic in the cluster network
 # @TODO this will ignore NetworkPolicies in k8s, refactor in future
 iptables -I INPUT -s 10.43.0.0/16 -j ACCEPT

@@ -10,9 +10,13 @@ RemainAfterExit=yes
 TimeoutStartSec=infinity
 Environment=NODE_ENV=production
 ExecCondition=/bin/bash -c '[[ "$(head -n1 /etc/swarm/swarm-vm-mode 2>/dev/null | tr -d "[:space:]")" == "normal" ]]'
+ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure_helper.py \
+    configure-sync-client \
+    --config /sp/swarm/config.yaml \
+    --output /etc/swarm/sync-client-config.yaml
 ExecStart=/bin/bash -c 'until /usr/bin/node /usr/bin/pki-sync-client sync \
     --config /etc/super/pki-authority-sync/secrets-config.yaml \
-    --swarm-env /sp/swarm/config.yaml \
+    --swarm-env /etc/swarm/sync-client-config.yaml \
     --save-certs-to-dir /etc/super/certs/vm \
     --save-certs-prefix vm \
     --disable-server-identity-check \
