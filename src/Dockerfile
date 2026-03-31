@@ -324,8 +324,8 @@ RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 
 # install PKI npm components globally (requires python3-venv from setup_runtime_tools)
-ARG PKI_SYNC_CLIENT_VERSION=3.0.3
-ARG PKI_CERT_GENERATOR_VERSION=3.0.7
+ARG PKI_SYNC_CLIENT_VERSION=3.0.5
+ARG PKI_CERT_GENERATOR_VERSION=3.0.10
 ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
 RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh \

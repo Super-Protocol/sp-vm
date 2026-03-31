@@ -55,7 +55,7 @@ def detect_network_type() -> str:
     cpu_type = read_cpu_type()
     if cpu_type is None:
         subprocess.run(
-            ["/usr/bin/pki-cert-generator", "get-cpu-type", "--output", SWARM_CPU_TYPE_FILE],
+            ["/usr/bin/pki-cert-generator", "get-attestation-type", "--output", SWARM_CPU_TYPE_FILE],
             check=True
         )
         cpu_type = read_cpu_type()
