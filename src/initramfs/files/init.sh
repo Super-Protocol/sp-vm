@@ -54,6 +54,15 @@ canonical_path() {
 device_top_level_name() {
     local device_name parent_name;
     device_name="$(path_basename "$1")";
+
+    if [ -e "/sys/class/block/${device_name}/partition" ]; then
+        parent_name="$(path_basename "$(canonical_path "/sys/class/block/${device_name}/..")")";
+        if [ -n "$parent_name" ]; then
+            echo "$parent_name";
+            return 0;
+        fi
+    fi
+
     parent_name="$(lsblk -no PKNAME "$1" 2>/dev/null || true)";
     if [ -n "$parent_name" ]; then
         echo "$parent_name";
@@ -166,19 +175,19 @@ select_state_disk_path() {
 
     if [ "$pd_link_count" -eq 1 ]; then
         log_info "Selected state disk by Google persistent-disk symlink: ${pd_link_path}";
-        echo "$pd_link_path";
+        state_block_device_path="$pd_link_path";
         return 0;
     fi
 
     if [ "$pd_model_count" -eq 1 ]; then
         log_info "Selected state disk by sysfs model/vendor heuristic: ${pd_model_path}";
-        echo "$pd_model_path";
+        state_block_device_path="$pd_model_path";
         return 0;
     fi
 
     if [ "$candidate_count" -eq 1 ]; then
         log_warn "Falling back to the only extra block device as state disk: ${only_candidate_path}";
-        echo "$only_candidate_path";
+        state_block_device_path="$only_candidate_path";
         return 0;
     fi
 
@@ -249,8 +258,13 @@ main_block_device_name="$(device_top_level_name "$root_device")";
 if [ -z "$main_block_device_name" ]; then
     log_fail "Failed to get main block device name from data part device path '$root_device'..";
 fi
+log_info "Resolved root block device ${root_device} to top-level disk ${main_block_device_name}";
 
-state_block_device_path="$(select_state_disk_path)";
+state_block_device_path="";
+select_state_disk_path
+if [ -z "$state_block_device_path" ]; then
+    log_fail "Failed to resolve state block device path";
+fi
 
 random_key="$(dd if=/dev/urandom bs=1 count=32 2>/dev/null | base64)";
 
