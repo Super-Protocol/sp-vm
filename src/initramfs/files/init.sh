@@ -3,6 +3,7 @@
 set -x
 
 BUSYBOX=/sbin/busybox
+GCP_STATE_DISK_SYMLINK=/dev/disk/by-id/google-sp-state
 
 [ -d /dev ] || mkdir -m 0755 /dev
 [ -d /root ] || mkdir -m 0700 /root
@@ -37,14 +38,6 @@ path_basename() {
     "$BUSYBOX" basename "$1";
 }
 
-read_sysfs_attr() {
-    local value="";
-    if [ -r "$1" ]; then
-        IFS= read -r value < "$1" || true;
-    fi
-    echo "$value";
-}
-
 canonical_path() {
     if [ -e "$1" ]; then
         "$BUSYBOX" readlink -f "$1" 2>/dev/null || true;
@@ -71,127 +64,21 @@ device_top_level_name() {
     fi
 }
 
-resolve_google_disk_symlink() {
-    local disk_name="$1" symlink resolved target_name;
-    for symlink in /dev/disk/by-id/google-*; do
-        [ -e "$symlink" ] || continue;
-        case "$symlink" in
-            *-part*) continue ;;
-            *google-local-ssd-*|*google-local-nvme-ssd-*) continue ;;
-        esac
-        resolved="$(canonical_path "$symlink")";
-        [ -n "$resolved" ] || continue;
-        target_name="$(path_basename "$resolved")";
-        if [ "$target_name" = "$disk_name" ]; then
-            echo "$symlink";
-            return 0;
-        fi
-    done
-    return 1;
-}
-
-resolve_google_local_ssd_symlink() {
-    local disk_name="$1" symlink resolved target_name;
-    for symlink in /dev/disk/by-id/google-local-ssd-* /dev/disk/by-id/google-local-nvme-ssd-*; do
-        [ -e "$symlink" ] || continue;
-        case "$symlink" in
-            *-part*) continue ;;
-        esac
-        resolved="$(canonical_path "$symlink")";
-        [ -n "$resolved" ] || continue;
-        target_name="$(path_basename "$resolved")";
-        if [ "$target_name" = "$disk_name" ]; then
-            echo "$symlink";
-            return 0;
-        fi
-    done
-    return 1;
-}
-
-list_state_disk_candidates() {
-    local disk_name provider_block_device_name="";
-    if [ -n "${provider_config_device_path:-}" ]; then
-        provider_block_device_name="$(device_top_level_name "$provider_config_device_path")";
-    fi
-
-    for disk_name in $(lsblk -d -n -o NAME); do
-        case "$disk_name" in
-            loop*|ram*|dm-*) continue ;;
-        esac
-        if [ "$disk_name" = "$main_block_device_name" ]; then
-            continue;
-        fi
-        if [ -n "$provider_block_device_name" ] && [ "$disk_name" = "$provider_block_device_name" ]; then
-            continue;
-        fi
-        echo "$disk_name";
-    done
-}
-
-log_disk_candidate() {
-    local disk_name="$1" model vendor serial size_bytes pd_link local_link;
-    model="$(read_sysfs_attr "/sys/block/$disk_name/device/model")";
-    vendor="$(read_sysfs_attr "/sys/block/$disk_name/device/vendor")";
-    serial="$(read_sysfs_attr "/sys/block/$disk_name/device/serial")";
-    size_bytes="$(lsblk -d -n -b -o SIZE "/dev/$disk_name" 2>/dev/null || echo "?")";
-    pd_link="$(resolve_google_disk_symlink "$disk_name" || true)";
-    local_link="$(resolve_google_local_ssd_symlink "$disk_name" || true)";
-    log_info "State disk candidate /dev/${disk_name}: size_bytes=${size_bytes} vendor='${vendor}' model='${model}' serial='${serial}' pd_link='${pd_link}' local_ssd_link='${local_link}'";
-}
-
 select_state_disk_path() {
-    local candidate_names="" disk_name model vendor pd_link local_link;
-    local candidate_count=0 pd_link_count=0 pd_model_count=0;
-    local pd_link_path="" pd_model_path="" only_candidate_path="";
+    local explicit_state_disk_path explicit_state_disk_name;
 
-    for disk_name in $(list_state_disk_candidates); do
-        candidate_count=$((candidate_count + 1));
-        candidate_names="${candidate_names} ${disk_name}";
-        only_candidate_path="/dev/${disk_name}";
-        log_disk_candidate "$disk_name";
-
-        pd_link="$(resolve_google_disk_symlink "$disk_name" || true)";
-        if [ -n "$pd_link" ]; then
-            pd_link_count=$((pd_link_count + 1));
-            pd_link_path="/dev/${disk_name}";
-        fi
-
-        local_link="$(resolve_google_local_ssd_symlink "$disk_name" || true)";
-        model="$(read_sysfs_attr "/sys/block/$disk_name/device/model")";
-        vendor="$(read_sysfs_attr "/sys/block/$disk_name/device/vendor")";
-        case "${vendor} ${model} ${local_link}" in
-            *nvme_card-pd*|*PersistentDisk*|*Hyperdisk*)
-                if [ -z "$local_link" ]; then
-                    pd_model_count=$((pd_model_count + 1));
-                    pd_model_path="/dev/${disk_name}";
-                fi
-                ;;
-        esac
-    done
-
-    if [ "$candidate_count" -lt 1 ]; then
-        log_fail "Failed to get state block device, please attach an extra disk to this VM";
+    explicit_state_disk_path="$(canonical_path "$GCP_STATE_DISK_SYMLINK")";
+    if [ -z "$explicit_state_disk_path" ]; then
+        log_fail "Required state disk symlink ${GCP_STATE_DISK_SYMLINK} is unavailable";
     fi
 
-    if [ "$pd_link_count" -eq 1 ]; then
-        log_info "Selected state disk by Google persistent-disk symlink: ${pd_link_path}";
-        state_block_device_path="$pd_link_path";
-        return 0;
+    explicit_state_disk_name="$(path_basename "$explicit_state_disk_path")";
+    if [ "$explicit_state_disk_name" = "$main_block_device_name" ]; then
+        log_fail "Configured state disk symlink ${GCP_STATE_DISK_SYMLINK} resolves to boot disk ${explicit_state_disk_path}";
     fi
 
-    if [ "$pd_model_count" -eq 1 ]; then
-        log_info "Selected state disk by sysfs model/vendor heuristic: ${pd_model_path}";
-        state_block_device_path="$pd_model_path";
-        return 0;
-    fi
-
-    if [ "$candidate_count" -eq 1 ]; then
-        log_warn "Falling back to the only extra block device as state disk: ${only_candidate_path}";
-        state_block_device_path="$only_candidate_path";
-        return 0;
-    fi
-
-    log_fail "Found multiple extra block devices (${candidate_names# }); unable to determine a unique state disk";
+    log_info "Selected state disk by explicit GCP symlink ${GCP_STATE_DISK_SYMLINK}: ${explicit_state_disk_path}";
+    state_block_device_path="$explicit_state_disk_path";
 }
 
 _log() {
