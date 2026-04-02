@@ -64,6 +64,55 @@ device_top_level_name() {
     fi
 }
 
+read_sysfs_attr() {
+    local value="";
+    if [ -r "$1" ]; then
+        IFS= read -r value < "$1" || true;
+    fi
+    echo "$value";
+}
+
+log_block_device_inventory() {
+    local disk_name disk_path model vendor serial size_bytes fstype label partlabel;
+    for disk_name in $(lsblk -d -n -o NAME 2>/dev/null || true); do
+        case "$disk_name" in
+            loop*|ram*|dm-*) continue ;;
+        esac
+        disk_path="/dev/$disk_name";
+        size_bytes="$(lsblk -d -n -b -o SIZE "$disk_path" 2>/dev/null || echo "?")";
+        fstype="$(lsblk -d -n -o FSTYPE "$disk_path" 2>/dev/null || echo "")";
+        label="$(lsblk -d -n -o LABEL "$disk_path" 2>/dev/null || echo "")";
+        partlabel="$(lsblk -d -n -o PARTLABEL "$disk_path" 2>/dev/null || echo "")";
+        model="$(read_sysfs_attr "/sys/block/$disk_name/device/model")";
+        vendor="$(read_sysfs_attr "/sys/block/$disk_name/device/vendor")";
+        serial="$(read_sysfs_attr "/sys/block/$disk_name/device/serial")";
+        log_info "Block device: path=${disk_path} size_bytes=${size_bytes} fstype='${fstype}' label='${label}' partlabel='${partlabel}' vendor='${vendor}' model='${model}' serial='${serial}'";
+    done
+}
+
+log_partition_inventory() {
+    local part_name part_path parent_name fstype label partlabel partuuid uuid;
+    for part_name in $(lsblk -l -n -o NAME,TYPE 2>/dev/null | grep ' part$' | awk '{print $1}'); do
+        part_path="/dev/$part_name";
+        parent_name="$(device_top_level_name "$part_path")";
+        fstype="$(lsblk -n -o FSTYPE "$part_path" 2>/dev/null || echo "")";
+        label="$(lsblk -n -o LABEL "$part_path" 2>/dev/null || echo "")";
+        partlabel="$(lsblk -n -o PARTLABEL "$part_path" 2>/dev/null || echo "")";
+        partuuid="$(lsblk -n -o PARTUUID "$part_path" 2>/dev/null || echo "")";
+        uuid="$(lsblk -n -o UUID "$part_path" 2>/dev/null || echo "")";
+        log_info "Partition: path=${part_path} parent=${parent_name} fstype='${fstype}' label='${label}' partlabel='${partlabel}' partuuid='${partuuid}' uuid='${uuid}'";
+    done
+}
+
+log_disk_by_id_inventory() {
+    local symlink resolved;
+    for symlink in /dev/disk/by-id/*; do
+        [ -e "$symlink" ] || continue;
+        resolved="$(canonical_path "$symlink")";
+        log_info "Disk symlink: path=${symlink} target='${resolved}'";
+    done
+}
+
 select_state_disk_path() {
     local explicit_state_disk_path explicit_state_disk_name;
 
@@ -146,6 +195,9 @@ if [ -z "$main_block_device_name" ]; then
     log_fail "Failed to get main block device name from data part device path '$root_device'..";
 fi
 log_info "Resolved root block device ${root_device} to top-level disk ${main_block_device_name}";
+log_block_device_inventory
+log_partition_inventory
+log_disk_by_id_inventory
 
 state_block_device_path="";
 select_state_disk_path
