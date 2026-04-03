@@ -42,7 +42,9 @@ download_github_asset() {
             "https://api.github.com/repos/$owner/$repo/releases/tags/$tag" \
             -o "$rel_file"; then
         rm -f "$rel_file"
-        log "ERROR: failed to fetch release info for $owner/$repo@$tag"
+        if [ "${DOWNLOAD_GITHUB_ASSET_QUIET:-0}" != "1" ]; then
+            log "ERROR: failed to fetch release info for $owner/$repo@$tag"
+        fi
         return 1
     fi
 
@@ -89,9 +91,10 @@ fi
 # Install provision-plugin-sdk from GitHub Releases (pip install is idempotent)
 if [ -n "$SDK_TAG" ]; then
     log "installing provision-plugin-sdk $SDK_TAG..."
+    SDK_RELEASE_TAG="sdk-${SDK_TAG}"
     FILENAME="provision-plugin-sdk-${SDK_TAG}.tar.gz"
     TMP=$(mktemp -d)
-    download_github_asset "Super-Protocol" "swarm-cloud" "$SDK_TAG" "$FILENAME" "$TMP/sdk.tar.gz"
+    download_github_asset "Super-Protocol" "swarm-cloud" "$SDK_RELEASE_TAG" "$FILENAME" "$TMP/sdk.tar.gz"
     tar xzf "$TMP/sdk.tar.gz" -C "$TMP"
     pip3 install --break-system-packages --quiet "$TMP"
     rm -rf "$TMP"
@@ -103,16 +106,17 @@ fi
 # Download swarm-services from GitHub Release into /etc/swarm-services (always overwrite)
 if [ -n "$SERVICES_TAG" ]; then
     log "downloading swarm-services $SERVICES_TAG..."
+    SERVICES_RELEASE_TAG="services-${SERVICES_TAG}"
     TMP=$(mktemp -d)
     REL_FILE=$(mktemp)
     auth_curl_args=()
     [ -n "$GITHUB_TOKEN" ] && auth_curl_args=(-H "Authorization: token $GITHUB_TOKEN")
 
     if ! curl -sf "${auth_curl_args[@]}" \
-            "https://api.github.com/repos/Super-Protocol/swarm-cloud/releases/tags/$SERVICES_TAG" \
+            "https://api.github.com/repos/Super-Protocol/swarm-cloud/releases/tags/$SERVICES_RELEASE_TAG" \
             -o "$REL_FILE"; then
         rm -f "$REL_FILE"
-        log "ERROR: failed to fetch release info for swarm-services $SERVICES_TAG"
+        log "ERROR: failed to fetch release info for swarm-services $SERVICES_RELEASE_TAG"
         exit 1
     fi
 
@@ -177,15 +181,20 @@ if [ -n "$HOST_AGENT_TAG" ]; then
         log "swarm-host-agent already installed, skipping"
     else
         log "installing swarm-host-agent $HOST_AGENT_TAG..."
-        if [[ "$HOST_AGENT_TAG" == release-* ]]; then
+        if [[ "$HOST_AGENT_TAG" == "develop" || "$HOST_AGENT_TAG" == "main" ]]; then
+            RELEASE_TAG="host-agent-$HOST_AGENT_TAG"
+            FILENAME="swarm-host-agent-${HOST_AGENT_TAG}-linux-amd64.tar.gz"
+        elif [[ "$HOST_AGENT_TAG" == release-* ]]; then
             RELEASE_TAG="$HOST_AGENT_TAG"
+            FILENAME="swarm-host-agent-${RELEASE_TAG}-linux-amd64.tar.gz"
         elif [[ "$HOST_AGENT_TAG" == host-agent-* ]]; then
             VERSION="${HOST_AGENT_TAG#host-agent-}"
             RELEASE_TAG="release-$VERSION"
+            FILENAME="swarm-host-agent-${RELEASE_TAG}-linux-amd64.tar.gz"
         else
             RELEASE_TAG="release-$HOST_AGENT_TAG"
+            FILENAME="swarm-host-agent-${RELEASE_TAG}-linux-amd64.tar.gz"
         fi
-        FILENAME="swarm-host-agent-${RELEASE_TAG}-linux-amd64.tar.gz"
         TMP=$(mktemp -d)
         download_github_asset "Super-Protocol" "swarm-cloud" "$RELEASE_TAG" "$FILENAME" "$TMP/host-agent.tar.gz"
         tar xzf "$TMP/host-agent.tar.gz" -C "$TMP"
