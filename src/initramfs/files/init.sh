@@ -3,7 +3,6 @@
 set -x
 
 BUSYBOX=/sbin/busybox
-GCP_STATE_DISK_SYMLINK=/dev/disk/by-id/google-sp-state
 
 [ -d /dev ] || mkdir -m 0755 /dev
 [ -d /root ] || mkdir -m 0700 /root
@@ -114,20 +113,43 @@ log_disk_by_id_inventory() {
 }
 
 select_state_disk_path() {
-    local explicit_state_disk_path explicit_state_disk_name;
+    local disk_name disk_path size_bytes provider_block_device_name="";
+    local selected_disk_path="" selected_disk_name="" selected_size_bytes=0;
 
-    explicit_state_disk_path="$(canonical_path "$GCP_STATE_DISK_SYMLINK")";
-    if [ -z "$explicit_state_disk_path" ]; then
-        log_fail "Required state disk symlink ${GCP_STATE_DISK_SYMLINK} is unavailable";
+    if [ -n "${provider_config_device_path:-}" ]; then
+        provider_block_device_name="$(device_top_level_name "$provider_config_device_path")";
     fi
 
-    explicit_state_disk_name="$(path_basename "$explicit_state_disk_path")";
-    if [ "$explicit_state_disk_name" = "$main_block_device_name" ]; then
-        log_fail "Configured state disk symlink ${GCP_STATE_DISK_SYMLINK} resolves to boot disk ${explicit_state_disk_path}";
+    for disk_name in $(lsblk -d -n -o NAME 2>/dev/null || true); do
+        case "$disk_name" in
+            loop*|ram*|dm-*) continue ;;
+        esac
+        if [ "$disk_name" = "$main_block_device_name" ]; then
+            continue;
+        fi
+        if [ -n "$provider_block_device_name" ] && [ "$disk_name" = "$provider_block_device_name" ]; then
+            continue;
+        fi
+
+        disk_path="/dev/$disk_name";
+        size_bytes="$(lsblk -d -n -b -o SIZE "$disk_path" 2>/dev/null || echo 0)";
+        case "$size_bytes" in
+            ''|*[!0-9]*) size_bytes=0 ;;
+        esac
+
+        if [ -z "$selected_disk_path" ] || [ "$size_bytes" -gt "$selected_size_bytes" ]; then
+            selected_disk_path="$disk_path";
+            selected_disk_name="$disk_name";
+            selected_size_bytes="$size_bytes";
+        fi
+    done
+
+    if [ -z "$selected_disk_path" ]; then
+        log_fail "Failed to select state disk by size: no eligible extra block devices found";
     fi
 
-    log_info "Selected state disk by explicit GCP symlink ${GCP_STATE_DISK_SYMLINK}: ${explicit_state_disk_path}";
-    state_block_device_path="$explicit_state_disk_path";
+    log_info "Selected state disk by size: path=${selected_disk_path} size_bytes=${selected_size_bytes}";
+    state_block_device_path="$selected_disk_path";
 }
 
 _log() {
