@@ -181,15 +181,20 @@ if [ -n "$HOST_AGENT_TAG" ]; then
         log "swarm-host-agent already installed, skipping"
     else
         log "installing swarm-host-agent $HOST_AGENT_TAG..."
-        if [[ "$HOST_AGENT_TAG" == release-* ]]; then
+        if [[ "$HOST_AGENT_TAG" == "develop" || "$HOST_AGENT_TAG" == "main" ]]; then
+            RELEASE_TAG="host-agent-$HOST_AGENT_TAG"
+            FILENAME="swarm-host-agent-${HOST_AGENT_TAG}-linux-amd64.tar.gz"
+        elif [[ "$HOST_AGENT_TAG" == release-* ]]; then
             RELEASE_TAG="$HOST_AGENT_TAG"
+            FILENAME="swarm-host-agent-${RELEASE_TAG}-linux-amd64.tar.gz"
         elif [[ "$HOST_AGENT_TAG" == host-agent-* ]]; then
             VERSION="${HOST_AGENT_TAG#host-agent-}"
             RELEASE_TAG="release-$VERSION"
+            FILENAME="swarm-host-agent-${RELEASE_TAG}-linux-amd64.tar.gz"
         else
             RELEASE_TAG="release-$HOST_AGENT_TAG"
+            FILENAME="swarm-host-agent-${RELEASE_TAG}-linux-amd64.tar.gz"
         fi
-        FILENAME="swarm-host-agent-${RELEASE_TAG}-linux-amd64.tar.gz"
         TMP=$(mktemp -d)
         download_github_asset "Super-Protocol" "swarm-cloud" "$RELEASE_TAG" "$FILENAME" "$TMP/host-agent.tar.gz"
         tar xzf "$TMP/host-agent.tar.gz" -C "$TMP"
