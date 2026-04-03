@@ -106,16 +106,17 @@ fi
 # Download swarm-services from GitHub Release into /etc/swarm-services (always overwrite)
 if [ -n "$SERVICES_TAG" ]; then
     log "downloading swarm-services $SERVICES_TAG..."
+    SERVICES_RELEASE_TAG="services-${SERVICES_TAG}"
     TMP=$(mktemp -d)
     REL_FILE=$(mktemp)
     auth_curl_args=()
     [ -n "$GITHUB_TOKEN" ] && auth_curl_args=(-H "Authorization: token $GITHUB_TOKEN")
 
     if ! curl -sf "${auth_curl_args[@]}" \
-            "https://api.github.com/repos/Super-Protocol/swarm-cloud/releases/tags/$SERVICES_TAG" \
+            "https://api.github.com/repos/Super-Protocol/swarm-cloud/releases/tags/$SERVICES_RELEASE_TAG" \
             -o "$REL_FILE"; then
         rm -f "$REL_FILE"
-        log "ERROR: failed to fetch release info for swarm-services $SERVICES_TAG"
+        log "ERROR: failed to fetch release info for swarm-services $SERVICES_RELEASE_TAG"
         exit 1
     fi
 
