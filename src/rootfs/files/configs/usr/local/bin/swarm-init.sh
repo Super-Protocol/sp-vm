@@ -42,7 +42,9 @@ download_github_asset() {
             "https://api.github.com/repos/$owner/$repo/releases/tags/$tag" \
             -o "$rel_file"; then
         rm -f "$rel_file"
-        log "ERROR: failed to fetch release info for $owner/$repo@$tag"
+        if [ "${DOWNLOAD_GITHUB_ASSET_QUIET:-0}" != "1" ]; then
+            log "ERROR: failed to fetch release info for $owner/$repo@$tag"
+        fi
         return 1
     fi
 
@@ -89,9 +91,10 @@ fi
 # Install provision-plugin-sdk from GitHub Releases (pip install is idempotent)
 if [ -n "$SDK_TAG" ]; then
     log "installing provision-plugin-sdk $SDK_TAG..."
+    SDK_RELEASE_TAG="sdk-${SDK_TAG}"
     FILENAME="provision-plugin-sdk-${SDK_TAG}.tar.gz"
     TMP=$(mktemp -d)
-    download_github_asset "Super-Protocol" "swarm-cloud" "$SDK_TAG" "$FILENAME" "$TMP/sdk.tar.gz"
+    download_github_asset "Super-Protocol" "swarm-cloud" "$SDK_RELEASE_TAG" "$FILENAME" "$TMP/sdk.tar.gz"
     tar xzf "$TMP/sdk.tar.gz" -C "$TMP"
     pip3 install --break-system-packages --quiet "$TMP"
     rm -rf "$TMP"
