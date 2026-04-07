@@ -1,5 +1,4 @@
 [Unit]
-ConditionPathExists=/dev/ptp0
 Description=chrony, an NTP client/server
 Documentation=man:chronyd(8) man:chronyc(1) man:chrony.conf(5)
 Conflicts=openntpd.service ntp.service ntpsec.service

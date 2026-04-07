@@ -1,0 +1,16 @@
+[Unit]
+Description=Swarm Host Agent
+After=network-online.target swarm-init.service
+Requires=swarm-init.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/swarm/swarm-host-agent.env
+ExecStart=/usr/local/bin/swarm-host-agent
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/swarm-host-agent.log
+StandardError=append:/var/log/swarm-host-agent.log
+
+[Install]
+WantedBy=multi-user.target

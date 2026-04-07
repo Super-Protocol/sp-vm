@@ -2,6 +2,8 @@
 
 set -x
 
+BUSYBOX=/sbin/busybox
+
 [ -d /dev ] || mkdir -m 0755 /dev
 [ -d /root ] || mkdir -m 0700 /root
 [ -d /sys ] || mkdir /sys
@@ -29,6 +31,125 @@ get_option() {
 get_device() {
     LABEL_NAME="${1#*=}"; # 'LABEL=rootfs' > 'rootfs
     blkid -t PARTLABEL="$LABEL_NAME" --output device || echo;
+}
+
+path_basename() {
+    "$BUSYBOX" basename "$1";
+}
+
+canonical_path() {
+    if [ -e "$1" ]; then
+        "$BUSYBOX" readlink -f "$1" 2>/dev/null || true;
+    fi
+}
+
+device_top_level_name() {
+    local device_name parent_name;
+    device_name="$(path_basename "$1")";
+
+    if [ -e "/sys/class/block/${device_name}/partition" ]; then
+        parent_name="$(path_basename "$(canonical_path "/sys/class/block/${device_name}/..")")";
+        if [ -n "$parent_name" ]; then
+            echo "$parent_name";
+            return 0;
+        fi
+    fi
+
+    parent_name="$(lsblk -no PKNAME "$1" 2>/dev/null || true)";
+    if [ -n "$parent_name" ]; then
+        echo "$parent_name";
+    else
+        echo "$device_name";
+    fi
+}
+
+read_sysfs_attr() {
+    local value="";
+    if [ -r "$1" ]; then
+        IFS= read -r value < "$1" || true;
+    fi
+    echo "$value";
+}
+
+log_block_device_inventory() {
+    local disk_name disk_path model vendor serial size_bytes fstype label partlabel;
+    for disk_name in $(lsblk -d -n -o NAME 2>/dev/null || true); do
+        case "$disk_name" in
+            loop*|ram*|dm-*) continue ;;
+        esac
+        disk_path="/dev/$disk_name";
+        size_bytes="$(lsblk -d -n -b -o SIZE "$disk_path" 2>/dev/null || echo "?")";
+        fstype="$(lsblk -d -n -o FSTYPE "$disk_path" 2>/dev/null || echo "")";
+        label="$(lsblk -d -n -o LABEL "$disk_path" 2>/dev/null || echo "")";
+        partlabel="$(lsblk -d -n -o PARTLABEL "$disk_path" 2>/dev/null || echo "")";
+        model="$(read_sysfs_attr "/sys/block/$disk_name/device/model")";
+        vendor="$(read_sysfs_attr "/sys/block/$disk_name/device/vendor")";
+        serial="$(read_sysfs_attr "/sys/block/$disk_name/device/serial")";
+        log_info "Block device: path=${disk_path} size_bytes=${size_bytes} fstype='${fstype}' label='${label}' partlabel='${partlabel}' vendor='${vendor}' model='${model}' serial='${serial}'";
+    done
+}
+
+log_partition_inventory() {
+    local part_name part_path parent_name fstype label partlabel partuuid uuid;
+    for part_name in $(lsblk -l -n -o NAME,TYPE 2>/dev/null | grep ' part$' | awk '{print $1}'); do
+        part_path="/dev/$part_name";
+        parent_name="$(device_top_level_name "$part_path")";
+        fstype="$(lsblk -n -o FSTYPE "$part_path" 2>/dev/null || echo "")";
+        label="$(lsblk -n -o LABEL "$part_path" 2>/dev/null || echo "")";
+        partlabel="$(lsblk -n -o PARTLABEL "$part_path" 2>/dev/null || echo "")";
+        partuuid="$(lsblk -n -o PARTUUID "$part_path" 2>/dev/null || echo "")";
+        uuid="$(lsblk -n -o UUID "$part_path" 2>/dev/null || echo "")";
+        log_info "Partition: path=${part_path} parent=${parent_name} fstype='${fstype}' label='${label}' partlabel='${partlabel}' partuuid='${partuuid}' uuid='${uuid}'";
+    done
+}
+
+log_disk_by_id_inventory() {
+    local symlink resolved;
+    for symlink in /dev/disk/by-id/*; do
+        [ -e "$symlink" ] || continue;
+        resolved="$(canonical_path "$symlink")";
+        log_info "Disk symlink: path=${symlink} target='${resolved}'";
+    done
+}
+
+select_state_disk_path() {
+    local disk_name disk_path size_bytes provider_block_device_name="";
+    local selected_disk_path="" selected_disk_name="" selected_size_bytes=0;
+
+    if [ -n "${provider_config_device_path:-}" ]; then
+        provider_block_device_name="$(device_top_level_name "$provider_config_device_path")";
+    fi
+
+    for disk_name in $(lsblk -d -n -o NAME 2>/dev/null || true); do
+        case "$disk_name" in
+            loop*|ram*|dm-*) continue ;;
+        esac
+        if [ "$disk_name" = "$main_block_device_name" ]; then
+            continue;
+        fi
+        if [ -n "$provider_block_device_name" ] && [ "$disk_name" = "$provider_block_device_name" ]; then
+            continue;
+        fi
+
+        disk_path="/dev/$disk_name";
+        size_bytes="$(lsblk -d -n -b -o SIZE "$disk_path" 2>/dev/null || echo 0)";
+        case "$size_bytes" in
+            ''|*[!0-9]*) size_bytes=0 ;;
+        esac
+
+        if [ -z "$selected_disk_path" ] || [ "$size_bytes" -gt "$selected_size_bytes" ]; then
+            selected_disk_path="$disk_path";
+            selected_disk_name="$disk_name";
+            selected_size_bytes="$size_bytes";
+        fi
+    done
+
+    if [ -z "$selected_disk_path" ]; then
+        log_fail "Failed to select state disk by size: no eligible extra block devices found";
+    fi
+
+    log_info "Selected state disk by size: path=${selected_disk_path} size_bytes=${selected_size_bytes}";
+    state_block_device_path="$selected_disk_path";
 }
 
 _log() {
@@ -61,14 +182,17 @@ root_device="$(get_device "$root_device_name")";
 hash_device_path="$(blkid -t PARTLABEL="rootfs_hash" --output device || echo)";
 
 provider_config_device_path="$(blkid -L provider_config --output device || echo)";
+if [ -e "${provider_config_device_path}" ]; then
+    log_info "Found provider config device at ${provider_config_device_path} (on-premise mode)";
+else
+    log_info "No provider config device found, /sp will be mounted via s3fs after boot (cloud mode)";
+    provider_config_device_path="";
+fi
 
 # The root device should exist to be either verified then mounted or
 # just mounted when verification is disabled.
 if [ ! -e "${root_device}" ]; then
     log_fail "No root device ${root_device} found";
-fi
-if [ ! -e "${provider_config_device_path}" ]; then
-    log_fail "No provider config device ${provider_config_device_path} found";
 fi
 
 if [ "${rootfs_verifier}" = "dm-verity" ]; then
@@ -88,25 +212,20 @@ else
     mount -o ro "${root_device}" /sysroot-ro || log_fail "Mounting rootfs RO failed";
 fi
 
-main_block_device_name="$(lsblk -no PKNAME "$root_device" | grep -v "$(basename "$root_device")")";
+main_block_device_name="$(device_top_level_name "$root_device")";
 if [ -z "$main_block_device_name" ]; then
     log_fail "Failed to get main block device name from data part device path '$root_device'..";
 fi
+log_info "Resolved root block device ${root_device} to top-level disk ${main_block_device_name}";
+log_block_device_inventory
+log_partition_inventory
+log_disk_by_id_inventory
 
-state_block_device_count="$(lsblk -d -n -o NAME | grep -v "$main_block_device_name" | grep -v "$(basename "$provider_config_device_path")" | wc -l)";
-
-if [ "$state_block_device_count" -lt 1 ]; then
-    log_fail "Failed to get state block device, please attach an extra disk to this VM";
+state_block_device_path="";
+select_state_disk_path
+if [ -z "$state_block_device_path" ]; then
+    log_fail "Failed to resolve state block device path";
 fi
-if [ "$state_block_device_count" -gt 1 ]; then
-    log_fail "Found more than one state block device, please remove an extra block device and restart the VM";
-fi
-
-state_block_device_name="$(lsblk -d -n -o NAME | grep -v "$main_block_device_name" | grep -v "$(basename "$provider_config_device_path")")";
-if [ -z "$state_block_device_name" ]; then
-    log_fail "Failed to get state block device, this error is abnomal and you should notify the SuperProtocol support team if you see this..";
-fi
-state_block_device_path="/dev/$state_block_device_name";
 
 random_key="$(dd if=/dev/urandom bs=1 count=32 2>/dev/null | base64)";
 
@@ -135,8 +254,12 @@ mount -t overlay overlay \
   /mnt || log_fail "Mounting overlay FS failed";
 
 [ -d /mnt/sp ] || mkdir /mnt/sp
-log_info "Mounting provider config";
-mount -t ext4 -o ro "$provider_config_device_path" /mnt/sp || log_fail "Mounting provider config failed";
+if [ -n "$provider_config_device_path" ]; then
+    log_info "Mounting provider config (on-premise mode)";
+    mount -t ext4 -o ro "$provider_config_device_path" /mnt/sp || log_fail "Mounting provider config failed";
+else
+    log_info "No provider config device, /sp will be mounted via s3fs after boot (cloud mode)";
+fi
 
 # we can't do overlay over overlay, so, moving whole /var to upper-level fs
 [ -d /mnt/var ] || mkdir /mnt/var

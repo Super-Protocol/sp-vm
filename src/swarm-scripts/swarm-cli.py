@@ -195,6 +195,126 @@ def create_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) 
   print(f"ClusterServices '{id_value}' upserted.")
 
 
+def create_cluster_policy_affinity_rules(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  id_value = args.id or args.positional_id
+  name = args.name
+  cluster_policy = args.cluster_policy
+  target_cluster_policy = args.target_cluster_policy
+  affinity_type = args.affinity_type
+
+  if not id_value or not name or not cluster_policy or not target_cluster_policy or not affinity_type:
+    print(
+      "ClusterPolicyAffinityRules requires id, --name, --cluster_policy, "
+      "--target_cluster_policy, --affinity_type.",
+      file=sys.stderr,
+    )
+    sys.exit(1)
+
+  sql = (
+    "INSERT INTO ClusterPolicyAffinityRules "
+    "(id, name, cluster_policy, target_cluster_policy, affinity_type)\n"
+    "VALUES (:id, :name, :cluster_policy, :target_cluster_policy, :affinity_type)\n"
+    "ON DUPLICATE KEY UPDATE\n"
+    "  name=VALUES(name), target_cluster_policy=VALUES(target_cluster_policy),\n"
+    "  affinity_type=VALUES(affinity_type);\n"
+  )
+  params = {
+    "id": id_value,
+    "name": name,
+    "cluster_policy": cluster_policy,
+    "target_cluster_policy": target_cluster_policy,
+    "affinity_type": affinity_type,
+  }
+  run_sql(engine, sql, params)
+  print(f"ClusterPolicyAffinityRules '{id_value}' upserted.")
+
+
+def get_cluster_policy_affinity_rules(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  rule_id = args.id or args.positional_id
+  if not rule_id:
+    print("ClusterPolicyAffinityRules get requires id.", file=sys.stderr)
+    sys.exit(2)
+
+  sql = (
+    "SELECT id, name, cluster_policy, target_cluster_policy, affinity_type "
+    "FROM ClusterPolicyAffinityRules WHERE id = :id LIMIT 1"
+  )
+  try:
+    with engine.connect() as conn:
+      row = conn.execute(text(sql), {"id": rule_id}).mappings().first()
+  except Exception as exc:
+    print(f"MySQL query failed: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+  if row is None:
+    sys.exit(1)
+
+  print(json.dumps(dict(row)))
+
+
+def create_cluster_policy_measurement_rules(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  id_value = args.id or args.positional_id
+  name = args.name
+  cluster_policy = args.cluster_policy
+  measurement_type = args.measurement_type
+  condition = args.condition
+  value = args.value
+  jitter = args.jitter
+
+  if not id_value or not name or not cluster_policy or not measurement_type or not condition or value is None:
+    print(
+      "ClusterPolicyMeasurementRules requires id, --name, --cluster_policy, "
+      "--measurement_type, --condition, --value.",
+      file=sys.stderr,
+    )
+    sys.exit(1)
+
+  sql = (
+    "INSERT INTO ClusterPolicyMeasurementRules "
+    "(id, name, cluster_policy, measurement_type, `condition`, value, jitter, created_ts, updated_ts)\n"
+    "VALUES (:id, :name, :cluster_policy, :measurement_type, :condition, :value, :jitter,\n"
+    "  UNIX_TIMESTAMP()*1000, UNIX_TIMESTAMP()*1000)\n"
+    "ON DUPLICATE KEY UPDATE\n"
+    "  name=VALUES(name), measurement_type=VALUES(measurement_type),\n"
+    "  `condition`=VALUES(`condition`), value=VALUES(value),\n"
+    "  jitter=VALUES(jitter), updated_ts=VALUES(updated_ts);\n"
+  )
+  params = {
+    "id": id_value,
+    "name": name,
+    "cluster_policy": cluster_policy,
+    "measurement_type": measurement_type,
+    "condition": condition,
+    "value": value,
+    "jitter": int(jitter) if jitter is not None else 0,
+  }
+  run_sql(engine, sql, params)
+  print(f"ClusterPolicyMeasurementRules '{id_value}' upserted.")
+
+
+def get_cluster_policy_measurement_rules(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  rule_id = args.id or args.positional_id
+  if not rule_id:
+    print("ClusterPolicyMeasurementRules get requires id.", file=sys.stderr)
+    sys.exit(2)
+
+  sql = (
+    "SELECT id, name, cluster_policy, measurement_type, `condition`, value, jitter "
+    "FROM ClusterPolicyMeasurementRules WHERE id = :id LIMIT 1"
+  )
+  try:
+    with engine.connect() as conn:
+      row = conn.execute(text(sql), {"id": rule_id}).mappings().first()
+  except Exception as exc:
+    print(f"MySQL query failed: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+  if row is None:
+    sys.exit(1)
+
+  print(json.dumps(dict(row)))
+
+
 def create_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> None:
   """
   Insert or keep a SwarmSecret.
@@ -304,7 +424,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     description="Simple CLI to manage Swarm DB entities."
   )
   parser.add_argument("action", choices=["create", "get"])
-  parser.add_argument("entity", choices=["ClusterPolicies", "ClusterServices", "SwarmSecrets"])
+  parser.add_argument("entity", choices=["ClusterPolicies", "ClusterServices", "ClusterPolicyAffinityRules", "ClusterPolicyMeasurementRules", "SwarmSecrets"])
   # Positional optional id (first non-key=value), like the original script
   parser.add_argument("positional_id", nargs="?", help="Optional positional id")
 
@@ -322,6 +442,15 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
   parser.add_argument("--version", default=None)
   parser.add_argument("--location")
   parser.add_argument("--omit-command-init", dest="omit_command_init", action="store_true")
+
+  # ClusterPolicyAffinityRules options
+  parser.add_argument("--target_cluster_policy")
+  parser.add_argument("--affinity_type")
+
+  # ClusterPolicyMeasurementRules options
+  parser.add_argument("--measurement_type")
+  parser.add_argument("--condition")
+  parser.add_argument("--jitter", type=int)
 
   # SwarmSecrets options
   parser.add_argument("--value")
@@ -366,6 +495,14 @@ def main(argv: List[str]) -> None:
     get_cluster_policies(args, db, engine)
   elif key == "get:ClusterServices":
     get_cluster_services(args, db, engine)
+  elif key == "create:ClusterPolicyAffinityRules":
+    create_cluster_policy_affinity_rules(args, db, engine)
+  elif key == "get:ClusterPolicyAffinityRules":
+    get_cluster_policy_affinity_rules(args, db, engine)
+  elif key == "create:ClusterPolicyMeasurementRules":
+    create_cluster_policy_measurement_rules(args, db, engine)
+  elif key == "get:ClusterPolicyMeasurementRules":
+    get_cluster_policy_measurement_rules(args, db, engine)
   else:
     print(f"Unsupported command: {args.action} {args.entity}", file=sys.stderr)
     sys.exit(1)

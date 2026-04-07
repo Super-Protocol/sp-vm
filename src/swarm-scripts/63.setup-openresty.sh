@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Note:
 # - The openresty manifest and main.py are provided by the image at:
-#     /etc/swarm-cloud/services/openresty/{manifest.yaml, main.py}
+#     /etc/swarm-services/openresty/{manifest.yaml, main.py}
 #   This script only registers service records in SwarmDB.
 # - openresty depends on Redis + WireGuard clusters (see its stateExpr).
 #
@@ -24,8 +24,8 @@ CLUSTER_ID=${CLUSTER_ID:-openresty}
 
 # Location and manifest inside the container.
 # IMPORTANT: This script runs only on one node. All nodes must have the same location available already
-# (baked into the image), so we point to /etc/swarm-cloud/services/${SERVICE_NAME}.
-LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
+# (baked into the image), so we point to /etc/swarm-services/${SERVICE_NAME}.
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
 MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
@@ -41,7 +41,22 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterPolicy '$CLUSTER_POLICY'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=1 --maxClusters=1
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=3 --maxClusters=1
+fi
+
+AFFINITY_RULE_ID="${CLUSTER_POLICY}:redis-affinity"
+echo "Ensuring ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" >/dev/null 2>&1; then
+  echo "ClusterPolicyAffinityRule '$AFFINITY_RULE_ID' already exists, skipping creation."
+else
+  echo "Creating ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" \
+      --name="redis-affinity" \
+      --cluster_policy="$CLUSTER_POLICY" \
+      --target_cluster_policy="redis" \
+      --affinity_type="positive"
 fi
 
 echo "Ensuring ClusterService '$SERVICE_PK'..."

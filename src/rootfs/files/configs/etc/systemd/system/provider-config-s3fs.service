@@ -1,0 +1,21 @@
+[Unit]
+Description=Mount provider_config from GCS S3 bucket via s3fs
+After=network-online.target
+Wants=network-online.target
+# Must be ready before any service that reads /sp
+Before=swarm-db.service swarm-node.service download-sp-swarm-services.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=infinity
+ExecStart=/bin/bash -c 'until /usr/local/bin/mount-provider-config.sh; do \
+	echo "[provider-config-s3fs] mount failed, retry in 60s"; \
+	sleep 60; \
+done'
+ExecStop=fusermount -uz /sp
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

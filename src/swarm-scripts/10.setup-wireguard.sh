@@ -16,8 +16,8 @@ CLUSTER_POLICY=${CLUSTER_POLICY:-wireguard}
 CLUSTER_ID=${CLUSTER_ID:-wireguard}
 
 # Path to manifest file INSIDE the container (configs are mounted to /configs)
-MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}/manifest.yaml}
-LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
+MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-services/${SERVICE_NAME}/manifest.yaml}
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
 
 if [ ! -f "$MANIFEST_PATH" ]; then
   echo "Manifest not found at: $MANIFEST_PATH" >&2

@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Note:
 # - The rke2 manifest and main.py should be available inside the container at:
-#     /etc/swarm-cloud/services/rke2/manifest.yaml and /etc/swarm-cloud/services/rke2/main.py
+#     /etc/swarm-services/rke2/manifest.yaml and /etc/swarm-services/rke2/main.py
 #   (mount or copy them similarly to the wireguard service)
 #
 # - rke2 depends on a WireGuard cluster existing and sharing nodes with it.
@@ -24,8 +24,8 @@ CLUSTER_POLICY=${CLUSTER_POLICY:-rke2}
 CLUSTER_ID=${CLUSTER_ID:-rke2}
 
 # Path to manifest file INSIDE the container (configs are mounted to /configs)
-MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}/manifest.yaml}
-LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-cloud/services/${SERVICE_NAME}}
+MANIFEST_PATH=${MANIFEST_PATH:-/etc/swarm-services/${SERVICE_NAME}/manifest.yaml}
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
 SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
 
 if [ ! -f "$MANIFEST_PATH" ]; then
@@ -43,6 +43,23 @@ else
     python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY"
 fi
 
+MEASUREMENT_RULE_ID="${CLUSTER_POLICY}:latency"
+echo "Ensuring ClusterPolicyMeasurementRule '$MEASUREMENT_RULE_ID'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyMeasurementRules "$MEASUREMENT_RULE_ID" >/dev/null 2>&1; then
+  echo "ClusterPolicyMeasurementRule '$MEASUREMENT_RULE_ID' already exists, skipping creation."
+else
+  echo "Creating ClusterPolicyMeasurementRule '$MEASUREMENT_RULE_ID'..."
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyMeasurementRules "$MEASUREMENT_RULE_ID" \
+      --name="latency" \
+      --cluster_policy="$CLUSTER_POLICY" \
+      --measurement_type="latency" \
+      --condition="less_than" \
+      --value="10.0" \
+      --jitter=10
+fi
+
 echo "Ensuring ClusterService '$SERVICE_PK'..."
 if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
   python3 "$(dirname "$0")/swarm-cli.py" get ClusterServices "$SERVICE_PK" >/dev/null 2>&1; then
@@ -50,7 +67,7 @@ if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 else
   echo "Creating ClusterService '$SERVICE_PK'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SERVICE_PK" --name="$SERVICE_NAME" --cluster_policy="$CLUSTER_POLICY" --version="$SERVICE_VERSION" --location="$LOCATION_PATH" --omit-command-init
+    python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SERVICE_PK" --name="$SERVICE_NAME" --cluster_policy="$CLUSTER_POLICY" --version="$SERVICE_VERSION" --location="$LOCATION_PATH"
 fi
 
 echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."

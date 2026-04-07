@@ -1,0 +1,19 @@
+[Unit]
+Description=Swarm Initialization (download binaries, configure services, seed swarm-db)
+After=network-online.target pki-cert-init.service
+Wants=network-online.target
+Requires=pki-cert-init.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=infinity
+ExecStart=/bin/bash -c 'until /bin/bash /usr/local/bin/swarm-init.sh; do \
+	echo "[swarm-init] failed, retry in 10s"; \
+	sleep 10; \
+done'
+StandardOutput=append:/var/log/swarm-init.log
+StandardError=append:/var/log/swarm-init.log
+
+[Install]
+WantedBy=multi-user.target

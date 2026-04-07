@@ -30,14 +30,15 @@ function cleanup_rootfs() {
             g++ \
             gcc';
     rm -rf ${OUTPUTDIR}/tmp/*;
-    rm -rf ${OUTPUTDIR}/usr/share/{bash-completion,bug,doc,info,lintian,locale,man,menu,misc,pixmaps,terminfo,zsh};
+    rm -rf ${OUTPUTDIR}/usr/share/{bash-completion,bug,doc,info,lintian,locale,man,menu,misc,pixmaps,zsh};
     find "${OUTPUTDIR}/var/run" -mindepth 1 -maxdepth 1 -exec rm -rf {} \; || true;
     rm -rf ${OUTPUTDIR}/var/{cache,lib,log,tmp};
     rm -f "${OUTPUTDIR}/etc/systemd/system/sshd.service"
     rm -f "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/ssh.service"
     rm -f "${OUTPUTDIR}/etc/systemd/system/sockets.target.wants/ssh.socket"
     rm -f "${OUTPUTDIR}/etc/systemd/system/ssh.service.requires/ssh.socket"
-    rm -f "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"
+    # Keep serial console for debugging
+    # rm -f "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"
 }
 
 chroot_init;
