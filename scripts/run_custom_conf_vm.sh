@@ -14,6 +14,7 @@ Example:
     --zone us-central1-a \
     --machine-type n2d-standard-2 \
     --confidential-compute-type SEV_SNP \
+    --spot \
     --data-disk data-disk \
     --data-disk-size 50GB \
     --data-disk-type pd-standard
@@ -26,10 +27,11 @@ Parameters:
     --zone <zone> Zone (default: us-central1-a)
     --machine-type <type> Machine type (default: n2d-standard-2)
     --confidential-compute-type <type> SEV_SNP | SEV | TDX (default: SEV_SNP; from CONFIDENTIAL_TYPE=SEVSNP)
+    --spot Create the VM as a Spot VM
     --guest-os-features <csv> Default: UEFI_COMPATIBLE,TDX_CAPABLE,SEV_CAPABLE,SEV_SNP_CAPABLE,GVNIC
-    --data-disk <name> Data/state disk name (default: data-disk, or \$DISK_NAME)
-    --data-disk-size <size> Disk size (default: 50GB, or \$DISK_SIZE)
-    --data-disk-type <type> Disk type (default: pd-standard, or \$DISK_TYPE)
+    --data-disk <name> Data/state disk name (default: <vm>-data-disk; used only with --data-disk-size)
+    --data-disk-size <size> Create and attach data/state disk of this size (optional)
+    --data-disk-type <type> Disk type (default: pd-standard, or \$DISK_TYPE; used only with --data-disk-size)
     --provider-config <path> Path to the provider_config folder (default: ./provider_config, or \$PROVIDER_CONFIG_DIR)
     --provider-bucket <name> GCS bucket name for provider_config (default: s3-provider-config, or \$PROVIDER_CONFIG_BUCKET)
     --skip-provider-config Skip downloading provider_config
@@ -57,6 +59,10 @@ SKIP_PROVIDER_CONFIG=0
 FORCE_OVERWRITE_IMAGE=0
 FORCE_OVERWRITE_VM=0
 FORCE_OVERWRITE_DISK=0
+SPOT_VM=0
+DATA_DISK=""
+DATA_DISK_SIZE=""
+DATA_DISK_TYPE=""
 
 
 while [[ $# -gt 0 ]]; do
@@ -68,6 +74,7 @@ while [[ $# -gt 0 ]]; do
     --zone) ZONE="${2:-}"; shift 2;;
     --machine-type) MACHINE_TYPE="${2:-}"; shift 2;;
     --confidential-compute-type) CONF_TYPE="${2:-}"; shift 2;;
+    --spot) SPOT_VM=1; shift 1;;
     --guest-os-features) GUEST_OS_FEATURES="${2:-}"; shift 2;;
     --data-disk) DATA_DISK="${2:-}"; shift 2;;
     --data-disk-size) DATA_DISK_SIZE="${2:-}"; shift 2;;
@@ -93,11 +100,13 @@ MACHINE_TYPE="${MACHINE_TYPE:-n2d-standard-2}"
 # Confidential type: read from CONFIDENTIAL_TYPE (SEVSNP/TDX/SEV) or explicit CLI flag
 CONF_TYPE="${CONF_TYPE:-${CONFIDENTIAL_TYPE:-SEVSNP}}"
 GUEST_OS_FEATURES="${GUEST_OS_FEATURES:-UEFI_COMPATIBLE,TDX_CAPABLE,SEV_CAPABLE,SEV_SNP_CAPABLE,GVNIC}"
+STATE_DISK_DEVICE_NAME="${STATE_DISK_DEVICE_NAME:-sp-state}"
 
-# Data/state disk
-DATA_DISK="$VM-data-disk"
-DATA_DISK_SIZE="${DATA_DISK_SIZE:-${DISK_SIZE:-50GB}}"
-DATA_DISK_TYPE="${DATA_DISK_TYPE:-${DISK_TYPE:-pd-standard}}"
+# Data/state disk is optional and created only when --data-disk-size is provided
+if [[ -n "$DATA_DISK_SIZE" ]]; then
+  DATA_DISK="${DATA_DISK:-$VM-data-disk}"
+  DATA_DISK_TYPE="${DATA_DISK_TYPE:-${DISK_TYPE:-pd-standard}}"
+fi
 
 # Bucket for VM image tarball
 BUCKET="${BUCKET:-gs://supa-swarm-bucket-conf-vms}"
@@ -197,9 +206,15 @@ echo "  Bucket: ${BUCKET}/${IMAGE_TAR}"
 echo "  Image: ${IMAGE_NAME}"
 echo "  Zone: ${ZONE}"
 echo "  Instance: ${VM}"
-echo "  Disk: ${DATA_DISK} (${DATA_DISK_SIZE}, ${DATA_DISK_TYPE})"
+if [[ -n "$DATA_DISK_SIZE" ]]; then
+  echo "  Disk: ${DATA_DISK} (${DATA_DISK_SIZE}, ${DATA_DISK_TYPE})"
+  echo "  State disk device-name: ${STATE_DISK_DEVICE_NAME}"
+else
+  echo "  Disk: disabled"
+fi
 echo "  Machine type: ${MACHINE_TYPE}"
 echo "  Confidential type: ${CONF_TYPE}"
+echo "  Spot VM: ${SPOT_VM}"
 echo "  Raw disk: ${RAW}"
 if [[ "$SKIP_PROVIDER_CONFIG" -eq 0 ]]; then
   echo "  Provider config: ${PROVIDER_CONFIG_DIR}"
@@ -269,31 +284,33 @@ if [[ "$VM_EXISTS" -eq 1 ]] && [[ "$FORCE_OVERWRITE_VM" -eq 1 ]]; then
   wait_for_instance_absent "${VM}"
 fi
 
-echo "==> checking if disk exists: ${DATA_DISK}"
-DISK_EXISTS=0
-if run gcloud compute disks describe "${DATA_DISK}" --project "${PROJECT_ID}" --zone "${ZONE}" >/dev/null 2>&1; then
-  DISK_EXISTS=1
-fi
-
-if [[ "$DISK_EXISTS" -eq 1 ]] && [[ "$FORCE_OVERWRITE_DISK" -eq 0 ]]; then
-  echo "==> Disk ${DATA_DISK} already exists and --force-overwrite-disk not specified. Skipping creation."
-else
-  if [[ "$DISK_EXISTS" -eq 1 ]]; then
-      echo "==> Deleting data disk if it already exists: ${DATA_DISK} (project ${PROJECT_ID}, zone ${ZONE})"
-      run gcloud compute disks delete "${DATA_DISK}" \
-          --project "${PROJECT_ID}" \
-          --zone "${ZONE}" \
-          --quiet || true
-      echo "==> Waiting for disk deletion: ${DATA_DISK}"
-      wait_for_disk_absent "${DATA_DISK}"
+if [[ -n "$DATA_DISK_SIZE" ]]; then
+  echo "==> checking if disk exists: ${DATA_DISK}"
+  DISK_EXISTS=0
+  if run gcloud compute disks describe "${DATA_DISK}" --project "${PROJECT_ID}" --zone "${ZONE}" >/dev/null 2>&1; then
+    DISK_EXISTS=1
   fi
 
-  echo "==> Creating data disk: ${DATA_DISK} (${DATA_DISK_SIZE}, ${DATA_DISK_TYPE}) in project ${PROJECT_ID}"
-  run gcloud compute disks create "${DATA_DISK}" \
-    --project "${PROJECT_ID}" \
-    --size "${DATA_DISK_SIZE}" \
-    --type "${DATA_DISK_TYPE}" \
-    --zone "${ZONE}"
+  if [[ "$DISK_EXISTS" -eq 1 ]] && [[ "$FORCE_OVERWRITE_DISK" -eq 0 ]]; then
+    echo "==> Disk ${DATA_DISK} already exists and --force-overwrite-disk not specified. Skipping creation."
+  else
+    if [[ "$DISK_EXISTS" -eq 1 ]]; then
+        echo "==> Deleting data disk if it already exists: ${DATA_DISK} (project ${PROJECT_ID}, zone ${ZONE})"
+        run gcloud compute disks delete "${DATA_DISK}" \
+            --project "${PROJECT_ID}" \
+            --zone "${ZONE}" \
+            --quiet || true
+        echo "==> Waiting for disk deletion: ${DATA_DISK}"
+        wait_for_disk_absent "${DATA_DISK}"
+    fi
+
+    echo "==> Creating data disk: ${DATA_DISK} (${DATA_DISK_SIZE}, ${DATA_DISK_TYPE}) in project ${PROJECT_ID}"
+    run gcloud compute disks create "${DATA_DISK}" \
+      --project "${PROJECT_ID}" \
+      --size "${DATA_DISK_SIZE}" \
+      --type "${DATA_DISK_TYPE}" \
+      --zone "${ZONE}"
+  fi
 fi
 
 # Provider_config handling
@@ -412,9 +429,15 @@ VM_CREATE_CMD=(
   --image "${IMAGE}"
   --tags=http-server,https-server,ssh-server,swarm
   --network-interface=nic-type=GVNIC
-  --disk="name=${DATA_DISK},mode=rw"
 )
 
+if [[ -n "$DATA_DISK_SIZE" ]]; then
+  VM_CREATE_CMD+=(--disk="name=${DATA_DISK},mode=rw,device-name=${STATE_DISK_DEVICE_NAME}")
+fi
+
+if [[ "$SPOT_VM" -eq 1 ]]; then
+  VM_CREATE_CMD+=(--provisioning-model=SPOT)
+fi
 
 if [[ -n "$PROVIDER_METADATA" ]]; then
   VM_CREATE_CMD+=(--metadata "${PROVIDER_METADATA}")
@@ -481,5 +504,4 @@ Alias for metadata:
     echo "169.254.169.254 metadata.google.internal metadata" | tee -a /etc/hosts
 EOF
 fi
-
 
