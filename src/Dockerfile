@@ -203,16 +203,21 @@ RUN /buildroot/files/scripts/setup_sshd_config.sh
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
 
 # copy pki-authority service files
-ADD rootfs/files/scripts/install_lxc_deps.sh /buildroot/files/scripts/
-ADD rootfs/files/configs/pki-service/pki-authority.service "${OUTPUTDIR}/etc/systemd/system"
-RUN ln -s /etc/systemd/system/pki-authority.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority.service"
-ADD rootfs/files/configs/pki-service/create-and-configure-pki.sh "${OUTPUTDIR}/usr/local/bin"
-RUN mkdir -p "${OUTPUTDIR}/root/containers"
-COPY --from=ghcr.io/super-protocol/tee-pki-authority-service-lxc:build-18725490828 /pki-authority.tar "${OUTPUTDIR}/root/containers/pki-authority.tar"
-ADD rootfs/files/configs/pki-service/lxc-template.yaml "${OUTPUTDIR}/root/containers/lxc-template.yaml"
-ADD rootfs/files/configs/pki-service/dnsmasq.conf "${OUTPUTDIR}/etc/lxc/dnsmasq.conf"
-ADD rootfs/files/configs/pki-service/lxc-net "${OUTPUTDIR}/etc/default/lxc-net"
-RUN --security=insecure /buildroot/files/scripts/install_lxc_deps.sh
+RUN mkdir -p "${OUTPUTDIR}/etc/super/containers/pki-authority"
+ADD rootfs/files/configs/pki-service/conf/pki-authority-template.yaml "${OUTPUTDIR}/etc/super/containers/pki-authority/pki-authority-template.yaml"
+RUN mkdir -p "${OUTPUTDIR}/usr/local/bin/pki-authority"
+ADD rootfs/files/configs/pki-service/scripts/*.py "${OUTPUTDIR}/usr/local/bin/pki-authority/"
+ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pki-authority/"
+ADD rootfs/files/configs/pki-service/systemd/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/systemd/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/systemd/pki-vm-mode.service "${OUTPUTDIR}/etc/systemd/system"
+RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-authority-sync"
+ADD rootfs/files/configs/pki-service/conf/secrets-config.yaml "${OUTPUTDIR}/etc/super/pki-authority-sync/secrets-config.yaml"
+RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-cert-generator"
+ADD rootfs/files/configs/pki-service/conf/cert-gen-config-template.yaml "${OUTPUTDIR}/etc/super/pki-cert-generator/cert-gen-config-template.yaml"
+RUN chmod +x "${OUTPUTDIR}"/usr/local/bin/pki-authority/*.py
+RUN ln -s /etc/systemd/system/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-sync.service"
+RUN ln -s /etc/systemd/system/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-cert-init.service"
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
@@ -232,6 +237,8 @@ RUN ln -sf /etc/systemd/system/provider-config-s3fs.service \
 # swarm services
 ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
 RUN ln -sf /etc/systemd/system/swarm-db.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-db.service"
+#ADD rootfs/files/scripts/prepare_swarm_db_config.py ${OUTPUTDIR}/usr/local/bin/prepare_swarm_db_config.py
+#RUN chmod +x ${OUTPUTDIR}/usr/local/bin/prepare_swarm_db_config.py
 ADD rootfs/files/configs/usr/local/bin/swarm-cloud-api.sh ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
 ADD rootfs/files/configs/etc/systemd/system/swarm-node.service ${OUTPUTDIR}/etc/systemd/system/swarm-node.service
 RUN ln -sf /etc/systemd/system/swarm-node.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-node.service"
@@ -302,8 +309,9 @@ RUN --security=insecure bash /buildroot/files/scripts/install_nodejs.sh
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
 ADD rootfs/files/configs/pccs-init/ /buildroot/files/configs/pccs-init/
 RUN --security=insecure /buildroot/files/scripts/install_pccs.sh
-RUN cp /buildroot/files/configs/pccs-init/pccs-init.service "${OUTPUTDIR}/usr/lib/systemd/system/pccs-init.service"
-RUN cp /buildroot/files/configs/pccs-init/pccs-init.sh "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
+ADD rootfs/files/configs/pki-service/sgx_default_qcnl.conf ${OUTPUTDIR}/etc/sgx_default_qcnl.conf
+ADD rootfs/files/configs/pccs-init/pccs-init.service "${OUTPUTDIR}/usr/lib/systemd/system/pccs-init.service"
+ADD rootfs/files/configs/pccs-init/pccs-init.sh "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
 RUN chmod +x "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
 RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pccs-init.service"
 
@@ -315,6 +323,13 @@ ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 
+# install PKI npm components globally (requires python3-venv from setup_runtime_tools)
+ARG PKI_SYNC_CLIENT_VERSION=3.0.5
+ARG PKI_CERT_GENERATOR_VERSION=3.0.10
+ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
+RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh \
+    "${PKI_SYNC_CLIENT_VERSION}" "${PKI_CERT_GENERATOR_VERSION}"
 
 # Python dependencies required by provision plugins (redis-py for rke2/redis plugins, podman-compose for container plugins)
 ADD rootfs/files/scripts/install_python_deps.sh /buildroot/files/scripts/

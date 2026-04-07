@@ -27,6 +27,7 @@ SERVICES_TAG=$(cfg "tags.services")
 SWARM_CLOUD_API_TAG=$(cfg "tags.swarm_cloud_api")
 SWARM_CLOUD_UI_TAG=$(cfg "tags.swarm_cloud_ui")
 AUTH_SERVICE_TAG=$(cfg "tags.auth_service")
+PKI_AUTHORITY_TAG=$(cfg "tags.pki_authority")
 GATEKEEPER_S3_IMAGE=$(cfg "tags.gatekeeper_s3_image")
 GATEKEEPER_HARBOR_IMAGE=$(cfg "tags.gatekeeper_harbor_image")
 
@@ -238,6 +239,7 @@ cat > /etc/swarm/swarm-host-agent.env << EOF
 SWARM_CLOUD_API_TAG=${SWARM_CLOUD_API_TAG}
 SWARM_CLOUD_UI_TAG=${SWARM_CLOUD_UI_TAG}
 AUTH_SERVICE_TAG=${AUTH_SERVICE_TAG}
+PKI_AUTHORITY_TAG=${PKI_AUTHORITY_TAG}
 GATEKEEPER_S3_IMAGE=${GATEKEEPER_S3_IMAGE}
 GATEKEEPER_HARBOR_IMAGE=${GATEKEEPER_HARBOR_IMAGE}
 EOF

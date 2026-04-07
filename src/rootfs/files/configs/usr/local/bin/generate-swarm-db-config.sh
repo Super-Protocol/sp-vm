@@ -2,6 +2,7 @@
 set -euo pipefail
 
 CONFIG="/sp/swarm/config.yaml"
+SWARM_KEY_FILE="/etc/swarm/swarm.key"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [generate-swarm-db-config] $*"; }
 
@@ -20,6 +21,18 @@ ADVERTISE_ADDR=$(cfg "swarm_db.advertise_addr")
 
 [ -z "$NODE_NAME" ] && NODE_NAME=$(hostname)
 
+SWARM_KEY=""
+if [ -f "$SWARM_KEY_FILE" ]; then
+    SWARM_KEY=$(tr -d '[:space:]' < "$SWARM_KEY_FILE")
+    if [ -z "$SWARM_KEY" ]; then
+        log "WARNING: $SWARM_KEY_FILE is empty, memberlist encryption is disabled"
+    else
+        log "loaded memberlist encryption key from $SWARM_KEY_FILE"
+    fi
+else
+    log "WARNING: $SWARM_KEY_FILE not found, memberlist encryption is disabled"
+fi
+
 if [ -z "$ADVERTISE_ADDR" ]; then
     log "auto-detecting external IP..."
     ADVERTISE_ADDR=$(curl -sf --max-time 5 https://myip.wtf/json \
@@ -36,7 +49,7 @@ fi
 log "generating /etc/swarm-db/config.yaml (node=$NODE_NAME, advertise=$ADVERTISE_ADDR)..."
 mkdir -p /etc/swarm-db /var/lib/swarm-db
 
-NODE_NAME_VAL="$NODE_NAME" ADVERTISE_ADDR_VAL="$ADVERTISE_ADDR" \
+NODE_NAME_VAL="$NODE_NAME" ADVERTISE_ADDR_VAL="$ADVERTISE_ADDR" SWARM_KEY_VAL="$SWARM_KEY" \
 python3 - << 'PYEOF'
 import yaml, os
 
@@ -76,6 +89,13 @@ config = {
         'port': 8080,
     },
 }
+
+swarm_key = os.environ.get('SWARM_KEY_VAL', '')
+if swarm_key:
+    config['memberlist']['encryption'] = {
+        'mode': 'static',
+        'static_value': swarm_key,
+    }
 
 with open('/etc/swarm-db/config.yaml', 'w') as f:
     yaml.dump(config, f, default_flow_style=False)
