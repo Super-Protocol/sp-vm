@@ -142,7 +142,7 @@ for asset in data.get('assets', []):
     if not name.endswith('.zip'):
         continue
     asset_id = asset['id']
-    service_name = re.sub(r'^(.+?)-v[\d][^/]*\.zip$', r'\1', name)
+    service_name = re.sub(r'^(.+)-(v[\d.]+[^/]*|develop|main)\.zip$', r'\1', name)
     dest = os.path.join(tmp_dir, name)
 
     subprocess.run(
