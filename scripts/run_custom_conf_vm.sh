@@ -14,7 +14,7 @@ Example:
     --zone us-central1-a \
     --machine-type n2d-standard-2 \
     --confidential-compute-type SEV_SNP \
-    --spot \
+    --run-type spot \
     --data-disk data-disk \
     --data-disk-size 50GB \
     --data-disk-type pd-standard
@@ -27,7 +27,10 @@ Parameters:
     --zone <zone> Zone (default: us-central1-a)
     --machine-type <type> Machine type (default: n2d-standard-2)
     --confidential-compute-type <type> SEV_SNP | SEV | TDX (default: SEV_SNP; from CONFIDENTIAL_TYPE=SEVSNP)
-    --spot Create the VM as a Spot VM
+    --run-type <type> VM run type: spot | flex-start
+    --request-valid-for-duration <dur> Flex-start wait window (default: 5m, or $REQUEST_VALID_FOR_DURATION)
+    --max-run-duration <dur> Flex-start max runtime (default: 7d, or $MAX_RUN_DURATION)
+    --instance-termination-action <v> Flex-start termination action: DELETE | STOP (default: DELETE, or $INSTANCE_TERMINATION_ACTION)
     --guest-os-features <csv> Default: UEFI_COMPATIBLE,TDX_CAPABLE,SEV_CAPABLE,SEV_SNP_CAPABLE,GVNIC
     --data-disk <name> Data/state disk name (default: <vm>-data-disk; used only with --data-disk-size)
     --data-disk-size <size> Create and attach data/state disk of this size (optional)
@@ -59,10 +62,13 @@ SKIP_PROVIDER_CONFIG=0
 FORCE_OVERWRITE_IMAGE=0
 FORCE_OVERWRITE_VM=0
 FORCE_OVERWRITE_DISK=0
-SPOT_VM=0
+RUN_TYPE=""
 DATA_DISK=""
 DATA_DISK_SIZE=""
 DATA_DISK_TYPE=""
+FLEX_REQUEST_VALID_FOR_DURATION=""
+FLEX_MAX_RUN_DURATION=""
+FLEX_INSTANCE_TERMINATION_ACTION=""
 
 
 while [[ $# -gt 0 ]]; do
@@ -74,7 +80,10 @@ while [[ $# -gt 0 ]]; do
     --zone) ZONE="${2:-}"; shift 2;;
     --machine-type) MACHINE_TYPE="${2:-}"; shift 2;;
     --confidential-compute-type) CONF_TYPE="${2:-}"; shift 2;;
-    --spot) SPOT_VM=1; shift 1;;
+    --run-type) RUN_TYPE="${2:-}"; shift 2;;
+    --request-valid-for-duration) FLEX_REQUEST_VALID_FOR_DURATION="${2:-}"; shift 2;;
+    --max-run-duration) FLEX_MAX_RUN_DURATION="${2:-}"; shift 2;;
+    --instance-termination-action) FLEX_INSTANCE_TERMINATION_ACTION="${2:-}"; shift 2;;
     --guest-os-features) GUEST_OS_FEATURES="${2:-}"; shift 2;;
     --data-disk) DATA_DISK="${2:-}"; shift 2;;
     --data-disk-size) DATA_DISK_SIZE="${2:-}"; shift 2;;
@@ -96,11 +105,24 @@ done
 PROJECT_ID="${PROJECT_ID:-supa-swarm}"
 ZONE="${ZONE:-us-central1-a}"
 MACHINE_TYPE="${MACHINE_TYPE:-n2d-standard-2}"
+REQUEST_VALID_FOR_DURATION="${FLEX_REQUEST_VALID_FOR_DURATION:-${REQUEST_VALID_FOR_DURATION:-5m}}"
+MAX_RUN_DURATION="${FLEX_MAX_RUN_DURATION:-${MAX_RUN_DURATION:-7d}}"
+INSTANCE_TERMINATION_ACTION="${FLEX_INSTANCE_TERMINATION_ACTION:-${INSTANCE_TERMINATION_ACTION:-DELETE}}"
 
 # Confidential type: read from CONFIDENTIAL_TYPE (SEVSNP/TDX/SEV) or explicit CLI flag
 CONF_TYPE="${CONF_TYPE:-${CONFIDENTIAL_TYPE:-SEVSNP}}"
 GUEST_OS_FEATURES="${GUEST_OS_FEATURES:-UEFI_COMPATIBLE,TDX_CAPABLE,SEV_CAPABLE,SEV_SNP_CAPABLE,GVNIC}"
 STATE_DISK_DEVICE_NAME="${STATE_DISK_DEVICE_NAME:-sp-state}"
+
+RUN_TYPE="$(printf '%s' "${RUN_TYPE}" | tr '[:upper:]' '[:lower:]')"
+if [[ -n "$RUN_TYPE" && "$RUN_TYPE" != "spot" && "$RUN_TYPE" != "flex-start" ]]; then
+  die "--run-type must be one of: spot, flex-start"
+fi
+
+INSTANCE_TERMINATION_ACTION="$(printf '%s' "$INSTANCE_TERMINATION_ACTION" | tr '[:lower:]' '[:upper:]')"
+if [[ "$INSTANCE_TERMINATION_ACTION" != "DELETE" && "$INSTANCE_TERMINATION_ACTION" != "STOP" ]]; then
+  die "--instance-termination-action must be DELETE or STOP"
+fi
 
 # Data/state disk is optional and created only when --data-disk-size is provided
 if [[ -n "$DATA_DISK_SIZE" ]]; then
@@ -149,6 +171,11 @@ run() {
   else
     "$@"
   fi
+}
+
+supports_flex_start_machine_type() {
+  local type="$1"
+  [[ "$type" == a2-* || "$type" == a3-* || "$type" == a4-* || "$type" == g2-* || "$type" == g4-* || "$type" == h4d-* ]]
 }
 
 wait_for_instance_absent() {
@@ -214,7 +241,12 @@ else
 fi
 echo "  Machine type: ${MACHINE_TYPE}"
 echo "  Confidential type: ${CONF_TYPE}"
-echo "  Spot VM: ${SPOT_VM}"
+echo "  Run type: ${RUN_TYPE:-default}"
+if [[ "$RUN_TYPE" == "flex-start" ]]; then
+  echo "  Flex request-valid-for-duration: ${REQUEST_VALID_FOR_DURATION}"
+  echo "  Flex max-run-duration: ${MAX_RUN_DURATION}"
+  echo "  Flex termination action: ${INSTANCE_TERMINATION_ACTION}"
+fi
 echo "  Raw disk: ${RAW}"
 if [[ "$SKIP_PROVIDER_CONFIG" -eq 0 ]]; then
   echo "  Provider config: ${PROVIDER_CONFIG_DIR}"
@@ -418,6 +450,10 @@ elif [[ "$SKIP_PROVIDER_CONFIG" -eq 0 ]]; then
 fi
 
 echo "==> Create Confidential VM: ${VM} in ${PROJECT_ID}"
+if [[ "$RUN_TYPE" == "flex-start" ]] && ! supports_flex_start_machine_type "${MACHINE_TYPE}"; then
+  die "Machine type ${MACHINE_TYPE} does not support Flex-start"
+fi
+
 VM_CREATE_CMD=(
   gcloud compute instances create "${VM}"
   --project "${PROJECT_ID}"
@@ -435,8 +471,17 @@ if [[ -n "$DATA_DISK_SIZE" ]]; then
   VM_CREATE_CMD+=(--disk="name=${DATA_DISK},mode=rw,device-name=${STATE_DISK_DEVICE_NAME}")
 fi
 
-if [[ "$SPOT_VM" -eq 1 ]]; then
+if [[ "$RUN_TYPE" == "spot" ]]; then
   VM_CREATE_CMD+=(--provisioning-model=SPOT)
+fi
+
+if [[ "$RUN_TYPE" == "flex-start" ]]; then
+  VM_CREATE_CMD+=(
+    --provisioning-model=FLEX_START
+    --request-valid-for-duration "${REQUEST_VALID_FOR_DURATION}"
+    --max-run-duration "${MAX_RUN_DURATION}"
+    --instance-termination-action "${INSTANCE_TERMINATION_ACTION}"
+  )
 fi
 
 if [[ -n "$PROVIDER_METADATA" ]]; then
@@ -504,4 +549,3 @@ Alias for metadata:
     echo "169.254.169.254 metadata.google.internal metadata" | tee -a /etc/hosts
 EOF
 fi
-
