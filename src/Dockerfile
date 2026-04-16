@@ -324,8 +324,8 @@ RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 
 # install PKI npm components globally (requires python3-venv from setup_runtime_tools)
-ARG PKI_SYNC_CLIENT_VERSION=3.0.5
-ARG PKI_CERT_GENERATOR_VERSION=3.0.10
+ARG PKI_SYNC_CLIENT_VERSION=4.0.1
+ARG PKI_CERT_GENERATOR_VERSION=4.0.1
 ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
 RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh \
@@ -405,20 +405,11 @@ RUN test -f Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd
 ### Start ovmf_builder_tdx ###
 FROM ovmf_builder_base AS ovmf_builder_tdx
 WORKDIR /buildroot/src/
-RUN wget -O /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.debian.tar.xz https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.debian.tar.xz
-RUN wget -O /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc
-RUN wget -O /buildroot/src/edk2_2024.05.orig.tar.xz https://code.launchpad.net/~kobuk-team/+archive/ubuntu/tdx/+sourcefiles/edk2/2024.05-2ubuntu0.1+tdx1.0~ppa1/edk2_2024.05.orig.tar.xz
-RUN dpkg-source -x /buildroot/src/edk2_2024.05-2ubuntu0.1+tdx1.0~ppa1.dsc /buildroot/edk2_build
-WORKDIR /buildroot/edk2_build
-# RUN apt update && apt -y build-dep ./
-RUN make -C BaseTools
-ADD bios/files/configs/0001-SuperProtocol_Rtmr0.patch /buildroot/edk2_build/debian/patches/SuperProtocol/
-RUN quilt import -p0 debian/patches/SuperProtocol/0001-SuperProtocol_Rtmr0.patch
-RUN quilt push
-ADD bios/files/scripts/build_ovmf_tdx.sh /buildroot/files/scripts/
-ADD general/files/scripts/log.sh /buildroot/files/scripts/
-RUN /buildroot/files/scripts/build_ovmf_tdx.sh
-RUN test -f Build/OvmfX64/RELEASE_GCC5/FV/OVMF.fd
+ARG OVMF_TDX_SHA256=b07df0e4f75c46408bc7a73c943003cfda6b546c4a7fa8fed2410bd944be35dd
+RUN wget -O /buildroot/src/ovmf_2024.05-2ubuntu0.1+tdx1.0_all.deb https://ppa.launchpadcontent.net/kobuk-team/tdx-release/ubuntu/pool/main/e/edk2/ovmf_2024.05-2ubuntu0.1+tdx1.0_all.deb
+RUN echo "${OVMF_TDX_SHA256}  /buildroot/src/ovmf_2024.05-2ubuntu0.1+tdx1.0_all.deb" | sha256sum -c -
+RUN dpkg-deb -x /buildroot/src/ovmf_2024.05-2ubuntu0.1+tdx1.0_all.deb /buildroot/ovmf_tdx
+RUN test -f /buildroot/ovmf_tdx/usr/share/ovmf/OVMF.fd
 
 ### End ovmf_builder_tdx ###
 
@@ -428,7 +419,7 @@ ARG SP_VM_IMAGE_VERSION
 ARG S3_BUCKET
 COPY --from=image_builder /output /output
 COPY --from=ovmf_builder_sev /buildroot/ovmf/Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd /output/OVMF_AMD.fd
-COPY --from=ovmf_builder_tdx /buildroot/edk2_build/Build/OvmfX64/RELEASE_GCC5/FV/OVMF.fd /output/OVMF.fd
+COPY --from=ovmf_builder_tdx /buildroot/ovmf_tdx/usr/share/ovmf/OVMF.fd /output/OVMF.fd
 COPY --from=kernel_builder /output/boot/vmlinuz-6.12.13-nvidia-gpu-confidential /output/vmlinuz
 ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/generate_vm_json.sh
