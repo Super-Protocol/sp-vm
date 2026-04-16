@@ -25,7 +25,7 @@ function create_base_system() {
         --components=main,universe \
         "$VERSION_CODENAME" \
         "$OUTPUTDIR" \
-        http://us.archive.ubuntu.com/ubuntu/ \
+        http://fr.archive.ubuntu.com/ubuntu/ \
         || log_fail "failed to create base system";
 }
 
