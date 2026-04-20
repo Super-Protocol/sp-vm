@@ -3,6 +3,12 @@ set -euo pipefail
 
 # This script bootstraps the harbor service into SwarmDB via swarm-cli.
 # Run it INSIDE the container. Assumes mysql client and swarm-cli.py are available.
+#
+# Notes:
+# - Aligns with the cloud-init bootstrap: Harbor only registers its own
+#   ClusterPolicy and ClusterService.
+# - Harbor affinities are expected to be expressed by dependent services such as
+#   swarm-gatekeeper-harbor, not by Harbor itself.
 
 DB_HOST=${DB_HOST:-127.0.0.1}
 DB_PORT=${DB_PORT:-3306}
@@ -35,36 +41,6 @@ else
   echo "Creating ClusterPolicy '$CLUSTER_POLICY'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
     python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize="$CLUSTER_MIN_SIZE" --maxSize="$CLUSTER_MAX_SIZE" --maxClusters="$CLUSTER_MAX_CLUSTERS"
-fi
-
-AFFINITY_RULE_ID="${CLUSTER_POLICY}:wireguard-affinity"
-echo "Ensuring ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" >/dev/null 2>&1; then
-  echo "ClusterPolicyAffinityRule '$AFFINITY_RULE_ID' already exists, skipping creation."
-else
-  echo "Creating ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" \
-      --name="wireguard-affinity" \
-      --cluster_policy="$CLUSTER_POLICY" \
-      --target_cluster_policy="wireguard" \
-      --affinity_type="positive"
-fi
-
-AFFINITY_RULE_ID="${CLUSTER_POLICY}:harbor-affinity"
-echo "Ensuring ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" >/dev/null 2>&1; then
-  echo "ClusterPolicyAffinityRule '$AFFINITY_RULE_ID' already exists, skipping creation."
-else
-  echo "Creating ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" \
-      --name="harbor-affinity" \
-      --cluster_policy="$CLUSTER_POLICY" \
-      --target_cluster_policy="harbor" \
-      --affinity_type="positive"
 fi
 
 echo "Ensuring ClusterService '$SERVICE_PK'..."

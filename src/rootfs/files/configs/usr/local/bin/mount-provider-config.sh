@@ -22,7 +22,7 @@ S3_PATH="$(curl -sf   "${METADATA_URL}/s3-path"       -H "${META_HEADER}" || tru
 
 if [[ -z "$ACCESS_KEY" || -z "$SECRET_KEY" || -z "$BUCKET" ]]; then
     log "S3 credentials not found in GCP metadata — /sp will remain empty."
-    exit 0
+    exit 1
 fi
 
 mkdir -p /sp
