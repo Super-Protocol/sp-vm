@@ -331,10 +331,6 @@ RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
 RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh \
     "${PKI_SYNC_CLIENT_VERSION}" "${PKI_CERT_GENERATOR_VERSION}"
 
-# Python dependencies required by provision plugins (redis-py for rke2/redis plugins, podman-compose for container plugins)
-ADD rootfs/files/scripts/install_python_deps.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/install_python_deps.sh
-
 # Extra system packages required by provision plugins at runtime
 # mysql-client: bootstrap-services.sh and provision plugins use mysql CLI to talk to SwarmDB
 # unzip: download-services.sh extracts service archives
@@ -343,6 +339,10 @@ RUN --security=insecure bash /buildroot/files/scripts/install_python_deps.sh
 ADD rootfs/files/configs/etc/dpkg/dpkg.cfg.d/force-confold ${OUTPUTDIR}/etc/dpkg/dpkg.cfg.d/force-confold
 ADD rootfs/files/scripts/install_extra_packages.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_extra_packages.sh
+
+# Python dependencies required by provision plugins (redis-py for rke2/redis plugins, podman-compose for container plugins)
+ADD rootfs/files/scripts/install_python_deps.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_python_deps.sh
 
 # Build info
 ARG SP_VM_IMAGE_VERSION
