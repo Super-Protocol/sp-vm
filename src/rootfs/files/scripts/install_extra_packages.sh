@@ -19,10 +19,19 @@ function install_extra_packages() {
 
     # podman: container runtime used by cloud-init-style swarm services
     #         (cloud-init runs swarm-node as a Podman container; also needed by provision plugins)
+    # netavark + aardvark-dns: Podman's bridge network backend and DNS server.
+    #         Keep these explicit because --no-install-recommends otherwise lets apt pick CNI,
+    #         which does not resolve podman-compose service names such as "postgresql".
+    # passt + slirp4netns: recommended Podman user-mode networking helpers; explicit for parity
+    #         with the cloud-init apt install path while keeping --no-install-recommends.
     # unzip: used to extract service archives (download-services.sh)
     # NOTE: mysql-client, netcat-openbsd, dnsutils are already installed by setup_runtime_tools.sh
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get install -y --no-install-recommends \
         podman \
+        netavark \
+        aardvark-dns \
+        passt \
+        slirp4netns \
         unzip \
         chrony"
 

@@ -6,6 +6,11 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+TimeoutStartSec=infinity
+ExecStartPre=/bin/bash -c 'until [[ -s /sp/swarm/config.yaml ]]; do \
+	echo "[pki-vm-mode] waiting for /sp/swarm/config.yaml"; \
+	sleep 5; \
+done'
 ExecStart=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure_helper.py get-vm-mode --config /sp/swarm/config.yaml --output /etc/swarm/swarm-vm-mode
 
 [Install]
