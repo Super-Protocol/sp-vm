@@ -20,6 +20,9 @@ File: `src/swarm-scripts/swarm-cli.py`
 - Supported entities:
   - `ClusterPolicies`
   - `ClusterServices`
+  - `ClusterPolicyAffinityRules`
+  - `ClusterPolicyMeasurementRules`
+  - `ClusterPolicyPreferenceRules`
   - `SwarmSecrets`
 - The CLI reads DB connection parameters from environment variables (`DB_HOST`, `DB_PORT` / `SWARM_DB_PORT` / `MYSQL_PORT`, `DB_USER`, `DB_NAME`, `DB_PASSWORD`), patches PyMySQL for dev/test environments, and executes parameterized SQL statements.
 
@@ -38,6 +41,26 @@ Typical commands (illustrative, may differ from your exact wrappers):
   --minSize 3 \
   --maxSize 5 \
   --maxClusters 1
+```
+
+Optional clustering tuning (only written when flags are present; matches newer `swarm-node` config / `ClusterPolicies` columns):
+
+```bash
+./swarm-cli.py create ClusterPolicies rke2 \
+  --minSize 1 --maxSize 3 --maxClusters 1 \
+  --preferenceAlpha 0.1 --preferenceBeta 0.1 --clusteringChangeThreshold 0
+```
+
+- Create/update a preference rule (used by `swarm-node` clustering when self-measurements match):
+
+```bash
+./swarm-cli.py create ClusterPolicyPreferenceRules rke2:prefer-gpu \
+  --name prefer-gpu \
+  --cluster_policy rke2 \
+  --measurement_type has_gpu \
+  --condition equals \
+  --value true \
+  --weight 1
 ```
 
 - Create/update a service:
@@ -70,6 +93,8 @@ Recommended pattern:
   - invokes `swarm-cli.py` with the right arguments;
   - optionally logs minimal steps.
 
+`50.setup-rke2.sh` seeds the same `rke2` measurement and preference rules as the `swarm-cloud` test cluster cloud-init template (`examples/test-cluster/cloud-init/user-data.yaml.tpl`): `rke2:latency` (`measurement_type=latency`, `condition=less_than`, `value=10.0`, `jitter=10`) and `rke2:prefer-gpu` (`measurement_type=has_gpu`, `condition=equals`, `value=true`, `weight=1`).
+
 ---
 
 ## Where manifests and deployment stages live
@@ -97,7 +122,7 @@ Sources: `src/repos/swarm-db` and `src/repos/swarm-cloud/libs/swarm-db`
 ### swarm-db
 
 - `swarm-db` is a replicated database that stores the state of the entire Swarm cluster:
-  - cluster formation and placement policies (`ClusterPolicies`, `ClusterPolicyMeasurementRules`, `ClusterPolicyAffinityRules`);
+  - cluster formation and placement policies (`ClusterPolicies`, `ClusterPolicyMeasurementRules`, `ClusterPolicyAffinityRules`, `ClusterPolicyPreferenceRules`);
   - clusters and their nodes (`Clusters`, `ClusterNodes`, `ClusterProperties`, etc.);
   - service descriptions (`ClusterServices`);
   - auxiliary entities (secrets, measurements, quorum policies, etc.).
@@ -115,9 +140,11 @@ Entity: `ClusterPolicy` (`ClusterPolicies` table, see `libs/swarm-db/src/entitie
   - `minSize`: minimum number of nodes in a cluster;
   - `maxSize`: maximum number of nodes in a cluster;
   - `maxClusters`: how many clusters with this policy may exist at all;
+  - optional tuning used by clustering: `preferenceAlpha`, `preferenceBeta`, `clusteringChangeThreshold`;
   - relations to:
     - `ClusterPolicyMeasurementRule` — rules based on measurements (latency, etc.);
     - `ClusterPolicyAffinityRule` — affinity / anti-affinity rules towards other policies;
+    - `ClusterPolicyPreferenceRule` — soft scoring from self-measurements during clustering;
     - `Cluster` — clusters created under this policy;
     - `ClusterService` — services that must be deployed in clusters of this policy.
 

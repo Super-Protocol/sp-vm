@@ -116,11 +116,31 @@ def create_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) 
     fields.append("maxClusters")
     values.append(str(args.maxClusters))
     updates.append("maxClusters=VALUES(maxClusters)")
+  if args.preferenceAlpha is not None:
+    fields.append("preferenceAlpha")
+    values.append(str(args.preferenceAlpha))
+    updates.append("preferenceAlpha=VALUES(preferenceAlpha)")
+  if args.preferenceBeta is not None:
+    fields.append("preferenceBeta")
+    values.append(str(args.preferenceBeta))
+    updates.append("preferenceBeta=VALUES(preferenceBeta)")
+  if args.clusteringChangeThreshold is not None:
+    fields.append("clusteringChangeThreshold")
+    values.append(str(args.clusteringChangeThreshold))
+    updates.append("clusteringChangeThreshold=VALUES(clusteringChangeThreshold)")
 
   # Build parameterized SQL
   fields_csv = ",".join(fields)
   placeholders = ",".join([f":{f}" for f in fields])
-  params = {fields[i]: (int(values[i]) if str(values[i]).isdigit() else values[i]) for i in range(len(fields))}
+  params: dict = {}
+  for i, field in enumerate(fields):
+    raw = values[i]
+    if field in ("preferenceAlpha", "preferenceBeta", "clusteringChangeThreshold"):
+      params[field] = float(raw)
+    elif field in ("minSize", "maxSize", "maxClusters"):
+      params[field] = int(raw) if str(raw).isdigit() else int(float(raw))
+    else:
+      params[field] = raw
   updates_csv = ",".join(updates)
 
   # No debug output; keep script quiet by default
@@ -315,6 +335,77 @@ def get_cluster_policy_measurement_rules(args: argparse.Namespace, db: dict, eng
   print(json.dumps(dict(row)))
 
 
+def create_cluster_policy_preference_rules(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  id_value = args.id or args.positional_id
+  name = args.name
+  cluster_policy = args.cluster_policy
+  measurement_type = args.measurement_type
+  condition = args.condition
+  value = args.value
+  weight = args.weight
+
+  if (
+    not id_value
+    or not name
+    or not cluster_policy
+    or not measurement_type
+    or not condition
+    or value is None
+    or weight is None
+  ):
+    print(
+      "ClusterPolicyPreferenceRules requires id, --name, --cluster_policy, "
+      "--measurement_type, --condition, --value, --weight.",
+      file=sys.stderr,
+    )
+    sys.exit(1)
+
+  sql = (
+    "INSERT INTO ClusterPolicyPreferenceRules "
+    "(id, name, cluster_policy, measurement_type, `condition`, value, weight, created_ts, updated_ts)\n"
+    "VALUES (:id, :name, :cluster_policy, :measurement_type, :condition, :value, :weight,\n"
+    "  UNIX_TIMESTAMP()*1000, UNIX_TIMESTAMP()*1000)\n"
+    "ON DUPLICATE KEY UPDATE\n"
+    "  name=VALUES(name), measurement_type=VALUES(measurement_type),\n"
+    "  `condition`=VALUES(`condition`), value=VALUES(value),\n"
+    "  weight=VALUES(weight), updated_ts=VALUES(updated_ts);\n"
+  )
+  params = {
+    "id": id_value,
+    "name": name,
+    "cluster_policy": cluster_policy,
+    "measurement_type": measurement_type,
+    "condition": condition,
+    "value": value,
+    "weight": float(weight),
+  }
+  run_sql(engine, sql, params)
+  print(f"ClusterPolicyPreferenceRules '{id_value}' upserted.")
+
+
+def get_cluster_policy_preference_rules(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  rule_id = args.id or args.positional_id
+  if not rule_id:
+    print("ClusterPolicyPreferenceRules get requires id.", file=sys.stderr)
+    sys.exit(2)
+
+  sql = (
+    "SELECT id, name, cluster_policy, measurement_type, `condition`, value, weight "
+    "FROM ClusterPolicyPreferenceRules WHERE id = :id LIMIT 1"
+  )
+  try:
+    with engine.connect() as conn:
+      row = conn.execute(text(sql), {"id": rule_id}).mappings().first()
+  except Exception as exc:
+    print(f"MySQL query failed: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+  if row is None:
+    sys.exit(1)
+
+  print(json.dumps(dict(row)))
+
+
 def create_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> None:
   """
   Insert or keep a SwarmSecret.
@@ -354,7 +445,7 @@ def get_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) -> 
     sys.exit(2)
 
   sql = (
-    "SELECT id, minSize, maxSize, maxClusters "
+    "SELECT id, minSize, maxSize, maxClusters, preferenceAlpha, preferenceBeta, clusteringChangeThreshold "
     "FROM ClusterPolicies WHERE id = :id LIMIT 1"
   )
   try:
@@ -424,7 +515,17 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     description="Simple CLI to manage Swarm DB entities."
   )
   parser.add_argument("action", choices=["create", "get"])
-  parser.add_argument("entity", choices=["ClusterPolicies", "ClusterServices", "ClusterPolicyAffinityRules", "ClusterPolicyMeasurementRules", "SwarmSecrets"])
+  parser.add_argument(
+    "entity",
+    choices=[
+      "ClusterPolicies",
+      "ClusterServices",
+      "ClusterPolicyAffinityRules",
+      "ClusterPolicyMeasurementRules",
+      "ClusterPolicyPreferenceRules",
+      "SwarmSecrets",
+    ],
+  )
   # Positional optional id (first non-key=value), like the original script
   parser.add_argument("positional_id", nargs="?", help="Optional positional id")
 
@@ -435,6 +536,9 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
   parser.add_argument("--minSize", type=int)
   parser.add_argument("--maxSize", type=int)
   parser.add_argument("--maxClusters", type=int)
+  parser.add_argument("--preferenceAlpha", type=float, default=None)
+  parser.add_argument("--preferenceBeta", type=float, default=None)
+  parser.add_argument("--clusteringChangeThreshold", type=float, default=None)
 
   # ClusterServices options
   parser.add_argument("--name")
@@ -451,6 +555,9 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
   parser.add_argument("--measurement_type")
   parser.add_argument("--condition")
   parser.add_argument("--jitter", type=int)
+
+  # ClusterPolicyPreferenceRules options
+  parser.add_argument("--weight", type=float)
 
   # SwarmSecrets options
   parser.add_argument("--value")
@@ -503,6 +610,10 @@ def main(argv: List[str]) -> None:
     create_cluster_policy_measurement_rules(args, db, engine)
   elif key == "get:ClusterPolicyMeasurementRules":
     get_cluster_policy_measurement_rules(args, db, engine)
+  elif key == "create:ClusterPolicyPreferenceRules":
+    create_cluster_policy_preference_rules(args, db, engine)
+  elif key == "get:ClusterPolicyPreferenceRules":
+    get_cluster_policy_preference_rules(args, db, engine)
   else:
     print(f"Unsupported command: {args.action} {args.entity}", file=sys.stderr)
     sys.exit(1)
