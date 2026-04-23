@@ -124,10 +124,6 @@ def create_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) 
     fields.append("preferenceBeta")
     values.append(str(args.preferenceBeta))
     updates.append("preferenceBeta=VALUES(preferenceBeta)")
-  if args.clusteringChangeThreshold is not None:
-    fields.append("clusteringChangeThreshold")
-    values.append(str(args.clusteringChangeThreshold))
-    updates.append("clusteringChangeThreshold=VALUES(clusteringChangeThreshold)")
 
   # Build parameterized SQL
   fields_csv = ",".join(fields)
@@ -135,7 +131,7 @@ def create_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) 
   params: dict = {}
   for i, field in enumerate(fields):
     raw = values[i]
-    if field in ("preferenceAlpha", "preferenceBeta", "clusteringChangeThreshold"):
+    if field in ("preferenceAlpha", "preferenceBeta"):
       params[field] = float(raw)
     elif field in ("minSize", "maxSize", "maxClusters"):
       params[field] = int(raw) if str(raw).isdigit() else int(float(raw))
@@ -445,7 +441,7 @@ def get_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) -> 
     sys.exit(2)
 
   sql = (
-    "SELECT id, minSize, maxSize, maxClusters, preferenceAlpha, preferenceBeta, clusteringChangeThreshold "
+    "SELECT id, minSize, maxSize, maxClusters, preferenceAlpha, preferenceBeta "
     "FROM ClusterPolicies WHERE id = :id LIMIT 1"
   )
   try:
@@ -538,7 +534,6 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
   parser.add_argument("--maxClusters", type=int)
   parser.add_argument("--preferenceAlpha", type=float, default=None)
   parser.add_argument("--preferenceBeta", type=float, default=None)
-  parser.add_argument("--clusteringChangeThreshold", type=float, default=None)
 
   # ClusterServices options
   parser.add_argument("--name")

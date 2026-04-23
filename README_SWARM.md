@@ -48,7 +48,7 @@ Optional clustering tuning (only written when flags are present; matches newer `
 ```bash
 ./swarm-cli.py create ClusterPolicies rke2 \
   --minSize 1 --maxSize 3 --maxClusters 1 \
-  --preferenceAlpha 0.1 --preferenceBeta 0.1 --clusteringChangeThreshold 0
+  --preferenceAlpha 0.1 --preferenceBeta 0.1
 ```
 
 - Create/update a preference rule (used by `swarm-node` clustering when self-measurements match):
@@ -140,7 +140,7 @@ Entity: `ClusterPolicy` (`ClusterPolicies` table, see `libs/swarm-db/src/entitie
   - `minSize`: minimum number of nodes in a cluster;
   - `maxSize`: maximum number of nodes in a cluster;
   - `maxClusters`: how many clusters with this policy may exist at all;
-  - optional tuning used by clustering: `preferenceAlpha`, `preferenceBeta`, `clusteringChangeThreshold`;
+  - optional tuning used by clustering: `preferenceAlpha`, `preferenceBeta`;
   - relations to:
     - `ClusterPolicyMeasurementRule` — rules based on measurements (latency, etc.);
     - `ClusterPolicyAffinityRule` — affinity / anti-affinity rules towards other policies;
