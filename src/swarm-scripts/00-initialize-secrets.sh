@@ -34,8 +34,8 @@ AUTH_SERVICE_YAML=""
 AUTH_SERVICE_YAML_PATH="/sp/swarm/auth-service.yaml"
 [ -f "$AUTH_SERVICE_YAML_PATH" ] && AUTH_SERVICE_YAML=$(cat "$AUTH_SERVICE_YAML_PATH")
 
-EVIDENCE_SIGN_KEY=$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 2>/dev/null)
 SWARM_INIT_CERTS_DIR=${SWARM_INIT_CERTS_DIR:-/etc/super/certs/swarm-init}
+EVIDENCE_SIGN_KEY=""
 
 SWARM_INIT_CERT_SECRET_KEYS=(
   "root_basic_cert"
@@ -95,6 +95,8 @@ ensure_swarm_init_cert_secrets() {
     prefixed_secret_key="pki_${secret_key}"
     secret_value="$(cat "$cert_path")"
     ensure_secret "$prefixed_secret_key" "$secret_value"
+
+    [ "$secret_key" = "subroot_evidence_basic_key" ] && EVIDENCE_SIGN_KEY="$secret_value"
   done
 
   if [ -z "$SWARM_INIT_CERTS_DIR" ] || [ "$SWARM_INIT_CERTS_DIR" = "/" ]; then
@@ -116,5 +118,5 @@ ensure_secret "base_domain" "$BASE_DOMAIN"
 ensure_secret "swarm_domain" "$SWARM_DOMAIN"
 ensure_secret "pki_domain" "$PKI_DOMAIN"
 ensure_secret "auth_service_yaml" "$AUTH_SERVICE_YAML"
-ensure_secret "evidence_sign_key" "$EVIDENCE_SIGN_KEY"
 ensure_swarm_init_cert_secrets
+ensure_secret "evidence_sign_key" "$EVIDENCE_SIGN_KEY"
