@@ -1,7 +1,14 @@
 # syntax=docker/dockerfile:1-labs
 
+### Base image with custom apt mirror ###
+FROM ubuntu:24.04 AS base
+ARG APT_MIRROR=de.archive.ubuntu.com
+RUN sed -i "s|http://archive.ubuntu.com/ubuntu|http://${APT_MIRROR}/ubuntu|g; \
+            s|http://security.ubuntu.com/ubuntu|http://${APT_MIRROR}/ubuntu|g" \
+    /etc/apt/sources.list.d/ubuntu.sources
+
 ### Start busybox ###
-FROM ubuntu:24.04 AS busybox_builder
+FROM base AS busybox_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential
 ARG busybox_version=1_36_1
 ADD https://github.com/mirror/busybox/archive/refs/tags/${busybox_version}.tar.gz /tmp/busybox-${busybox_version}.tar.gz
@@ -14,7 +21,7 @@ RUN cp /tmp/busybox-${busybox_version}/busybox /initramfs-root/sbin/busybox
 ### End busybox ###
 
 ### Start util_linux ###
-FROM ubuntu:24.04 AS util_linux_builder
+FROM base AS util_linux_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential
 ARG util_linux_version=2.41
 ADD https://www.kernel.org/pub/linux/utils/util-linux/v${util_linux_version}/util-linux-${util_linux_version}.tar.gz /tmp/util-linux-${util_linux_version}.tar.gz
@@ -30,7 +37,7 @@ RUN cp /tmp/util-linux-${util_linux_version}/lsblk /initramfs-root/sbin/lsblk
 ### End util_linux ###
 
 ### Start lvm2 ###
-FROM ubuntu:24.04 AS lvm2_builder
+FROM base AS lvm2_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential git libblkid-dev libaio-dev uuid-dev pkg-config
 ARG lvm2_repo=https://github.com/lvmteam/lvm2
 ARG lvm2_version=v2_03_16
@@ -42,7 +49,7 @@ RUN make install
 ### End lvm2 ###
 
 ### Start cryptsetup ###
-FROM ubuntu:24.04 AS cryptsetup_builder
+FROM base AS cryptsetup_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential git libblkid-dev libaio-dev autoconf automake autopoint libtool gettext libssl-dev zlib1g-dev libseccomp2 libseccomp-dev uuid-dev pkg-config libgcrypt20-dev libpopt-dev libjson-c-dev
 COPY --from=lvm2_builder /initramfs-root /initramfs-root
 COPY --from=lvm2_builder /tmp/build-root/libdm/libdevmapper.pc /usr/lib/pkgconfig/devmapper.pc
@@ -60,7 +67,7 @@ RUN strip /initramfs-root/sbin/cryptsetup.static
 ### End cryptsetup ###
 
 ### Start gen_init_cpio ###
-FROM ubuntu:24.04 AS gen_init_cpio_builder
+FROM base AS gen_init_cpio_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential
 RUN apt -y install git
 RUN git clone --depth 1 --filter=blob:none --sparse https://github.com/torvalds/linux.git /tmp/linux
@@ -72,7 +79,7 @@ RUN install gen_init_cpio /usr/sbin/
 ### End gen_init_cpio ###
 
 ### Start e2fsprogs ###
-FROM ubuntu:24.04 AS e2fsprogs_builder
+FROM base AS e2fsprogs_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential
 ARG e2fsprogs_version=1.47.3
 ADD https://github.com/tytso/e2fsprogs/archive/refs/tags/v${e2fsprogs_version}.tar.gz /tmp/e2fsprogs-${e2fsprogs_version}.tar.gz
@@ -100,7 +107,7 @@ RUN gen_init_cpio /initramfs-root/initramfs.list | gzip -9 -n > /initramfs-root/
 ### End  ###
 
 ### Start kernel ###
-FROM ubuntu:24.04 AS kernel_builder
+FROM base AS kernel_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential curl libssl-dev bc elfutils libelf-dev bison flex cpio kmod rsync debhelper
 ARG KERNEL_VERSION=6.12.13
 
@@ -356,7 +363,7 @@ RUN --security=insecure /buildroot/files/scripts/cleanup_rootfs.sh
 ### End rootfs ###
 
 ### Start image ###
-FROM ubuntu:24.04 AS image_builder
+FROM base AS image_builder
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt update && apt -y install qemu-utils grub-pc parted udev fdisk e2fsprogs dosfstools kpartx cryptsetup-bin
 RUN apt -y install grub-efi  # this needs to be installed separately!
@@ -378,7 +385,7 @@ RUN --mount=type=bind,target=/output/rootfs,readonly,from=rootfs_builder,source=
 ### End image ###
 
 ### Start ovmf_builder_base ###
-FROM ubuntu:24.04 AS ovmf_builder_base
+FROM base AS ovmf_builder_base
 RUN apt update && apt install -y wget gcc make build-essential git uuid-dev python-is-python3 nasm iasl dpkg-dev lsb-release quilt
 
 WORKDIR /buildroot
@@ -414,7 +421,7 @@ RUN test -f /buildroot/ovmf_tdx/usr/share/ovmf/OVMF.fd
 ### End ovmf_builder_tdx ###
 
 ### Start vm_json_builder ###
-FROM ubuntu:24.04 AS vm_json_builder
+FROM base AS vm_json_builder
 ARG SP_VM_IMAGE_VERSION
 ARG S3_BUCKET
 COPY --from=image_builder /output /output
