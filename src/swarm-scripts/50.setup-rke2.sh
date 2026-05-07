@@ -56,8 +56,8 @@ else
       --cluster_policy="$CLUSTER_POLICY" \
       --measurement_type="latency" \
       --condition="less_than" \
-      --value="10.0" \
-      --jitter=10
+      --value="100.0" \
+      --jitter=50
 fi
 
 PREFERENCE_RULE_ID="${CLUSTER_POLICY}:prefer-gpu"
