@@ -10,7 +10,6 @@ set -euo pipefail
 #     ${LOCATION_PATH}/manifest.yaml
 #   If you don't have a manifest yet, set ALLOW_MISSING_MANIFEST=1 to still
 #   register the ClusterService (manifest will be stored as NULL).
-# - auth-service depends on CockroachDB through an affinity rule below.
 #   Runtime DB details are still resolved by the service manifest/provision worker.
 
 DB_HOST=${DB_HOST:-127.0.0.1}
@@ -44,27 +43,6 @@ if [ ! -f "$MANIFEST_PATH" ]; then
 	fi
 fi
 
-ensure_affinity_rule() {
-	local rule_id="$1"
-	local rule_name="$2"
-	local target_policy="$3"
-	local affinity_type="$4"
-
-	echo "Ensuring ClusterPolicyAffinityRule '$rule_id'..."
-	if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-		python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$rule_id" >/dev/null 2>&1; then
-		echo "ClusterPolicyAffinityRule '$rule_id' already exists, skipping creation."
-	else
-		echo "Creating ClusterPolicyAffinityRule '$rule_id'..."
-		DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-			python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$rule_id" \
-				--name="$rule_name" \
-				--cluster_policy="$CLUSTER_POLICY" \
-				--target_cluster_policy="$target_policy" \
-				--affinity_type="$affinity_type"
-	fi
-}
-
 echo "Ensuring ClusterPolicy '$CLUSTER_POLICY'..."
 if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
 	python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicies "$CLUSTER_POLICY" >/dev/null 2>&1; then
@@ -88,8 +66,6 @@ else
 			--version="$SERVICE_VERSION" \
 			--location="$LOCATION_PATH"
 fi
-
-ensure_affinity_rule "${CLUSTER_POLICY}:cockroachdb-affinity" "cockroachdb-affinity" "cockroachdb" "positive"
 
 echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."
 

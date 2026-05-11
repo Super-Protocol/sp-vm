@@ -8,7 +8,6 @@ set -euo pipefail
 # - The swarm-gatekeeper-s3 manifest and main.py are provided by the image at:
 #     /etc/swarm-services/swarm-gatekeeper-s3/{manifest.yaml, main.py}
 #   This script only registers ClusterPolicy and ClusterService records in SwarmDB.
-# - swarm-gatekeeper-s3 has affinity rules towards wireguard and minio clusters.
 # - This script is intentionally numbered after wireguard (10) and minio (67).
 
 DB_HOST=${DB_HOST:-127.0.0.1}
@@ -42,36 +41,6 @@ else
   echo "Creating ClusterPolicy '$CLUSTER_POLICY'..."
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
     python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize="$CLUSTER_MIN_SIZE" --maxSize="$CLUSTER_MAX_SIZE" --maxClusters="$CLUSTER_MAX_CLUSTERS"
-fi
-
-AFFINITY_RULE_ID="${CLUSTER_POLICY}:wireguard-affinity"
-echo "Ensuring ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" >/dev/null 2>&1; then
-  echo "ClusterPolicyAffinityRule '$AFFINITY_RULE_ID' already exists, skipping creation."
-else
-  echo "Creating ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" \
-      --name="wireguard-affinity" \
-      --cluster_policy="$CLUSTER_POLICY" \
-      --target_cluster_policy="wireguard" \
-      --affinity_type="positive"
-fi
-
-AFFINITY_RULE_ID="${CLUSTER_POLICY}:minio-affinity"
-echo "Ensuring ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-  python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" >/dev/null 2>&1; then
-  echo "ClusterPolicyAffinityRule '$AFFINITY_RULE_ID' already exists, skipping creation."
-else
-  echo "Creating ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
-  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" \
-      --name="minio-affinity" \
-      --cluster_policy="$CLUSTER_POLICY" \
-      --target_cluster_policy="minio" \
-      --affinity_type="positive"
 fi
 
 echo "Ensuring ClusterService '$SERVICE_PK'..."
