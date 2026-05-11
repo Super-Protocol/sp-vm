@@ -31,7 +31,7 @@ function install_nvidia_driver() {
     chroot \
         "$OUTPUTDIR" \
         /bin/bash \
-        -c 'DEBIAN_FRONTEND=noninteractive apt update && apt install -y --no-install-recommends nvidia-driver-575-open nvidia-container-toolkit';
+        -c 'DEBIAN_FRONTEND=noninteractive apt update && apt install -y --no-install-recommends nvidia-driver-580-open nvidia-container-toolkit';
 }
 
 chroot_init;
