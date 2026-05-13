@@ -234,7 +234,7 @@ TAR_BASENAME="${IMAGE}.tar.gz"
 IMAGE_TAR="${TAR_BASENAME}"
 IMAGE_NAME="${IMAGE}"
 
-# Normalize confidential VM type (default SEV-SNP)
+# Normalize confidential VM type (default is set above; currently NONE)
 case "${CONF_TYPE}" in
   SEVSNP|sev-snp|SEV-SNP|sev_snp|SEV_SNP|SevSnp|Sev-Snp) CONF_TYPE="SEV_SNP" ;;
   TDX|tdx|Tdx) CONF_TYPE="TDX" ;;
