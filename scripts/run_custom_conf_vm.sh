@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Run Confidential VM in GCP.
+Run VM in GCP.
 
 Example:
   ./run_custom_conf_vm.sh \
@@ -13,7 +13,7 @@ Example:
     --vm sev-snp-guest-test \
     --zone us-central1-a \
     --machine-type n2d-standard-2 \
-    --confidential-compute-type SEV_SNP \
+    --confidential-compute-type TDX \
     --run-type spot \
     --data-disk data-disk \
     --data-disk-size 50GB \
@@ -26,7 +26,9 @@ Parameters:
     --vm <name> VM name (default: sev-snp-guest-test, or \$INSTANCE_NAME)
     --zone <zone> Zone (default: us-central1-a)
     --machine-type <type> Machine type (default: n2d-standard-2)
-    --confidential-compute-type <type> SEV_SNP | SEV | TDX (default: SEV_SNP; from CONFIDENTIAL_TYPE=SEVSNP)
+    --confidential-compute-type <type> SEV_SNP | SEV | TDX | NONE (default: NONE; from CONFIDENTIAL_TYPE)
+    --accelerator-type <type> GPU accelerator type, for example: nvidia-tesla-t4
+    --accelerator-count <count> GPU accelerator count (default: 1 when --accelerator-type is set)
     --run-type <type> VM run type: spot | flex-start
     --request-valid-for-duration <dur> Flex-start wait window (default: 5m, or $REQUEST_VALID_FOR_DURATION)
     --max-run-duration <dur> Flex-start max runtime (default: 7d, or $MAX_RUN_DURATION)
@@ -69,6 +71,8 @@ DATA_DISK_TYPE=""
 FLEX_REQUEST_VALID_FOR_DURATION=""
 FLEX_MAX_RUN_DURATION=""
 FLEX_INSTANCE_TERMINATION_ACTION=""
+ACCELERATOR_TYPE=""
+ACCELERATOR_COUNT=""
 
 
 while [[ $# -gt 0 ]]; do
@@ -80,6 +84,8 @@ while [[ $# -gt 0 ]]; do
     --zone) ZONE="${2:-}"; shift 2;;
     --machine-type) MACHINE_TYPE="${2:-}"; shift 2;;
     --confidential-compute-type) CONF_TYPE="${2:-}"; shift 2;;
+    --accelerator-type) ACCELERATOR_TYPE="${2:-}"; shift 2;;
+    --accelerator-count) ACCELERATOR_COUNT="${2:-}"; shift 2;;
     --run-type) RUN_TYPE="${2:-}"; shift 2;;
     --request-valid-for-duration) FLEX_REQUEST_VALID_FOR_DURATION="${2:-}"; shift 2;;
     --max-run-duration) FLEX_MAX_RUN_DURATION="${2:-}"; shift 2;;
@@ -109,10 +115,15 @@ REQUEST_VALID_FOR_DURATION="${FLEX_REQUEST_VALID_FOR_DURATION:-${REQUEST_VALID_F
 MAX_RUN_DURATION="${FLEX_MAX_RUN_DURATION:-${MAX_RUN_DURATION:-7d}}"
 INSTANCE_TERMINATION_ACTION="${FLEX_INSTANCE_TERMINATION_ACTION:-${INSTANCE_TERMINATION_ACTION:-DELETE}}"
 
-# Confidential type: read from CONFIDENTIAL_TYPE (SEVSNP/TDX/SEV) or explicit CLI flag
-CONF_TYPE="${CONF_TYPE:-${CONFIDENTIAL_TYPE:-SEVSNP}}"
+# Confidential type: read from CONFIDENTIAL_TYPE (SEVSNP/TDX/SEV/NONE) or explicit CLI flag
+CONF_TYPE="${CONF_TYPE:-${CONFIDENTIAL_TYPE:-NONE}}"
 GUEST_OS_FEATURES="${GUEST_OS_FEATURES:-UEFI_COMPATIBLE,TDX_CAPABLE,SEV_CAPABLE,SEV_SNP_CAPABLE,GVNIC}"
 STATE_DISK_DEVICE_NAME="${STATE_DISK_DEVICE_NAME:-sp-state}"
+if [[ -n "$ACCELERATOR_TYPE" ]]; then
+  ACCELERATOR_COUNT="${ACCELERATOR_COUNT:-1}"
+elif [[ -n "$ACCELERATOR_COUNT" ]]; then
+  die "--accelerator-count requires --accelerator-type"
+fi
 
 RUN_TYPE="$(printf '%s' "${RUN_TYPE}" | tr '[:upper:]' '[:lower:]')"
 if [[ -n "$RUN_TYPE" && "$RUN_TYPE" != "spot" && "$RUN_TYPE" != "flex-start" ]]; then
@@ -175,6 +186,9 @@ run() {
 
 supports_flex_start_machine_type() {
   local type="$1"
+  if [[ "$type" == n1-* && -n "$ACCELERATOR_TYPE" ]]; then
+    return 0
+  fi
   [[ "$type" == a2-* || "$type" == a3-* || "$type" == a4-* || "$type" == g2-* || "$type" == g4-* || "$type" == h4d-* ]]
 }
 
@@ -220,11 +234,12 @@ TAR_BASENAME="${IMAGE}.tar.gz"
 IMAGE_TAR="${TAR_BASENAME}"
 IMAGE_NAME="${IMAGE}"
 
-# Normalize confidential VM type (default SEV-SNP)
+# Normalize confidential VM type (default is set above; currently NONE)
 case "${CONF_TYPE}" in
   SEVSNP|sev-snp|SEV-SNP|sev_snp|SEV_SNP|SevSnp|Sev-Snp) CONF_TYPE="SEV_SNP" ;;
   TDX|tdx|Tdx) CONF_TYPE="TDX" ;;
   SEV|sev|Sev) CONF_TYPE="SEV" ;;
+  NONE|none|None|NO|no|No|FALSE|false|False|DISABLED|disabled|Disabled) CONF_TYPE="NONE" ;;
 esac
 
 echo "Launch parameters:"
@@ -241,6 +256,11 @@ else
 fi
 echo "  Machine type: ${MACHINE_TYPE}"
 echo "  Confidential type: ${CONF_TYPE}"
+if [[ -n "$ACCELERATOR_TYPE" ]]; then
+  echo "  Accelerator: type=${ACCELERATOR_TYPE},count=${ACCELERATOR_COUNT}"
+else
+  echo "  Accelerator: disabled"
+fi
 echo "  Run type: ${RUN_TYPE:-default}"
 if [[ "$RUN_TYPE" == "flex-start" ]]; then
   echo "  Flex request-valid-for-duration: ${REQUEST_VALID_FOR_DURATION}"
@@ -449,7 +469,11 @@ elif [[ "$SKIP_PROVIDER_CONFIG" -eq 0 ]]; then
   echo "==> Skipping provider_config: directory ${PROVIDER_CONFIG_DIR} not found"
 fi
 
-echo "==> Create Confidential VM: ${VM} in ${PROJECT_ID}"
+if [[ "$CONF_TYPE" == "NONE" ]]; then
+  echo "==> Create VM: ${VM} in ${PROJECT_ID}"
+else
+  echo "==> Create Confidential VM: ${VM} in ${PROJECT_ID}"
+fi
 if [[ "$RUN_TYPE" == "flex-start" ]] && ! supports_flex_start_machine_type "${MACHINE_TYPE}"; then
   die "Machine type ${MACHINE_TYPE} does not support Flex-start"
 fi
@@ -460,12 +484,21 @@ VM_CREATE_CMD=(
   --zone "${ZONE}"
   --machine-type "${MACHINE_TYPE}"
   --maintenance-policy=TERMINATE
-  --confidential-compute-type "${CONF_TYPE}"
-  --enable-nested-virtualization
   --image "${IMAGE}"
   --tags=http-server,https-server,ssh-server,swarm
   --network-interface=nic-type=GVNIC
 )
+
+if [[ "$CONF_TYPE" != "NONE" ]]; then
+  VM_CREATE_CMD+=(
+    --confidential-compute-type "${CONF_TYPE}"
+    --enable-nested-virtualization
+  )
+fi
+
+if [[ -n "$ACCELERATOR_TYPE" ]]; then
+  VM_CREATE_CMD+=(--accelerator "type=${ACCELERATOR_TYPE},count=${ACCELERATOR_COUNT}")
+fi
 
 if [[ -n "$DATA_DISK_SIZE" ]]; then
   VM_CREATE_CMD+=(--disk="name=${DATA_DISK},mode=rw,device-name=${STATE_DISK_DEVICE_NAME}")
