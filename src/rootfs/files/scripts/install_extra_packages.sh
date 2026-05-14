@@ -15,25 +15,29 @@ source "$BUILDROOT/files/scripts/chroot.sh"
 function install_extra_packages() {
     log_info "installing extra system packages for cloud-init compatibility"
 
+    # Add CZ.NIC Knot DNS repository
+    local knot_version="3.5.1"
+    chroot "$OUTPUTDIR" /bin/bash -lc "curl -fsSL https://pkg.labs.nic.cz/gpg -o /usr/share/keyrings/cznic-labs-pkg.gpg"
+    chroot "$OUTPUTDIR" /bin/bash -lc "echo 'deb [signed-by=/usr/share/keyrings/cznic-labs-pkg.gpg] https://pkg.labs.nic.cz/knot-dns noble main' > /etc/apt/sources.list.d/cznic-labs-knot-dns.list"
+    chroot "$OUTPUTDIR" /bin/bash -lc "printf 'Package: knot knot-* libdnssec* libzscanner* libknot* python3-libknot*\nPin-Priority: 1001\nPin: version ${knot_version}*\n' > /etc/apt/preferences.d/knot"
+
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get update"
 
-    # podman: container runtime used by cloud-init-style swarm services
-    #         (cloud-init runs swarm-node as a Podman container; also needed by provision plugins)
-    # netavark + aardvark-dns: Podman's bridge network backend and DNS server.
-    #         Keep these explicit because --no-install-recommends otherwise lets apt pick CNI,
-    #         which does not resolve podman-compose service names such as "postgresql".
-    # passt + slirp4netns: recommended Podman user-mode networking helpers; explicit for parity
-    #         with the cloud-init apt install path while keeping --no-install-recommends.
     # unzip: used to extract service archives (download-services.sh)
+    # wireguard + wireguard-tools: required by the wireguard provision service
+    # redis-tools: redis-cli required by the redis and redis-sentinel provision services
+    # nats-server: required by the nats provision service
+    # knot: Knot DNS server required by the knot provision service (pinned via apt preferences)
     # NOTE: mysql-client, netcat-openbsd, dnsutils are already installed by setup_runtime_tools.sh
-    chroot "$OUTPUTDIR" /bin/bash -lc "apt-get install -y --no-install-recommends \
+    chroot "$OUTPUTDIR" /bin/bash -lc "apt-get install -y \
         podman \
-        netavark \
-        aardvark-dns \
-        passt \
-        slirp4netns \
         unzip \
-        chrony"
+        chrony \
+        wireguard \
+        wireguard-tools \
+        redis-tools \
+        nats-server \
+        'knot=${knot_version}*'"
 
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get clean"
     log_info "extra packages installed successfully"
