@@ -28,6 +28,7 @@ function install_extra_packages() {
     # redis-tools: redis-cli required by the redis and redis-sentinel provision services
     # nats-server: required by the nats provision service
     # knot: Knot DNS server required by the knot provision service (pinned via apt preferences)
+    # wget: required by the openresty provision service to download nginx config
     # NOTE: mysql-client, netcat-openbsd, dnsutils are already installed by setup_runtime_tools.sh
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get install -y \
         podman \
@@ -37,6 +38,7 @@ function install_extra_packages() {
         wireguard-tools \
         redis-tools \
         nats-server \
+        wget \
         'knot=${knot_version}*'"
 
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get clean"
