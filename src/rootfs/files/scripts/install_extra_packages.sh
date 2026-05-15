@@ -39,6 +39,7 @@ function install_extra_packages() {
         redis-tools \
         nats-server \
         wget \
+        jq \
         'knot=${knot_version}*'"
 
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get clean"
