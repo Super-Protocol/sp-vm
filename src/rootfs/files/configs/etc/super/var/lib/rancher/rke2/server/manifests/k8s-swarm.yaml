@@ -44,6 +44,7 @@ spec:
         name: time-slicing-config-all
         default: any
     toolkit:
+      enabled: false
       env:
       - name: CONTAINERD_CONFIG
         value: /var/lib/rancher/rke2/agent/etc/containerd/config.toml.tmpl
