@@ -24,7 +24,7 @@ function install_extra_packages() {
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get update"
 
     # unzip: used to extract service archives (download-services.sh)
-    # wireguard + wireguard-tools: required by the wireguard provision service
+    # wireguard-tools: required by the wireguard provision service (wireguard kernel module is in BASE_PACKAGES)
     # redis-tools: redis-cli required by the redis and redis-sentinel provision services
     # nats-server: required by the nats provision service
     # knot: Knot DNS server required by the knot provision service (pinned via apt preferences)
@@ -33,8 +33,6 @@ function install_extra_packages() {
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get install -y \
         podman \
         unzip \
-        chrony \
-        wireguard \
         wireguard-tools \
         redis-tools \
         nats-server \
