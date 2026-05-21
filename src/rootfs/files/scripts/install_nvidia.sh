@@ -34,7 +34,16 @@ function install_nvidia_driver() {
         -c 'DEBIAN_FRONTEND=noninteractive apt update && apt install -y --no-install-recommends nvidia-driver-575-open nvidia-container-toolkit';
 }
 
+function create_containerd_symlink() {
+    log_info "creating containerd symlink";
+    chroot \
+        "$OUTPUTDIR" \
+        /bin/bash \
+        -c 'ln -sf /var/lib/rancher/rke2/bin/containerd /usr/local/bin/containerd';
+}
+
 chroot_init;
 install_cuda_keyring;
 install_nvidia_driver;
+create_containerd_symlink;
 chroot_deinit;
