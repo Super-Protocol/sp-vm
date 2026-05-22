@@ -36,6 +36,7 @@ function install_nvidia_driver() {
 
 function create_containerd_symlink() {
     log_info "creating containerd symlink";
+    # TODO(SP-7710): Temporary workaround; the underlying issue is described in SP-7710.
     chroot \
         "$OUTPUTDIR" \
         /bin/bash \
