@@ -29,10 +29,14 @@ POWERDNS_API_KEY=$(cfg "powerdns_api_key")
 BASE_DOMAIN=$(cfg "base_domain")
 SWARM_DOMAIN=$(cfg "swarm_domain")
 PKI_DOMAIN=$(cfg "pki_domain")
+NODE_EXPORTER_ENABLED=$(cfg "node_exporter.enabled")
 
 AUTH_SERVICE_YAML=""
 AUTH_SERVICE_YAML_PATH="/sp/swarm/auth-service.yaml"
 [ -f "$AUTH_SERVICE_YAML_PATH" ] && AUTH_SERVICE_YAML=$(cat "$AUTH_SERVICE_YAML_PATH")
+
+NODE_EXPORTER_YAML=""
+NODE_EXPORTER_YAML_PATH="/sp/swarm/node-exporter.yaml"
 
 SWARM_INIT_CERTS_DIR=${SWARM_INIT_CERTS_DIR:-/etc/super/certs/swarm-init}
 EVIDENCE_SIGN_KEY=""
@@ -65,6 +69,27 @@ ensure_secret() {
 
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
     python3 "$(dirname "$0")/swarm-cli.py" create SwarmSecrets "$key" --value "$value" >/dev/null
+}
+
+is_enabled() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    true|1|yes|on)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+load_node_exporter_secret() {
+  if ! is_enabled "$NODE_EXPORTER_ENABLED"; then
+    echo "INFO: skip node_exporter_yaml secret initialization, node_exporter.enabled is not true" >&2
+    return 0
+  fi
+
+  [ -f "$NODE_EXPORTER_YAML_PATH" ] && NODE_EXPORTER_YAML=$(cat "$NODE_EXPORTER_YAML_PATH")
+  ensure_secret "node_exporter_yaml" "$NODE_EXPORTER_YAML"
 }
 
 ensure_swarm_init_cert_secrets() {
@@ -118,5 +143,6 @@ ensure_secret "base_domain" "$BASE_DOMAIN"
 ensure_secret "swarm_domain" "$SWARM_DOMAIN"
 ensure_secret "pki_domain" "$PKI_DOMAIN"
 ensure_secret "auth_service_yaml" "$AUTH_SERVICE_YAML"
+load_node_exporter_secret
 ensure_swarm_init_cert_secrets
 ensure_secret "evidence_sign_key" "$EVIDENCE_SIGN_KEY"
