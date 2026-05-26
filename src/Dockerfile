@@ -305,6 +305,13 @@ RUN chmod +x \
 ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_nodejs.sh
 
+# install Prometheus node_exporter (used by node-exporter provision service)
+ARG NODE_EXPORTER_VERSION=1.11.1
+ARG TARGETARCH
+ADD rootfs/files/scripts/install_node_exporter.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_node_exporter.sh \
+    "${NODE_EXPORTER_VERSION}" "${TARGETARCH}"
+
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
 ADD rootfs/files/configs/pccs-init/ /buildroot/files/configs/pccs-init/
