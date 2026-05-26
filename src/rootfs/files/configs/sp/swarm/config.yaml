@@ -14,6 +14,10 @@ tags:
   gatekeeper_s3_image: ""       # passed as env var to swarm-node container
   gatekeeper_harbor_image: ""   # passed as env var to swarm-node container
 
+node_exporter:
+  enabled: false          # true|1|yes|on enables node-exporter bootstrap
+  push_interval_secs: 30  # systemd timer interval for metrics push
+
 
 swarm_db:
   node_name: ""        # defaults to hostname
