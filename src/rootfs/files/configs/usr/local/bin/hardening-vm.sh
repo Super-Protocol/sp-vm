@@ -31,9 +31,10 @@ iptables -I INPUT -s 10.43.0.0/16 -j ACCEPT
 iptables -I INPUT -s 10.42.0.0/16 -j ACCEPT
 iptables -I INPUT -s 10.13.0.0/16 -j ACCEPT
 
-# Allow podman bridge networks (10.89.0.0/16) to reach host services
+# Allow podman bridge networks to reach host services (Ubuntu 24.04 podman: 10.88/16)
 # Required for containers using bridge networking (e.g. harbor) to access
 # host services bound to WireGuard interface
+iptables -I INPUT -s 10.88.0.0/16 -j ACCEPT
 iptables -I INPUT -s 10.89.0.0/16 -j ACCEPT
 
 # Allow WireGuard (UDP 51820)

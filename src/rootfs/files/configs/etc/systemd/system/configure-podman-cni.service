@@ -1,0 +1,14 @@
+[Unit]
+Description=Isolate Podman CNI from Kubernetes /etc/cni/net.d
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target swarm-node.service podman.service
+ConditionPathExists=/usr/bin/podman
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/configure-podman-cni.sh
+
+[Install]
+WantedBy=multi-user.target

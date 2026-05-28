@@ -40,6 +40,9 @@ function install_extra_packages() {
         jq \
         'knot=${knot_version}*'"
 
+    # apt installs 87-podman-bridge.conflist into /etc/cni/net.d; move it for kubelet isolation.
+    chroot "$OUTPUTDIR" /usr/local/bin/configure-podman-cni.sh
+
     chroot "$OUTPUTDIR" /bin/bash -lc "apt-get clean"
     log_info "extra packages installed successfully"
 }
