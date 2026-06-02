@@ -203,6 +203,9 @@ ADD rootfs/files/configs/etc/systemd/system/configure-podman-cni.service \
     ${OUTPUTDIR}/etc/systemd/system/configure-podman-cni.service
 RUN ln -sf /etc/systemd/system/configure-podman-cni.service \
     "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/configure-podman-cni.service"
+RUN mkdir -p "${OUTPUTDIR}/etc/apt/apt.conf.d"
+ADD rootfs/files/configs/etc/apt/apt.conf.d/99-sp-configure-podman-cni \
+    ${OUTPUTDIR}/etc/apt/apt.conf.d/99-sp-configure-podman-cni
 
 # copy iscsi configs, cause this partition will be remounted with empty dir
 RUN mkdir -p "${OUTPUTDIR}/etc/iscsi"
