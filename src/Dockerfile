@@ -191,8 +191,6 @@ ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/system
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
 ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
 RUN mkdir -p "${OUTPUTDIR}/etc/rancher/rke2"
-ADD rootfs/files/configs/etc/rancher/rke2/README ${OUTPUTDIR}/etc/rancher/rke2/README
-ADD rootfs/files/configs/etc/cni/net.d/README ${OUTPUTDIR}/etc/cni/net.d/README
 ADD rootfs/files/configs/etc/cni/podman/net.d/87-podman-bridge.conflist \
     ${OUTPUTDIR}/etc/cni/podman/net.d/87-podman-bridge.conflist
 ADD rootfs/files/configs/etc/containers/containers.conf.d/99-podman-cni-dir.conf \
