@@ -1,5 +1,0 @@
-# RKE2 configuration to enable Cilium CNI and disable Canal
-cni: cilium
-disable:
-  - rke2-canal
-

@@ -1,0 +1,4 @@
+// Re-isolate Podman CNI after apt (e.g. podman upgrade restoring 87-podman-bridge.conflist in net.d).
+DPkg::Post-Invoke {
+    "if [ -x /usr/local/bin/configure-podman-cni.sh ]; then /usr/local/bin/configure-podman-cni.sh || true; fi";
+};

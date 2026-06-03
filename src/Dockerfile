@@ -189,10 +189,21 @@ RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/lo
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
 
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
-ADD rootfs/files/configs/etc/sysctl.d/99-zzz-override_cilium.conf ${OUTPUTDIR}/etc/sysctl.d/99-zzz-override_cilium.conf
 ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
 RUN mkdir -p "${OUTPUTDIR}/etc/rancher/rke2"
-ADD rootfs/files/configs/etc/rancher/rke2/config.yaml ${OUTPUTDIR}/etc/rancher/rke2/config.yaml
+ADD rootfs/files/configs/etc/cni/podman/net.d/87-podman-bridge.conflist \
+    ${OUTPUTDIR}/etc/cni/podman/net.d/87-podman-bridge.conflist
+ADD rootfs/files/configs/etc/containers/containers.conf.d/99-podman-cni-dir.conf \
+    ${OUTPUTDIR}/etc/containers/containers.conf.d/99-podman-cni-dir.conf
+ADD rootfs/files/configs/usr/local/bin/configure-podman-cni.sh ${OUTPUTDIR}/usr/local/bin/configure-podman-cni.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/configure-podman-cni.sh
+ADD rootfs/files/configs/etc/systemd/system/configure-podman-cni.service \
+    ${OUTPUTDIR}/etc/systemd/system/configure-podman-cni.service
+RUN ln -sf /etc/systemd/system/configure-podman-cni.service \
+    "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/configure-podman-cni.service"
+RUN mkdir -p "${OUTPUTDIR}/etc/apt/apt.conf.d"
+ADD rootfs/files/configs/etc/apt/apt.conf.d/99-sp-configure-podman-cni \
+    ${OUTPUTDIR}/etc/apt/apt.conf.d/99-sp-configure-podman-cni
 
 # copy iscsi configs, cause this partition will be remounted with empty dir
 RUN mkdir -p "${OUTPUTDIR}/etc/iscsi"
