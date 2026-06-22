@@ -426,7 +426,7 @@ RUN test -f /buildroot/ovmf_tdx/usr/share/ovmf/OVMF.fd
 
 ### Start ovmf_centos_tdx ###
 FROM ubuntu:24.04 AS ovmf_centos_tdx
-RUN apt-get update && apt-get install -y wget rpm2cpio
+RUN apt-get update && apt-get install -y wget rpm2cpio cpio
 RUN wget -O /tmp/edk2-ovmf.rpm https://mirror.stream.centos.org/10-stream/AppStream/x86_64/os/Packages/edk2-ovmf-20260221-3.el10.noarch.rpm
 RUN cd /tmp && rpm2cpio edk2-ovmf.rpm | cpio -idm './usr/share/edk2/ovmf/OVMF.inteltdx.fd'
 RUN test -f /tmp/usr/share/edk2/ovmf/OVMF.inteltdx.fd
