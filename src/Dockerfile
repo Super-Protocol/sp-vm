@@ -424,6 +424,14 @@ RUN test -f /buildroot/ovmf_tdx/usr/share/ovmf/OVMF.fd
 
 ### End ovmf_builder_tdx ###
 
+### Start ovmf_centos_tdx ###
+FROM ubuntu:24.04 AS ovmf_centos_tdx
+RUN apt-get update && apt-get install -y wget rpm2cpio cpio
+RUN wget -O /tmp/edk2-ovmf.rpm https://mirror.stream.centos.org/10-stream/AppStream/x86_64/os/Packages/edk2-ovmf-20260221-3.el10.noarch.rpm
+RUN cd /tmp && rpm2cpio edk2-ovmf.rpm | cpio -idm './usr/share/edk2/ovmf/OVMF.inteltdx.fd'
+RUN test -f /tmp/usr/share/edk2/ovmf/OVMF.inteltdx.fd
+### End ovmf_centos_tdx ###
+
 ### Start vm_json_builder ###
 FROM ubuntu:24.04 AS vm_json_builder
 ARG SP_VM_IMAGE_VERSION
@@ -431,6 +439,7 @@ ARG S3_BUCKET
 COPY --from=image_builder /output /output
 COPY --from=ovmf_builder_sev /buildroot/ovmf/Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd /output/OVMF_AMD.fd
 COPY --from=ovmf_builder_tdx /buildroot/ovmf_tdx/usr/share/ovmf/OVMF.fd /output/OVMF.fd
+COPY --from=ovmf_centos_tdx /tmp/usr/share/edk2/ovmf/OVMF.inteltdx.fd /output/OVMF_TDX.fd
 COPY --from=kernel_builder /output/boot/vmlinuz-6.12.13-nvidia-gpu-confidential /output/vmlinuz
 ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/generate_vm_json.sh

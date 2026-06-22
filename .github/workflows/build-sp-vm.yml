@@ -92,6 +92,7 @@ jobs:
           upload_file "sp-vm-${SP_VM_IMAGE_VERSION}.img";
           upload_file "OVMF.fd";
           upload_file "OVMF_AMD.fd";
+          upload_file "OVMF_TDX.fd";
           upload_file "vm.json";
           upload_file "vmlinuz";
           upload_file "rootfs_hash.txt";
