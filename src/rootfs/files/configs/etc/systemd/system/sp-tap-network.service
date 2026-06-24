@@ -1,8 +1,9 @@
 [Unit]
-Description=Configure TAP network from kernel ip= parameter
+Description=Configure VM network from MAC-bound kernel spnet.* parameters
 DefaultDependencies=no
-Before=network-pre.target
+Before=network-pre.target systemd-networkd.service
 Wants=network-pre.target
+# Run before networkd reads its config, so the .network file already exists.
 
 [Service]
 Type=oneshot
