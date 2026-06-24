@@ -247,6 +247,8 @@ RUN ln -sf /etc/systemd/system/provider-config-s3fs.service \
     "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/provider-config-s3fs.service"
 RUN ln -sf /etc/systemd/system/sp-tap-network.service \
     "${OUTPUTDIR}/etc/systemd/system/sysinit.target.wants/sp-tap-network.service"
+ADD rootfs/files/configs/usr/local/bin/sp-tap-network.sh ${OUTPUTDIR}/usr/local/bin/sp-tap-network.sh
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/sp-tap-network.sh
 
 # swarm services
 ADD rootfs/files/configs/etc/systemd/system/swarm-db.service ${OUTPUTDIR}/etc/systemd/system/swarm-db.service
