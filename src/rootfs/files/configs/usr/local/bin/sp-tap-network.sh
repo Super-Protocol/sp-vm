@@ -69,7 +69,7 @@ fi
 
 # --- write a systemd-networkd .network file matched BY MAC ------------------
 mkdir -p /etc/systemd/network
-NET_FILE="/etc/systemd/network/10-spnet.network"
+NET_FILE="/etc/systemd/network/05-spnet.network"
 
 {
     echo "[Match]"
