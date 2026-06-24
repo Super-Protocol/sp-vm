@@ -12,7 +12,11 @@ dir /mnt 0755 0 0
 file /init /initramfs-root/sbin/init.sh 0755 0 0
 file /sbin/busybox /initramfs-root/sbin/busybox 0755 0 0
 file /sbin/blkid /initramfs-root/sbin/blkid 0755 0 0
+file /sbin/lsblk /initramfs-root/sbin/lsblk 0755 0 0
 file /sbin/veritysetup /initramfs-root/sbin/veritysetup.static 0755 0 0
+file /sbin/cryptsetup /initramfs-root/sbin/cryptsetup.static 0755 0 0
+file /sbin/mkfs.ext4 /initramfs-root/sbin/mkfs.ext4 0755 0 0
+file /sbin/wipefs /initramfs-root/sbin/wipefs 0755 0 0
 slink /bin/sh /sbin/busybox 0755 0 0
 slink /sbin/mount /sbin/busybox 0755 0 0
 slink /bin/mkdir /sbin/busybox 0755 0 0

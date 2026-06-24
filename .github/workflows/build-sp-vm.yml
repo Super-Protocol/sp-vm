@@ -1,11 +1,5 @@
 name: Build SuperProtocol OS image
 on:
-  workflow_call:
-    inputs:
-      build-type:
-        required: false
-        type: string
-        default: 'main'
   workflow_dispatch:
     inputs:
       runs-on:
@@ -13,16 +7,21 @@ on:
         type: choice
         description: github runner for build
         options:
-        - self-hosted
-        - sp-vm-runner-2
-        - ubuntu-latest
+          - self-hosted
+          - sp-vm-runner-2
+          - ubuntu-latest
       build-type:
         required: true
         type: choice
         description: type of build to run
         options:
-          - main
-          - cloud
+          - debug
+          # - production TODO: https://superprotocol.atlassian.net/browse/SP-7564
+      upload-to-gcp:
+        required: false
+        type: boolean
+        default: false
+        description: Upload image to GCP bucket and create compute image
 jobs:
   build-asset:
     runs-on: ${{ inputs.runs-on }}
@@ -32,17 +31,23 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          token: ${{ secrets.SWARM_CLOUD_SWARM_DB_REPO_RO }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Login to TEE PKI Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.TEE_PKI_USERNAME }}
+          password: ${{ secrets.TEE_PKI_ACCESS_TOKEN }}
+
       - name: Set SP_VM_IMAGE_VERSION variable
         run: |
-          if [[ "${{ inputs.build-type }}" == "cloud" ]]; then
-            echo "SP_VM_IMAGE_VERSION=cloud-build-${{ github.run_number }}" >> "$GITHUB_ENV"
-          else
-            echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}" >> "$GITHUB_ENV"
-          fi
+          echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}" >> "$GITHUB_ENV"
 
       - name: Setup builder
         run: |
@@ -56,7 +61,6 @@ jobs:
               --buildkitd-flags '--allow-insecure-entitlement security.insecure';
 
       - name: Build sp-vm image
-        if: ${{ inputs.build-type == 'main' }}
         run: |
           docker buildx build \
               -t sp-vm \
@@ -66,20 +70,7 @@ jobs:
               --build-arg "SP_VM_IMAGE_VERSION=$SP_VM_IMAGE_VERSION" \
               --build-arg "S3_BUCKET=$S3_BUCKET";
 
-      - name: Build sp-vm cloud image
-        if: ${{ inputs.build-type == 'cloud' }}
-        run: |
-          docker buildx build \
-              -t sp-vm \
-              --allow security.insecure \
-              src \
-              --output type=local,dest=./out-cloud \
-              --build-arg "SP_VM_IMAGE_VERSION=$SP_VM_IMAGE_VERSION" \
-              --build-arg "S3_BUCKET=$S3_BUCKET" \
-              --target sp_vm_cloud;
-
       - name: Upload files to Storj
-        if: ${{ inputs.build-type == 'main' }}
         working-directory: out
         run: |
           function upload_file() {
@@ -101,42 +92,71 @@ jobs:
           upload_file "sp-vm-${SP_VM_IMAGE_VERSION}.img";
           upload_file "OVMF.fd";
           upload_file "OVMF_AMD.fd";
+          upload_file "OVMF_TDX.fd";
           upload_file "vm.json";
           upload_file "vmlinuz";
           upload_file "rootfs_hash.txt";
 
-      - name: Upload cloud files to Storj
-        if: ${{ inputs.build-type == 'cloud' }}
-        working-directory: out-cloud
+      - name: Authenticate to GCP
+        if: ${{ inputs.upload-to-gcp }}
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_IMAGE_UPLOADER }}
+
+      - name: Set up Cloud SDK
+        if: ${{ inputs.upload-to-gcp }}
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload image to GCP and create compute image
+        if: ${{ inputs.upload-to-gcp }}
+        working-directory: out
+        env:
+          GCP_SA_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_IMAGE_UPLOADER }}
         run: |
-          function upload_file() {
-              local FILE="${1:=""}";
-              if [[ -z "$FILE" ]] || [[ ! -f "$FILE" ]]; then
-                  echo "File $FILE not found";
-                  exit 1;
-              fi
-              echo "Uploading $FILE to ${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/"
-              rclone copy \
-                  --multi-thread-streams 8 \
-                  --s3-provider Storj \
-                  --s3-endpoint=gateway.storjshare.io \
-                  "--s3-access-key-id=${{ secrets.S3_ACCESS_KEY }}" \
-                  "--s3-secret-access-key=${{ secrets.S3_SECRET_KEY }}" \
-                  "$FILE" \
-                  ":s3:${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/";
-          }
-          upload_file "sp-vm-${SP_VM_IMAGE_VERSION}.img";
-          upload_file "OVMF.fd";
-          upload_file "OVMF_AMD.fd";
-          upload_file "vm.json";
-          upload_file "vmlinuz";
-          upload_file "rootfs_hash.txt";
+          GCP_PROJECT_ID="$(echo "${GCP_SA_JSON}" | jq -r '.project_id')"
+          GCS_BUCKET="gs://supa-swarm-bucket-conf-vms"
+          IMAGE_NAME="sp-vm-${SP_VM_IMAGE_VERSION}"
+          TAR_BASENAME="${IMAGE_NAME}.tar.gz"
+          SOURCE_URI="${GCS_BUCKET}/${TAR_BASENAME}"
+
+          if command -v pigz >/dev/null 2>&1; then
+            TAR_COMPRESS="pigz -p $(nproc)"
+          else
+            echo "WARNING: pigz not found, falling back to single-threaded gzip"
+            TAR_COMPRESS="gzip"
+          fi
+
+          mkdir -p tmpdir
+          echo "==> Copying image as disk.raw"
+          cp -f "sp-vm-${SP_VM_IMAGE_VERSION}.img" tmpdir/disk.raw
+
+          echo "==> Packing disk.raw into ${TAR_BASENAME}"
+          (cd tmpdir && tar -S --use-compress-program="${TAR_COMPRESS}" -cf "${TAR_BASENAME}" disk.raw)
+          mv "tmpdir/${TAR_BASENAME}" .
+          rm -rf tmpdir
+
+          echo "==> Uploading ${TAR_BASENAME} to GCS: ${SOURCE_URI}"
+          gsutil \
+            -o "GSUtil:parallel_composite_upload_threshold=150MB" \
+            -o "GSUtil:parallel_composite_upload_component_size=50MB" \
+            -m cp "${TAR_BASENAME}" "${GCS_BUCKET}/"
+
+          echo "==> Creating GCP compute image: ${IMAGE_NAME}"
+          gcloud compute images create "${IMAGE_NAME}" \
+            --project "${GCP_PROJECT_ID}" \
+            --source-uri "${SOURCE_URI}" \
+            --guest-os-features "UEFI_COMPATIBLE,TDX_CAPABLE,SEV_CAPABLE,SEV_SNP_CAPABLE,GVNIC" \
+            --labels "build_tag=${SP_VM_IMAGE_VERSION}" \
+            --description "Built from Super-Protocol/sp-vm ${SP_VM_IMAGE_VERSION}"
+
+          echo "==> Cleaning up temporary GCS object"
+          gsutil rm "${SOURCE_URI}"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.SP_VM_IMAGE_VERSION }}
-          release_name: Release ${{ env.SP_VM_IMAGE_VERSION }}
+          name: ${{ env.SP_VM_IMAGE_VERSION }}
           draft: false
           prerelease: true
           files: |

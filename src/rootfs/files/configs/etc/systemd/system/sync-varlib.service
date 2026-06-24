@@ -1,0 +1,12 @@
+[Unit]
+Description=Sync /etc/super/var/lib into /var/lib after /var mount
+After=local-fs.target
+RequiresMountsFor=/var/lib
+ConditionPathExists=/etc/super/var/lib
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sync-varlib.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -23,6 +23,7 @@ for FILE in $(find "$BUILD_DIR" -type f -exec basename {} \;); do
         "sp-vm-${SP_VM_IMAGE_VERSION}.img") KEY="image" ;;
         OVMF.fd) KEY="bios" ;;
         OVMF_AMD.fd) KEY="bios_amd" ;;
+        OVMF_TDX.fd) KEY="bios_tdx" ;;
         vmlinuz) KEY="kernel" ;;
         rootfs_hash.txt) KEY="rootfs_hash" ;;
         *)

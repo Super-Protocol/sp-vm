@@ -1,0 +1,13 @@
+[Unit]
+Description=PCCS Initialization Service
+Before=pccs.service
+After=local-fs.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/pccs-init.sh
+
+[Install]
+WantedBy=multi-user.target

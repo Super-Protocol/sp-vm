@@ -27,14 +27,24 @@ function install_cuda_keyring() {
 }
 
 function install_nvidia_driver() {
-    log_info "installing nvidia driver";
+    log_info "installing nvidia driver and container toolkit for rke2";
     chroot \
         "$OUTPUTDIR" \
         /bin/bash \
-        -c 'DEBIAN_FRONTEND=noninteractive apt update && apt install -y --no-install-recommends nvidia-driver-575-open';
+        -c 'DEBIAN_FRONTEND=noninteractive apt update && apt install -y --no-install-recommends nvidia-driver-575-open nvidia-container-toolkit';
+}
+
+function create_containerd_symlink() {
+    log_info "creating containerd symlink";
+    # TODO(SP-7710): Temporary workaround; the underlying issue is described in SP-7710.
+    chroot \
+        "$OUTPUTDIR" \
+        /bin/bash \
+        -c 'ln -sf /var/lib/rancher/rke2/bin/containerd /usr/local/bin/containerd';
 }
 
 chroot_init;
 install_cuda_keyring;
 install_nvidia_driver;
+create_containerd_symlink;
 chroot_deinit;

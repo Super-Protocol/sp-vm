@@ -1,0 +1,95 @@
+
+#!/bin/bash
+set -euo pipefail
+
+# This script bootstraps the auth-service into SwarmDB via swarm-cli.
+# Run it INSIDE the container. Assumes python3 and swarm-cli.py are available.
+#
+# Notes:
+# - The service manifest is expected to be available on all nodes at:
+#     ${LOCATION_PATH}/manifest.yaml
+#   If you don't have a manifest yet, set ALLOW_MISSING_MANIFEST=1 to still
+#   register the ClusterService (manifest will be stored as NULL).
+# - auth-service depends on CockroachDB through an affinity rule below.
+#   Runtime DB details are still resolved by the service manifest/provision worker.
+
+DB_HOST=${DB_HOST:-127.0.0.1}
+DB_PORT=${DB_PORT:-3306}
+DB_USER=${DB_USER:-root}
+DB_NAME=${DB_NAME:-swarmdb}
+
+# Service descriptors
+SERVICE_NAME=${SERVICE_NAME:-auth-service}
+SERVICE_VERSION=${SERVICE_VERSION:-1.0.0}
+CLUSTER_POLICY=${CLUSTER_POLICY:-auth-service}
+CLUSTER_ID=${CLUSTER_ID:-auth-service}
+
+# Location stored in ClusterServices; must exist on all nodes.
+# The service provisioner (manifest.yaml + main.py) is baked into the image under
+# /etc/swarm-services/${SERVICE_NAME}. The application payload lives under
+# /etc/auth-service and is referenced by the provisioner.
+LOCATION_PATH=${LOCATION_PATH:-/etc/swarm-services/${SERVICE_NAME}}
+MANIFEST_PATH=${MANIFEST_PATH:-${LOCATION_PATH}/manifest.yaml}
+SERVICE_PK="${CLUSTER_POLICY}:${SERVICE_NAME}"
+
+ALLOW_MISSING_MANIFEST=${ALLOW_MISSING_MANIFEST:-0}
+
+if [ ! -f "$MANIFEST_PATH" ]; then
+	if [ "$ALLOW_MISSING_MANIFEST" = "1" ] || [ "$ALLOW_MISSING_MANIFEST" = "true" ]; then
+		echo "Warning: manifest not found at: $MANIFEST_PATH (continuing due to ALLOW_MISSING_MANIFEST=1)" >&2
+	else
+		echo "Manifest not found at: $MANIFEST_PATH" >&2
+		echo "If you want to register the service without a manifest, set ALLOW_MISSING_MANIFEST=1" >&2
+		exit 1
+	fi
+fi
+
+ensure_affinity_rule() {
+	local rule_id="$1"
+	local rule_name="$2"
+	local target_policy="$3"
+	local affinity_type="$4"
+
+	echo "Ensuring ClusterPolicyAffinityRule '$rule_id'..."
+	if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+		python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$rule_id" >/dev/null 2>&1; then
+		echo "ClusterPolicyAffinityRule '$rule_id' already exists, skipping creation."
+	else
+		echo "Creating ClusterPolicyAffinityRule '$rule_id'..."
+		DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+			python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$rule_id" \
+				--name="$rule_name" \
+				--cluster_policy="$CLUSTER_POLICY" \
+				--target_cluster_policy="$target_policy" \
+				--affinity_type="$affinity_type"
+	fi
+}
+
+echo "Ensuring ClusterPolicy '$CLUSTER_POLICY'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+	python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicies "$CLUSTER_POLICY" >/dev/null 2>&1; then
+	echo "ClusterPolicy '$CLUSTER_POLICY' already exists, skipping creation."
+else
+	echo "Creating ClusterPolicy '$CLUSTER_POLICY'..."
+	DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+		python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicies "$CLUSTER_POLICY" --minSize=1 --maxSize=1 --maxClusters=1
+fi
+
+echo "Ensuring ClusterService '$SERVICE_PK'..."
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+	python3 "$(dirname "$0")/swarm-cli.py" get ClusterServices "$SERVICE_PK" >/dev/null 2>&1; then
+	echo "ClusterService '$SERVICE_PK' already exists, skipping creation."
+else
+	echo "Creating ClusterService '$SERVICE_PK'..."
+	DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+		python3 "$(dirname "$0")/swarm-cli.py" create ClusterServices "$SERVICE_PK" \
+			--name="$SERVICE_NAME" \
+			--cluster_policy="$CLUSTER_POLICY" \
+			--version="$SERVICE_VERSION" \
+			--location="$LOCATION_PATH"
+fi
+
+ensure_affinity_rule "${CLUSTER_POLICY}:cockroachdb-affinity" "cockroachdb-affinity" "cockroachdb" "positive"
+
+echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."
+

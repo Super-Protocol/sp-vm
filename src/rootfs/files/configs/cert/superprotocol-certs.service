@@ -1,8 +1,8 @@
 [Unit]
 Description=SuperProtocol add trusted self-signed certificate
 After=multi-user.target
-Wants=rke2-server.service
-After=rke2-server.service
+# Wants=rke2-server.service
+# After=rke2-server.service
 
 [Service]
 Type=oneshot
