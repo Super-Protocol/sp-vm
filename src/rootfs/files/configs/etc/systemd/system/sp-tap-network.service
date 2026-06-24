@@ -1,0 +1,13 @@
+[Unit]
+Description=Configure TAP network from kernel ip= parameter
+DefaultDependencies=no
+Before=network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/sp-tap-network.sh
+
+[Install]
+WantedBy=sysinit.target
