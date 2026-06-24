@@ -260,10 +260,12 @@ ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sys
 RUN /buildroot/files/scripts/template_configs_post_rke2install.sh
 
 RUN mkdir -p "${OUTPUTDIR}/sp"
+ADD rootfs/files/configs/etc/systemd/system/sp-tap-network.service ${OUTPUTDIR}/etc/systemd/system/sp-tap-network.service
 ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests/k8s.yaml
 ADD rootfs/files/configs/etc/systemd/system/check-config-files.service ${OUTPUTDIR}/etc/systemd/system/check-config-files.service
 ADD rootfs/files/configs/etc/systemd/system/check-config-files.timer ${OUTPUTDIR}/etc/systemd/system/check-config-files.timer
 ADD rootfs/files/configs/usr/local/bin/check-config-files.sh ${OUTPUTDIR}/usr/local/bin/check-config-files.sh
+RUN ln -sf /etc/systemd/system/sp-tap-network.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-tap-network.service"
 RUN ln -sf /etc/systemd/system/check-config-files.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/check-config-files.service"
 RUN ln -sf /etc/systemd/system/check-config-files.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/check-config-files.timer"
 ADD rootfs/files/configs/etc/systemd/system/local-registry.service ${OUTPUTDIR}/etc/systemd/system/local-registry.service
