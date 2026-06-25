@@ -136,7 +136,6 @@ ensure_secret "base_domain" "$BASE_DOMAIN"
 ensure_secret "swarm_domain" "$SWARM_DOMAIN"
 ensure_secret "pki_domain" "$PKI_DOMAIN"
 ensure_secret "gateway_hostname" "$GATEWAY_HOSTNAME"
-ensure_secret "global_id" "$GLOBAL_ID"
 ensure_global_id_pointer "$GLOBAL_ID"
 ensure_secret "auth_service_yaml" "$AUTH_SERVICE_YAML"
 ensure_swarm_init_cert_secrets
