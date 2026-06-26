@@ -67,3 +67,21 @@ else
 fi
 
 echo "Done. The provision worker will reconcile '$SERVICE_NAME' shortly."
+
+AFFINITY_RULE_ID="${CLUSTER_POLICY}:knot-affinity"
+if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+	python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicies knot >/dev/null 2>&1; then
+	echo "Ensuring ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
+	if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+		python3 "$(dirname "$0")/swarm-cli.py" get ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" >/dev/null 2>&1; then
+		echo "ClusterPolicyAffinityRule '$AFFINITY_RULE_ID' already exists, skipping creation."
+	else
+		echo "Creating ClusterPolicyAffinityRule '$AFFINITY_RULE_ID'..."
+		DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+			python3 "$(dirname "$0")/swarm-cli.py" create ClusterPolicyAffinityRules "$AFFINITY_RULE_ID" \
+				--name="knot-affinity" \
+				--cluster_policy="$CLUSTER_POLICY" \
+				--target_cluster_policy="knot" \
+				--affinity_type="positive"
+	fi
+fi
