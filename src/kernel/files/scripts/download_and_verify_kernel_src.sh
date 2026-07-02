@@ -5,6 +5,7 @@ set -euo pipefail;
 
 # public, required
 # KERNEL_VERSION
+# KERNEL_SHA256
 
 # private
 BUILDROOT="/buildroot";
@@ -29,10 +30,10 @@ function download_kernel() {
 }
 
 function download_kernel_checksums() {
-    log_info "downloading kernel checksums"
-    echo "191dc5aae14a4223f0d5ce4e88cbbd29f0377703b9f0b70d4903734de641fb6a  linux-$KERNEL_VERSION.tar.gz" \
+    log_info "preparing kernel checksums"
+    echo "$KERNEL_SHA256  linux-$KERNEL_VERSION.tar.gz" \
         > "$BUILDROOT/src/linux-$KERNEL_VERSION.sha256" \
-        || log_fail "failed to download kernel checksums";
+        || log_fail "failed to prepare kernel checksums";
 }
 
 function verify_kernel_checksum() {
