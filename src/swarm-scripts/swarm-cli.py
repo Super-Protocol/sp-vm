@@ -402,6 +402,58 @@ def get_cluster_policy_preference_rules(args: argparse.Namespace, db: dict, engi
   print(json.dumps(dict(row)))
 
 
+def create_swarm_id_pointer(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  """
+  Insert or keep a SwarmIdPointer.
+  Semantics are like INSERT IGNORE: we do not overwrite existing pointers.
+  """
+  id_value = args.id or args.positional_id
+  value = args.value
+
+  if not id_value or value is None:
+    print("SwarmIdPointer requires id (positional or --id) and --value.", file=sys.stderr)
+    sys.exit(1)
+
+  insert_sql = (
+    "INSERT INTO SwarmIdPointer (id, value)\n"
+    "VALUES (:id, :value)\n"
+    "ON DUPLICATE KEY UPDATE\n"
+    "  value = value;\n"
+  )
+  params = {
+    "id": id_value,
+    "value": value,
+  }
+  run_sql(engine, insert_sql, params)
+  print(f"SwarmIdPointer '{id_value}' upserted (existing values preserved).")
+
+
+def get_swarm_id_pointer(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  """
+  Fetch a SwarmIdPointer by id.
+  - Exit code 0: pointer exists, JSON is printed to stdout.
+  - Exit code 1: pointer not found.
+  - Exit code 2: query failed.
+  """
+  pointer_id = args.id or args.positional_id
+  if not pointer_id:
+    print("SwarmIdPointer get requires id (positional or --id).", file=sys.stderr)
+    sys.exit(2)
+
+  sql = "SELECT id, value FROM SwarmIdPointer WHERE id = :id LIMIT 1"
+  try:
+    with engine.connect() as conn:
+      row = conn.execute(text(sql), {"id": pointer_id}).mappings().first()
+  except Exception as exc:
+    print(f"MySQL query failed: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+  if row is None:
+    sys.exit(1)
+
+  print(json.dumps(dict(row)))
+
+
 def create_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> None:
   """
   Insert or keep a SwarmSecret.
@@ -520,6 +572,7 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
       "ClusterPolicyMeasurementRules",
       "ClusterPolicyPreferenceRules",
       "SwarmSecrets",
+      "SwarmIdPointer",
     ],
   )
   # Positional optional id (first non-key=value), like the original script
@@ -593,6 +646,10 @@ def main(argv: List[str]) -> None:
     create_cluster_services(args, db, engine)
   elif key == "create:SwarmSecrets":
     create_swarm_secrets(args, db, engine)
+  elif key == "create:SwarmIdPointer":
+    create_swarm_id_pointer(args, db, engine)
+  elif key == "get:SwarmIdPointer":
+    get_swarm_id_pointer(args, db, engine)
   elif key == "get:ClusterPolicies":
     get_cluster_policies(args, db, engine)
   elif key == "get:ClusterServices":

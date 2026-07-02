@@ -73,16 +73,14 @@ ensure_global_id_pointer() {
   local value="$1"
   [ -n "$value" ] || return 0
 
-  local existing=""
-  existing=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "$DB_NAME" -Nse \
-    "SELECT value FROM SwarmIdPointer WHERE id='global_id' LIMIT 1" 2>/dev/null || true)
-  if [ -n "$existing" ]; then
+  if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" get SwarmIdPointer "global_id" >/dev/null 2>&1; then
     echo "SwarmIdPointer 'global_id' already exists, skipping creation."
     return 0
   fi
 
-  mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" "$DB_NAME" -e \
-    "INSERT INTO SwarmIdPointer (id, value) VALUES ('global_id', '$(printf '%s' "$value" | sed "s/'/''/g")')"
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create SwarmIdPointer "global_id" --value "$value" >/dev/null
 }
 
 ensure_swarm_init_cert_secrets() {
