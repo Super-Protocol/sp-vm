@@ -30,6 +30,7 @@ BASE_DOMAIN=$(cfg "base_domain")
 SWARM_DOMAIN=$(cfg "swarm_domain")
 PKI_DOMAIN=$(cfg "pki_domain")
 GATEWAY_HOSTNAME=$(cfg "gateway_hostname")
+GLOBAL_ID=$(cfg "global_id")
 
 AUTH_SERVICE_YAML=""
 AUTH_SERVICE_YAML_PATH="/sp/swarm/auth-service.yaml"
@@ -66,6 +67,20 @@ ensure_secret() {
 
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
     python3 "$(dirname "$0")/swarm-cli.py" create SwarmSecrets "$key" --value "$value" >/dev/null
+}
+
+ensure_global_id_pointer() {
+  local value="$1"
+  [ -n "$value" ] || return 0
+
+  if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" get SwarmIdPointer "global_id" >/dev/null 2>&1; then
+    echo "SwarmIdPointer 'global_id' already exists, skipping creation."
+    return 0
+  fi
+
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" create SwarmIdPointer "global_id" --value "$value" >/dev/null
 }
 
 ensure_swarm_init_cert_secrets() {
@@ -119,6 +134,7 @@ ensure_secret "base_domain" "$BASE_DOMAIN"
 ensure_secret "swarm_domain" "$SWARM_DOMAIN"
 ensure_secret "pki_domain" "$PKI_DOMAIN"
 ensure_secret "gateway_hostname" "$GATEWAY_HOSTNAME"
+ensure_global_id_pointer "$GLOBAL_ID"
 ensure_secret "auth_service_yaml" "$AUTH_SERVICE_YAML"
 ensure_swarm_init_cert_secrets
 ensure_secret "evidence_sign_key" "$EVIDENCE_SIGN_KEY"
