@@ -5,10 +5,10 @@ set -euo pipefail;
 
 # public, required
 # KERNEL_VERSION
+# KERNEL_SHA256
 
 # private
 BUILDROOT="/buildroot";
-KERNEL_VERSION_MAJOR="$(awk -F '.' '{print $1}' <<< "$KERNEL_VERSION")";
 
 # init loggggging;
 source "$BUILDROOT/files/scripts/log.sh";
@@ -24,20 +24,16 @@ function download_kernel() {
     curl \
         -Ss \
         --fail \
-        "https://cdn.kernel.org/pub/linux/kernel/v$KERNEL_VERSION_MAJOR.x/linux-$KERNEL_VERSION.tar.xz" \
-        > "$BUILDROOT/src/linux-${KERNEL_VERSION}.tar.xz"\
+        "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/snapshot/linux-$KERNEL_VERSION.tar.gz" \
+        > "$BUILDROOT/src/linux-${KERNEL_VERSION}.tar.gz"\
         || log_fail "failed to download kernel";
 }
 
 function download_kernel_checksums() {
-    log_info "downloading kernel checksums"
-    curl \
-        -Ss \
-        --fail \
-        "https://cdn.kernel.org/pub/linux/kernel/v$KERNEL_VERSION_MAJOR.x/sha256sums.asc" \
-        | grep "linux-$KERNEL_VERSION.tar.xz" \
-            > "$BUILDROOT/src/linux-$KERNEL_VERSION.sha256" \
-        || log_fail "failed to download kernel checksums";
+    log_info "preparing kernel checksums"
+    echo "$KERNEL_SHA256  linux-$KERNEL_VERSION.tar.gz" \
+        > "$BUILDROOT/src/linux-$KERNEL_VERSION.sha256" \
+        || log_fail "failed to prepare kernel checksums";
 }
 
 function verify_kernel_checksum() {
@@ -51,7 +47,7 @@ function verify_kernel_checksum() {
 function unarchive_kernel() {
     log_info "unarchiving kernel";
     pushd "$BUILDROOT/src";
-    tar -xf "linux-$KERNEL_VERSION.tar.xz";
+    tar -xf "linux-$KERNEL_VERSION.tar.gz";
     popd;
 }
 

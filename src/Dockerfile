@@ -103,6 +103,7 @@ RUN gen_init_cpio /initramfs-root/initramfs.list | gzip -9 -n > /initramfs-root/
 FROM ubuntu:24.04 AS kernel_builder
 RUN apt-get update && apt-get install -y wget gcc make build-essential curl libssl-dev bc elfutils libelf-dev bison flex cpio kmod rsync debhelper
 ARG KERNEL_VERSION=6.12.13
+ARG KERNEL_SHA256=191dc5aae14a4223f0d5ce4e88cbbd29f0377703b9f0b70d4903734de641fb6a
 
 WORKDIR /buildroot
 
