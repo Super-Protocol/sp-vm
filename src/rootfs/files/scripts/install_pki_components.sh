@@ -9,6 +9,7 @@ set -euo pipefail;
 # public, optional
 # $1 - PKI_SYNC_CLIENT_VERSION - version to install, if not set - installs latest
 # $2 - PKI_CERT_GENERATOR_VERSION - version to install, if not set - installs latest
+# $3 - PKI_VM_MEASUREMENTS_VERSION - version to install, if not set - installs latest
 
 # private
 BUILDROOT="/buildroot";
@@ -38,4 +39,5 @@ function install_npm_package() {
 chroot_init;
 install_npm_package "@super-protocol/pki-sync-client" "${1:-}";
 install_npm_package "@super-protocol/pki-cert-generator" "${2:-}";
+install_npm_package "@super-protocol/pki-vm-measurements" "${3:-}";
 chroot_deinit;

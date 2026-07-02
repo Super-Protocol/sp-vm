@@ -222,13 +222,19 @@ ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pk
 ADD rootfs/files/configs/pki-service/systemd/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-vm-mode.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements-healthcheck.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-authority-sync"
 ADD rootfs/files/configs/pki-service/conf/secrets-config.yaml "${OUTPUTDIR}/etc/super/pki-authority-sync/secrets-config.yaml"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-cert-generator"
 ADD rootfs/files/configs/pki-service/conf/cert-gen-config-template.yaml "${OUTPUTDIR}/etc/super/pki-cert-generator/cert-gen-config-template.yaml"
 RUN chmod +x "${OUTPUTDIR}"/usr/local/bin/pki-authority/*.py
+RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants" "${OUTPUTDIR}/etc/systemd/system/timers.target.wants"
 RUN ln -s /etc/systemd/system/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-sync.service"
 RUN ln -s /etc/systemd/system/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-cert-init.service"
+RUN ln -s /etc/systemd/system/pki-vm-measurements.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-vm-measurements.service"
+RUN ln -s /etc/systemd/system/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-vm-measurements-healthcheck.timer"
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
@@ -342,10 +348,11 @@ RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 # install PKI npm components globally (requires python3-venv from setup_runtime_tools)
 ARG PKI_SYNC_CLIENT_VERSION=5.0.0
 ARG PKI_CERT_GENERATOR_VERSION=5.0.0
+ARG PKI_VM_MEASUREMENTS_VERSION=1.0.1
 ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
 RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh \
-    "${PKI_SYNC_CLIENT_VERSION}" "${PKI_CERT_GENERATOR_VERSION}"
+    "${PKI_SYNC_CLIENT_VERSION}" "${PKI_CERT_GENERATOR_VERSION}" "${PKI_VM_MEASUREMENTS_VERSION}"
 
 # Extra system packages required by provision plugins at runtime
 # mysql-client: bootstrap-services.sh and provision plugins use mysql CLI to talk to SwarmDB

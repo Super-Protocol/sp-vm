@@ -1,0 +1,14 @@
+[Unit]
+Description=PKI VM measurements service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/pki-vm-measurements
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
