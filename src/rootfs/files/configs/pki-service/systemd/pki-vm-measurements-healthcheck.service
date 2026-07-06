@@ -1,0 +1,8 @@
+[Unit]
+Description=PKI VM measurements healthcheck
+After=pki-vm-measurements.service
+Wants=pki-vm-measurements.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'if ! /usr/bin/curl --fail --silent --show-error --max-time 5 http://localhost:9180/healthcheck; then /usr/bin/systemctl restart pki-vm-measurements.service; fi'

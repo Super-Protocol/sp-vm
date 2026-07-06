@@ -1,0 +1,11 @@
+[Unit]
+Description=PKI VM measurements healthcheck timer
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=30
+AccuracySec=5
+Unit=pki-vm-measurements-healthcheck.service
+
+[Install]
+WantedBy=timers.target
