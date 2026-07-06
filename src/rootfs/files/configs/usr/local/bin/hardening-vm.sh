@@ -47,8 +47,18 @@ iptables -A INPUT -p udp --dport 51820 -j ACCEPT
 iptables -A INPUT -p tcp --dport 7946 -j ACCEPT
 iptables -A INPUT -p udp --dport 7946 -j ACCEPT
 
-# TODO: disable on production build https://superprotocol.atlassian.net/browse/SP-7564
-# Allow SSH (TCP 22)
-iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+SWARM_SECURITY_MODE_FILE="/etc/swarm/swarm-security-mode"
+SWARM_SECURITY_MODE="$(head -n1 "$SWARM_SECURITY_MODE_FILE" 2>/dev/null | tr -d '[:space:]' || true)"
 
-systemctl start ssh
+case "$SWARM_SECURITY_MODE" in
+    untrusted)
+        # Allow SSH (TCP 22)
+        iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+        systemctl start ssh
+        ;;
+    trusted)
+        ;;
+    *)
+        echo "Unsupported or missing swarm security mode '$SWARM_SECURITY_MODE'; keeping SSH disabled" >&2
+        ;;
+esac
