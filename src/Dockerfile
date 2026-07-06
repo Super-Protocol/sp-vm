@@ -131,6 +131,7 @@ ARG PROVIDER_CONFIG_DST=/sp
 ARG VERSION_CODENAME=noble
 ARG OUTPUTROOT=/output
 ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
+ARG SP_VM_BUILD_TYPE=debug
 
 WORKDIR /buildroot
 
@@ -274,6 +275,11 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
 # generate-swarm-db-config: generates /etc/swarm-db/config.yaml at swarm-db start (ExecStartPre)
 # configuration is read from /sp/swarm/config.yaml (attached via provider config disk at boot)
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm" "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-node"
+RUN case "$SP_VM_BUILD_TYPE" in \
+        debug) printf 'untrusted\n' > "${OUTPUTDIR}/etc/swarm/swarm-security-mode" ;; \
+        release) printf 'trusted\n' > "${OUTPUTDIR}/etc/swarm/swarm-security-mode" ;; \
+        *) echo "Unsupported SP_VM_BUILD_TYPE: $SP_VM_BUILD_TYPE" >&2; exit 1 ;; \
+    esac
 ADD rootfs/files/configs/etc/swarm-node/config.yaml ${OUTPUTDIR}/etc/swarm-node/config.yaml
 ADD rootfs/files/configs/usr/local/bin/swarm-init.sh ${OUTPUTDIR}/usr/local/bin/swarm-init.sh
 ADD rootfs/files/configs/usr/local/bin/generate-swarm-db-config.sh ${OUTPUTDIR}/usr/local/bin/generate-swarm-db-config.sh
