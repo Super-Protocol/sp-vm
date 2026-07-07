@@ -47,10 +47,10 @@ iptables -A INPUT -p udp --dport 51820 -j ACCEPT
 iptables -A INPUT -p tcp --dport 7946 -j ACCEPT
 iptables -A INPUT -p udp --dport 7946 -j ACCEPT
 
-SWARM_SECURITY_MODE_FILE="/etc/swarm/swarm-security-mode"
-SWARM_SECURITY_MODE="$(head -n1 "$SWARM_SECURITY_MODE_FILE" 2>/dev/null | tr -d '[:space:]' || true)"
+SWARM_NETWORK_TYPE_FILE="/etc/swarm/swarm-network-type"
+SWARM_NETWORK_TYPE="$(head -n1 "$SWARM_NETWORK_TYPE_FILE" 2>/dev/null | tr -d '[:space:]' || true)"
 
-case "$SWARM_SECURITY_MODE" in
+case "$SWARM_NETWORK_TYPE" in
     untrusted)
         # Allow SSH (TCP 22)
         iptables -A INPUT -p tcp --dport 22 -j ACCEPT
@@ -59,6 +59,6 @@ case "$SWARM_SECURITY_MODE" in
     trusted)
         ;;
     *)
-        echo "Unsupported or missing swarm security mode '$SWARM_SECURITY_MODE'; keeping SSH disabled" >&2
+        echo "Unsupported or missing swarm network type '$SWARM_NETWORK_TYPE'; keeping SSH disabled" >&2
         ;;
 esac
