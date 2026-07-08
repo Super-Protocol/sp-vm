@@ -26,6 +26,7 @@ function install_extra_packages() {
     # unzip: used to extract service archives (download-services.sh)
     # wireguard-tools: required by the wireguard provision service (wireguard kernel module is in BASE_PACKAGES)
     # redis-tools: redis-cli required by the redis and redis-sentinel provision services
+    # valkey-tools: valkey-check-aof for AOF repair when Valkey fails to start (redis provision service)
     # nats-server: required by the nats provision service
     # knot: Knot DNS server required by the knot provision service (pinned via apt preferences)
     # wget: required by the openresty provision service to download nginx config
@@ -35,6 +36,7 @@ function install_extra_packages() {
         unzip \
         wireguard-tools \
         redis-tools \
+        valkey-tools \
         nats-server \
         wget \
         jq \
