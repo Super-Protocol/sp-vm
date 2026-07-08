@@ -27,6 +27,13 @@ function create_base_system() {
         "$OUTPUTDIR" \
         http://us.archive.ubuntu.com/ubuntu/ \
         || log_fail "failed to create base system";
+
+    # debootstrap only enables the release pocket; some universe packages (e.g. valkey-tools)
+    # are published in -updates / -security only.
+    cat >> "${OUTPUTDIR}/etc/apt/sources.list" <<EOF
+deb http://us.archive.ubuntu.com/ubuntu/ ${VERSION_CODENAME}-updates main universe
+deb http://security.ubuntu.com/ubuntu ${VERSION_CODENAME}-security main universe
+EOF
 }
 
 create_base_system;
