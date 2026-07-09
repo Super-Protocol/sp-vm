@@ -12,7 +12,7 @@ docker buildx build -t sp-vm --allow security.insecure src --output type=local,d
 
 You can pass optional build arguments via docker `--build-arg`, list:
 - SP_VM_IMAGE_VERSION - build tag
-- SP_VM_BUILD_TYPE - `debug` or `release`, default `debug`; writes `/etc/swarm/swarm-security-mode` as `untrusted` for `debug` and `trusted` for `release`
+- SP_VM_BUILD_TYPE - `debug` or `release`, default `debug`; writes `/etc/swarm/swarm-network-type` as `untrusted` for `debug` and `trusted` for `release`
 - S3_BUCKET - only for `vm.json`, default `local`
 
 Example:
