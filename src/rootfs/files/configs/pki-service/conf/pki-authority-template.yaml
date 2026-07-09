@@ -1,16 +1,19 @@
 api:
-    httpsPort: 443
-    httpPort: 80
-    enabledApis:
+  httpsPort: 443
+  httpPort: 80
+  enabledApis:
     - secrets
     - pki
 pki:
   allowedChallenges:
     - token
     - tdx
+    - tdx-google
     - sev-snp
   validateParamRules:
     - type: tdx
+      signatureVerification: github
+    - type: tdx-google
       signatureVerification: github
     - type: sev-snp
       signatureVerification: github
@@ -31,8 +34,8 @@ pki:
     role: swarm
     swarmMode: init
     storage:
-        storageType: file
-        storageFolder: /app/swarm-storage
+      storageType: file
+      storageFolder: /app/swarm-storage
     networkSettings:
       networkType: trusted
 secretsStorage:
@@ -43,4 +46,3 @@ secretsStorage:
     storageFolder: /app/swarm-storage
   validationCaBundle:
     type: pki
-
