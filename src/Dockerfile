@@ -215,9 +215,7 @@ RUN /buildroot/files/scripts/setup_sshd_config.sh
 
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
 
-# copy pki-authority service files
-RUN mkdir -p "${OUTPUTDIR}/etc/super/containers/pki-authority"
-ADD rootfs/files/configs/pki-service/conf/pki-authority-template.yaml "${OUTPUTDIR}/etc/super/containers/pki-authority/pki-authority-template.yaml"
+# copy pki service files
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin/pki-authority"
 ADD rootfs/files/configs/pki-service/scripts/*.py "${OUTPUTDIR}/usr/local/bin/pki-authority/"
 ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pki-authority/"
@@ -359,7 +357,7 @@ RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 
 # install PKI npm components globally (requires python3-venv from setup_runtime_tools)
-ARG PKI_SYNC_CLIENT_VERSION=5.0.5
+ARG PKI_SYNC_CLIENT_VERSION=5.0.6
 ARG PKI_CERT_GENERATOR_VERSION=5.0.2
 ARG PKI_VM_MEASUREMENTS_VERSION=1.0.3
 ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
