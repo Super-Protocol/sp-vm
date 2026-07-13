@@ -17,7 +17,7 @@ source "${BUILDROOT}/files/scripts/chroot.sh";
 
 function install_nodejs() {
     log_info "adding NodeSource repository";
-    chroot "${OUTPUTDIR}" /bin/bash -c 'curl -sL https://deb.nodesource.com/setup_22.x | bash -';
+    chroot "${OUTPUTDIR}" /bin/bash -c 'curl -sL https://deb.nodesource.com/setup_24.x | bash -';
 
     log_info "installing Node.js";
     chroot "${OUTPUTDIR}" /bin/bash -c 'DEBIAN_FRONTEND=noninteractive apt install -y nodejs';

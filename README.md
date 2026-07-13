@@ -12,11 +12,12 @@ docker buildx build -t sp-vm --allow security.insecure src --output type=local,d
 
 You can pass optional build arguments via docker `--build-arg`, list:
 - SP_VM_IMAGE_VERSION - build tag
+- SP_VM_BUILD_TYPE - `debug` or `release`, default `debug`; writes `/etc/swarm/swarm-network-type` as `untrusted` for `debug` and `trusted` for `release`
 - S3_BUCKET - only for `vm.json`, default `local`
 
 Example:
 ```bash
-docker buildx build -t sp-vm --allow security.insecure src --output type=local,dest=./out --build-arg SP_VM_IMAGE_VERSION=build-0 --build-arg S3_BUCKET=test
+docker buildx build -t sp-vm --allow security.insecure src --output type=local,dest=./out --build-arg SP_VM_IMAGE_VERSION=build-0 --build-arg SP_VM_BUILD_TYPE=debug --build-arg S3_BUCKET=test
 ```
 
 The build artifacts will be located in the $(pwd)/out directory.
@@ -68,4 +69,3 @@ losetup -d "$DEVICE";
 
 ## References
 Some parts of the code, including [kernel configs](src/kernel/files/configs/fragments), were taken from or inspired by [Kata Containers](https://github.com/kata-containers/kata-containers), which is distributed under the [Apache-2.0 license](https://github.com/kata-containers/kata-containers/blob/main/LICENSE).
-

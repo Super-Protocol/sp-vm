@@ -131,6 +131,7 @@ ARG PROVIDER_CONFIG_DST=/sp
 ARG VERSION_CODENAME=noble
 ARG OUTPUTROOT=/output
 ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
+ARG SP_VM_BUILD_TYPE=debug
 
 WORKDIR /buildroot
 
@@ -169,8 +170,6 @@ ADD rootfs/files/configs/etc/systemd/system/sync-varlib.service \
 RUN ln -sf /etc/systemd/system/sync-varlib.service \
     "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sync-varlib.service"
 
-RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"
-RUN ln -sf "/lib/systemd/system/getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/getty@ttyS0.service"
 # ensure system boots into multi-user.target instead of graphical.target
 RUN ln -sf "/lib/systemd/system/multi-user.target" "${OUTPUTDIR}/etc/systemd/system/default.target"
 
@@ -185,8 +184,10 @@ ADD rootfs/files/configs/chrony/chrony.service ${OUTPUTDIR}/etc/systemd/system/c
 RUN ln -sf /etc/systemd/system/chrony.service \
     "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/chrony.service"
 
-RUN sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"
-RUN sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"
+RUN if [ "$SP_VM_BUILD_TYPE" = "release" ]; then \
+        sed -i '1 s|^.*$|-:root:ALL|' "${OUTPUTDIR}/etc/security/access.conf"; \
+        sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"; \
+    fi
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
 
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
@@ -214,9 +215,7 @@ RUN /buildroot/files/scripts/setup_sshd_config.sh
 
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin";
 
-# copy pki-authority service files
-RUN mkdir -p "${OUTPUTDIR}/etc/super/containers/pki-authority"
-ADD rootfs/files/configs/pki-service/conf/pki-authority-template.yaml "${OUTPUTDIR}/etc/super/containers/pki-authority/pki-authority-template.yaml"
+# copy pki service files
 RUN mkdir -p "${OUTPUTDIR}/usr/local/bin/pki-authority"
 ADD rootfs/files/configs/pki-service/scripts/*.py "${OUTPUTDIR}/usr/local/bin/pki-authority/"
 ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pki-authority/"
@@ -274,6 +273,11 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-cloud-api.sh
 # generate-swarm-db-config: generates /etc/swarm-db/config.yaml at swarm-db start (ExecStartPre)
 # configuration is read from /sp/swarm/config.yaml (attached via provider config disk at boot)
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm" "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-node"
+RUN case "$SP_VM_BUILD_TYPE" in \
+        debug) printf 'untrusted\n' > "${OUTPUTDIR}/etc/swarm/swarm-network-type" ;; \
+        release) printf 'trusted\n' > "${OUTPUTDIR}/etc/swarm/swarm-network-type" ;; \
+        *) echo "Unsupported SP_VM_BUILD_TYPE: $SP_VM_BUILD_TYPE" >&2; exit 1 ;; \
+    esac
 ADD rootfs/files/configs/etc/swarm-node/config.yaml ${OUTPUTDIR}/etc/swarm-node/config.yaml
 ADD rootfs/files/configs/usr/local/bin/swarm-init.sh ${OUTPUTDIR}/usr/local/bin/swarm-init.sh
 ADD rootfs/files/configs/usr/local/bin/generate-swarm-db-config.sh ${OUTPUTDIR}/usr/local/bin/generate-swarm-db-config.sh
@@ -294,12 +298,18 @@ ADD rootfs/files/configs/usr/local/bin/swarm-services.sh ${OUTPUTDIR}/usr/local/
 RUN chmod +x ${OUTPUTDIR}/usr/local/bin/swarm-services.sh
 RUN ln -sf /etc/systemd/system/swarm-services.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/swarm-services.service"
 
-# Keep serial getty for debugging
-# ADD rootfs/files/configs/usr/lib/systemd/system/serial-getty@.service "${OUTPUTDIR}/usr/lib/systemd/system/serial-getty@.service"
-# RUN ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/getty@ttyS0.service"
-
-# # Debugging: set root password
-# RUN echo "root:supersecret" | chpasswd -R ${OUTPUTDIR}
+# Enable interactive serial console login only for debug builds.
+RUN if [ "$SP_VM_BUILD_TYPE" = "debug" ]; then \
+        mkdir -p "${OUTPUTDIR}/etc/systemd/system/getty.target.wants"; \
+        ln -sf "/lib/systemd/system/serial-getty@.service" "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"; \
+        if [ -f "${OUTPUTDIR}/etc/securetty" ] && ! grep -qx ttyS0 "${OUTPUTDIR}/etc/securetty"; then \
+            echo ttyS0 >> "${OUTPUTDIR}/etc/securetty"; \
+        fi; \
+        echo "root:supersecret" | chpasswd -R "${OUTPUTDIR}"; \
+    else \
+        ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/serial-getty@ttyS0.service"; \
+        rm -f "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"; \
+    fi
 
 # swarm binaries into VM rootfs
 RUN mkdir -p "${OUTPUTDIR}/usr/local/lib/swarm-cloud" "${OUTPUTDIR}/usr/local/bin"
@@ -347,8 +357,8 @@ RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 
 # install PKI npm components globally (requires python3-venv from setup_runtime_tools)
-ARG PKI_SYNC_CLIENT_VERSION=5.0.0
-ARG PKI_CERT_GENERATOR_VERSION=5.0.0
+ARG PKI_SYNC_CLIENT_VERSION=5.0.6
+ARG PKI_CERT_GENERATOR_VERSION=5.0.2
 ARG PKI_VM_MEASUREMENTS_VERSION=1.0.3
 ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_pki_components.sh

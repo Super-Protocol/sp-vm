@@ -12,6 +12,7 @@ import yaml
 
 SWARM_KEY_FILE = "/etc/swarm/swarm.key"
 SWARM_CPU_TYPE_FILE = "/etc/swarm/swarm-cpu-type"
+SWARM_NETWORK_TYPE_FILE = "/etc/swarm/swarm-network-type"
 SERVICE_NAME = "pki-configure-helper"
 SYNC_CLIENT_PORT = 9443
 
@@ -42,15 +43,29 @@ def dump_yaml(data: dict) -> str:
     )
 
 
+def read_first_line(path: Path) -> str | None:
+    if not path.exists():
+        return None
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        return None
+
+    return lines[0].strip() or None
+
+
 def detect_network_type() -> str:
     cpu_type_path = Path(SWARM_CPU_TYPE_FILE)
+    network_type_path = Path(SWARM_NETWORK_TYPE_FILE)
 
     def read_cpu_type() -> str | None:
-        if cpu_type_path.exists():
-            first_line = cpu_type_path.read_text(encoding="utf-8").splitlines()[0].strip()
-            if first_line:
-                return first_line
-        return None
+        return read_first_line(cpu_type_path)
+
+    network_type = read_first_line(network_type_path)
+    if network_type is None:
+        raise ValueError(f"Network type file is missing or empty: {network_type_path}")
+    if network_type not in ("trusted", "untrusted"):
+        raise ValueError(f"Invalid network type '{network_type}' in {network_type_path}")
 
     cpu_type = read_cpu_type()
     if cpu_type is None:
@@ -59,9 +74,13 @@ def detect_network_type() -> str:
             check=True
         )
         cpu_type = read_cpu_type()
+    if cpu_type is None:
+        raise ValueError(f"CPU type file is missing or empty: {cpu_type_path}")
 
-    # TODO: implement two types of virtual machine
-    return "untrusted" #if cpu_type == "untrusted" else "trusted"
+    if network_type == "trusted" and cpu_type == "untrusted":
+        raise ValueError("Network type 'trusted' is incompatible with CPU type 'untrusted'")
+
+    return network_type
 
 
 def patch_template(template: dict, network_type: str) -> dict:

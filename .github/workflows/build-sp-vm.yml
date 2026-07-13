@@ -16,7 +16,7 @@ on:
         description: type of build to run
         options:
           - debug
-          # - production TODO: https://superprotocol.atlassian.net/browse/SP-7564
+          - release
       upload-to-gcp:
         required: false
         type: boolean
@@ -47,7 +47,7 @@ jobs:
 
       - name: Set SP_VM_IMAGE_VERSION variable
         run: |
-          echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "SP_VM_IMAGE_VERSION=build-${{ github.run_number }}-${{ inputs.build-type }}" >> "$GITHUB_ENV"
 
       - name: Setup builder
         run: |
@@ -68,6 +68,7 @@ jobs:
               src \
               --output type=local,dest=./out \
               --build-arg "SP_VM_IMAGE_VERSION=$SP_VM_IMAGE_VERSION" \
+              --build-arg "SP_VM_BUILD_TYPE=${{ inputs.build-type }}" \
               --build-arg "S3_BUCKET=$S3_BUCKET";
 
       - name: Upload files to Storj

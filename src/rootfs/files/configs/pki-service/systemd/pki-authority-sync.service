@@ -19,6 +19,7 @@ ExecStart=/bin/bash -c 'until /usr/bin/node /usr/bin/pki-sync-client sync \
     --swarm-env /etc/swarm/sync-client-config.yaml \
     --save-certs-to-dir /etc/super/certs/vm \
     --save-certs-prefix vm \
+    --network-type-file /etc/swarm/swarm-network-type \
     --disable-server-identity-check \
     --log-level debug; do \
     echo "[pki-authority-sync] remote not ready, retry in 60s"; \
