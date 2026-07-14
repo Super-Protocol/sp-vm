@@ -1,5 +1,5 @@
 [Unit]
-Description=Configure VM network from MAC-bound kernel spnet.* parameters
+Description=Configure VM network from provider_config spnet settings
 DefaultDependencies=no
 Before=network-pre.target systemd-networkd.service
 Wants=network-pre.target

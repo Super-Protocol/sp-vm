@@ -1,10 +1,10 @@
 #!/bin/bash
-# sp-tap-network.sh — configure the VM's network from MAC-bound kernel params.
+# sp-tap-network.sh — configure the VM's network from provider_config.
 #
-# Reads spnet.* parameters injected by start_super_protocol.sh (tap mode):
-#   spnet.mac=<lower-case MAC>     which NIC to configure (authoritative)
-#   spnet.ip=<addr>/<prefix>       static address in CIDR form
-#   spnet.gw=<gateway>             default gateway (optional)
+# Reads spnet.* values from provider_config swarm/config.yaml:
+#   spnet.mac     which NIC to configure (authoritative)
+#   spnet.ip      static address in CIDR form
+#   spnet.gw      default gateway (optional)
 #
 # Why match by MAC and not by interface name:
 #   The PCI slot a virtio-net device lands on depends on the full device set
@@ -18,20 +18,70 @@ set -euo pipefail
 
 log() { echo "sp-tap-network: $*" >&2; }
 
-# --- read /proc/cmdline ----------------------------------------------------
-read_param() {
-    # extract value of key=... from /proc/cmdline; empty if absent
-    local key="$1"
-    tr ' ' '\n' < /proc/cmdline | grep "^${key}=" | head -1 | cut -d= -f2- || true
+# --- read provider_config --------------------------------------------------
+CONFIG_CANDIDATES=(
+    "${SPNET_CONFIG:-}"
+    "/provider_config/swarm/config.yaml"
+    "/sp/swarm/config.yaml"
+)
+
+read_spnet_config() {
+    local config="$1"
+    local output
+    local values=()
+
+    if ! output="$(python3 - "${config}" <<'PY'
+import sys
+import yaml
+
+config_path = sys.argv[1]
+
+with open(config_path, "r", encoding="utf-8") as f:
+    config = yaml.safe_load(f) or {}
+
+spnet = config.get("spnet") if isinstance(config, dict) else None
+if not isinstance(spnet, dict):
+    spnet = {}
+
+for key in ("mac", "ip", "gw"):
+    value = spnet.get(key)
+    print("" if value is None else str(value))
+
+print("__SPNET_END__")
+PY
+)"; then
+        log "ERROR: failed to read spnet config from ${config}"
+        return 1
+    fi
+
+    mapfile -t values <<< "${output}"
+    MAC="${values[0]:-}"
+    IPCIDR="${values[1]:-}"
+    GW="${values[2]:-}"
 }
 
-MAC="$(read_param spnet.mac)"
-IPCIDR="$(read_param spnet.ip)"
-GW="$(read_param spnet.gw)"
+CONFIG=""
+for candidate in "${CONFIG_CANDIDATES[@]}"; do
+    [[ -z "${candidate}" ]] && continue
+    if [[ -s "${candidate}" ]]; then
+        CONFIG="${candidate}"
+        break
+    fi
+done
 
-# Nothing to do if the network params were not provided (e.g. user-mode netdev).
+if [[ -z "${CONFIG}" ]]; then
+    log "provider_config swarm/config.yaml not found — nothing to configure, exiting 0"
+    exit 0
+fi
+
+if ! read_spnet_config "${CONFIG}"; then
+    exit 1
+fi
+log "read spnet config from ${CONFIG}"
+
+# Nothing to do if tap network params were not provided (e.g. user-mode netdev).
 if [[ -z "${MAC}" || -z "${IPCIDR}" ]]; then
-    log "spnet.mac/spnet.ip not present on cmdline — nothing to configure, exiting 0"
+    log "spnet.mac/spnet.ip not present in ${CONFIG} — nothing to configure, exiting 0"
     exit 0
 fi
 
