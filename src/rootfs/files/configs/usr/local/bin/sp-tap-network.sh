@@ -74,7 +74,9 @@ if [[ -z "${CONFIG}" ]]; then
     exit 0
 fi
 
-read_spnet_config "${CONFIG}"
+if ! read_spnet_config "${CONFIG}"; then
+    exit 1
+fi
 log "read spnet config from ${CONFIG}"
 
 # Nothing to do if tap network params were not provided (e.g. user-mode netdev).
