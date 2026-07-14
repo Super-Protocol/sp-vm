@@ -10,7 +10,6 @@ set -euo pipefail;
 BUILDROOT="/buildroot";
 PCCS_DIRNAME="sgx-dcap-pccs";
 PCCS_ORIGINAL_LOCATION="/opt/intel";
-PCCS_INSTALL_DIR="/usr/local";
 
 # Configuration variables
 PCCS_API_KEY="aecd5ebb682346028d60c36131eb2d92"
@@ -64,15 +63,6 @@ function install_pccs_package() {
     chroot "${OUTPUTDIR}" /bin/bash -c "adduser --quiet --system pccs --group --home ${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME} --no-create-home --shell /bin/bash";
 }
 
-function move_pccs_to_custom_location() {
-    log_info "moving PCCS from ${PCCS_ORIGINAL_LOCATION} to ${PCCS_INSTALL_DIR}";
-    mkdir -p "$(dirname "${OUTPUTDIR}${PCCS_INSTALL_DIR}")";
-    mv "${OUTPUTDIR}${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}" "${OUTPUTDIR}${PCCS_INSTALL_DIR}";
-    
-    log_info "removing old ${PCCS_ORIGINAL_LOCATION} directory structure";
-    rm -rf "${OUTPUTDIR}${PCCS_ORIGINAL_LOCATION}";
-}
-
 function create_pccs_config() {
     log_info "creating PCCS configuration directory";
     mkdir -p "${OUTPUTDIR}${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}/config/";
@@ -115,26 +105,27 @@ function create_pccs_config() {
 EOL
 }
 
-function generate_ssl_keys() {
-    log_info "generating SSL keys for PCCS";
-    mkdir -p "${OUTPUTDIR}${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}/ssl_key";
-    
-    chroot "${OUTPUTDIR}" /bin/bash -c "cd ${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME} && \
-        openssl genrsa -out ssl_key/private.pem 2048 && \
-        openssl req -new -key ssl_key/private.pem -out ssl_key/csr.pem -subj '/CN=localhost' && \
-        openssl x509 -req -days 365 -in ssl_key/csr.pem -signkey ssl_key/private.pem -out ssl_key/file.crt";
+function prepare_ssl_key_directory() {
+    log_info "preparing an empty PCCS SSL key directory";
+    rm -f \
+        "${OUTPUTDIR}${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}/ssl_key/private.pem" \
+        "${OUTPUTDIR}${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}/ssl_key/csr.pem" \
+        "${OUTPUTDIR}${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}/ssl_key/file.crt";
+    chroot "${OUTPUTDIR}" install -d -o pccs -g pccs -m 0750 \
+        "${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}/ssl_key";
 }
 
 function set_pccs_permissions() {
     log_info "setting PCCS permissions";
-    chroot "${OUTPUTDIR}" /bin/bash -c "chown -R pccs:pccs ${PCCS_INSTALL_DIR}/${PCCS_DIRNAME} && chmod -R 750 ${PCCS_INSTALL_DIR}/${PCCS_DIRNAME}";
+    chroot "${OUTPUTDIR}" /bin/bash -c "chown -R pccs:pccs ${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME} && chmod -R 750 ${PCCS_ORIGINAL_LOCATION}/${PCCS_DIRNAME}";
 }
 
 function update_pccs_service() {
     log_info "updating PCCS systemd service with new NodeJs path";
     if [ -f "${OUTPUTDIR}/usr/lib/systemd/system/pccs.service" ]; then
         # Find node binary path
-        local NODE_PATH=$(chroot "${OUTPUTDIR}" /bin/bash -c 'which node' 2>/dev/null || true)
+        local NODE_PATH;
+        NODE_PATH=$(chroot "${OUTPUTDIR}" /bin/bash -c 'which node' 2>/dev/null || true)
         
         if [ -z "${NODE_PATH}" ]; then
             log_fail "Node.js binary not found in system PATH";
@@ -161,11 +152,8 @@ add_intel_sgx_repository;
 install_qpl_package;
 install_pccs_package;
 create_pccs_config;
-generate_ssl_keys;
+prepare_ssl_key_directory;
 update_pccs_service;
 enable_pccs_service;
-move_pccs_to_custom_location;
 set_pccs_permissions;
 chroot_deinit;
-
-

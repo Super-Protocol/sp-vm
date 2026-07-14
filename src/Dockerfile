@@ -367,13 +367,12 @@ RUN --security=insecure bash /buildroot/files/scripts/install_nodejs.sh
 
 # install PCCS
 ADD rootfs/files/scripts/install_pccs.sh /buildroot/files/scripts/
-ADD rootfs/files/configs/pccs-init/ /buildroot/files/configs/pccs-init/
 RUN --security=insecure /buildroot/files/scripts/install_pccs.sh
 ADD rootfs/files/configs/pki-service/sgx_default_qcnl.conf ${OUTPUTDIR}/etc/sgx_default_qcnl.conf
-ADD rootfs/files/configs/pccs-init/pccs-init.service "${OUTPUTDIR}/usr/lib/systemd/system/pccs-init.service"
-ADD rootfs/files/configs/pccs-init/pccs-init.sh "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
-RUN chmod +x "${OUTPUTDIR}/usr/local/bin/pccs-init.sh"
-RUN ln -s /usr/lib/systemd/system/pccs-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pccs-init.service"
+RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/pccs.service.d"
+ADD rootfs/files/configs/pccs/10-generate-keys.conf "${OUTPUTDIR}/etc/systemd/system/pccs.service.d/10-generate-keys.conf"
+ADD rootfs/files/configs/pccs/pccs-generate-keys.sh "${OUTPUTDIR}/usr/local/bin/pccs-generate-keys.sh"
+RUN chmod 0755 "${OUTPUTDIR}/usr/local/bin/pccs-generate-keys.sh"
 
 # Custom swarm services
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
