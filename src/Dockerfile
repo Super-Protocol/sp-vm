@@ -124,8 +124,26 @@ RUN /buildroot/files/scripts/build-kernel.sh
 
 
 ### Start rootfs ###
-FROM ubuntu:noble-20250714 AS rootfs_builder
-RUN apt update && apt install -y wget gcc make build-essential debootstrap petname gettext
+FROM ubuntu:noble-20250714@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS rootfs_base
+
+ARG UBUNTU_SNAPSHOT_ID=20260714T000000Z
+ARG SOURCE_DATE_EPOCH=1783987200
+RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
+    && printf 'deb http://archive.ubuntu.com/ubuntu/ noble main\n' > /etc/apt/sources.list \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates \
+    && printf '%s\n' \
+        'deb http://archive.ubuntu.com/ubuntu/ noble main universe' \
+        'deb http://archive.ubuntu.com/ubuntu/ noble-updates main universe' \
+        'deb http://security.ubuntu.com/ubuntu/ noble-security main universe' \
+        > /etc/apt/sources.list \
+    && printf 'APT::Snapshot "%s";\nAPT::Get::Always-Include-Phased-Updates "true";\nAcquire::Languages "none";\n' \
+        "$UBUNTU_SNAPSHOT_ID" > /etc/apt/apt.conf.d/50snapshot \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        wget gcc make build-essential debootstrap petname gettext \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 ARG PROVIDER_CONFIG_DST=/sp
 ARG VERSION_CODENAME=noble
@@ -138,7 +156,17 @@ WORKDIR /buildroot
 ADD general/files/scripts/log.sh /buildroot/files/scripts/
 
 ADD rootfs/files/scripts/create_base_system.sh /buildroot/files/scripts/
+ADD rootfs/files/configs/etc/resolv.conf /buildroot/files/configs/etc/resolv.conf
 RUN /buildroot/files/scripts/create_base_system.sh
+
+FROM rootfs_base AS rootfs_base_artifact
+ADD rootfs/files/scripts/export_base_system.sh /buildroot/files/scripts/
+RUN /buildroot/files/scripts/export_base_system.sh
+
+FROM scratch AS rootfs_base_export
+COPY --from=rootfs_base_artifact /output/rootfs-base-artifacts/ /
+
+FROM rootfs_base AS rootfs_builder
 
 COPY --from=kernel_builder /output/deb ${OUTPUTDIR}/kernel_deb
 ADD rootfs/files/scripts/install_kernel.sh /buildroot/files/scripts/
@@ -191,7 +219,6 @@ RUN if [ "$SP_VM_BUILD_TYPE" = "release" ]; then \
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
 
 RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
-ADD rootfs/files/configs/etc/resolv.conf ${OUTPUTDIR}/etc/resolv.conf
 RUN mkdir -p "${OUTPUTDIR}/etc/rancher/rke2"
 ADD rootfs/files/configs/etc/cni/podman/net.d/87-podman-bridge.conflist \
     ${OUTPUTDIR}/etc/cni/podman/net.d/87-podman-bridge.conflist

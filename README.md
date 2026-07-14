@@ -22,6 +22,21 @@ docker buildx build -t sp-vm --allow security.insecure src --output type=local,d
 
 The build artifacts will be located in the $(pwd)/out directory.
 
+## Base rootfs reproducibility test
+
+The Ubuntu Noble base rootfs is built from the pinned `20260714T000000Z`
+snapshot, including the release, updates, and security pockets. To build it
+three times without BuildKit cache and compare canonical rootfs archives:
+
+```bash
+src/rootfs/tests/check_base_reproducibility.sh
+```
+
+The test requires Docker Buildx and network access to
+`snapshot.ubuntu.com`. Set `KEEP_ROOTFS_REPRO_OUTPUT=1` to retain successful
+build artifacts for inspection. `ROOTFS_REPRO_RUNS` can change the number of
+runs, but must be at least two.
+
 ## Local Build - PKI Image Access
 
 For successful local builds, you need permission to pull the image from the repository https://github.com/Super-Protocol/tee-pki/pkgs/container/tee-pki-authority-service-lxc . This may require running `docker login ghcr.io` and an access token.
