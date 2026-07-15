@@ -178,12 +178,6 @@ RUN --security=insecure /buildroot/files/scripts/install_nvidia.sh
 ADD rootfs/files/scripts/install_gve.sh /buildroot/files/scripts/install_gve.sh
 RUN --security=insecure /buildroot/files/scripts/install_gve.sh
 
-# Install s3fs-fuse for provider_config S3 bucket mounting
-ADD rootfs/files/scripts/install_s3fs.sh /buildroot/files/scripts/
-RUN --security=insecure /buildroot/files/scripts/install_s3fs.sh
-# Allow user_allow_other so s3fs -o allow_other works for non-root processes
-RUN echo 'user_allow_other' >> ${OUTPUTDIR}/etc/fuse.conf
-
 RUN mkdir -p "${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests"
 ADD rootfs/files/configs/etc/super/var/lib/rancher/rke2/server/manifests/k8s-swarm.yaml \
     ${OUTPUTDIR}/etc/super/var/lib/rancher/rke2/server/manifests/k8s-swarm.yaml
@@ -377,7 +371,8 @@ RUN chmod 0755 "${OUTPUTDIR}/usr/local/bin/pccs-generate-keys.sh"
 # Custom swarm services
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
 
-# tools needed at runtime (prevent daemons from starting in chroot) and runtime setup
+# tools needed at runtime, including s3fs for provider_config mounting
+# (prevent daemons from starting in chroot) and runtime setup
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
