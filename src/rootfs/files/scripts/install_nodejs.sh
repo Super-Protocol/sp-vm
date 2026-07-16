@@ -5,10 +5,10 @@ set -euo pipefail;
 
 # public, required
 # OUTPUTDIR
-# NODEJS_VERSION
-# NODEJS_DEB_SHA256
 
 BUILDROOT="/buildroot";
+NODEJS_VERSION="24.18.0-1nodesource1";
+NODEJS_DEB_SHA256="9d80b9f2728e92b9bcd7fcef7124d9139dadefc2289170a7fcc6cb1ba5271e7c";
 source "${BUILDROOT}/files/scripts/chroot.sh";
 
 PACKAGE_FILENAME="nodejs_${NODEJS_VERSION}_amd64.deb";

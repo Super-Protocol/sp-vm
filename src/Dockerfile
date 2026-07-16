@@ -354,8 +354,6 @@ RUN chmod +x \
     ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
 
 # install Node.js (required by PCCS npm install and swarm-cloud-api)
-ARG NODEJS_VERSION=24.18.0-1nodesource1
-ARG NODEJS_DEB_SHA256=9d80b9f2728e92b9bcd7fcef7124d9139dadefc2289170a7fcc6cb1ba5271e7c
 ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_nodejs.sh
 
@@ -371,13 +369,17 @@ RUN chmod 0755 "${OUTPUTDIR}/usr/local/bin/pccs-generate-keys.sh"
 # Custom swarm services
 RUN mkdir -p ${OUTPUTDIR}/etc/swarm-services/
 
-# tools needed at runtime, including s3fs for provider_config mounting
-# (prevent daemons from starting in chroot) and runtime setup
+# Prevent package installation from starting daemons inside the chroot
 ADD rootfs/files/scripts/setup_runtime_tools.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/setup_runtime_tools.sh
 RUN --security=insecure /buildroot/files/scripts/setup_runtime_tools.sh
 
-# install PKI npm components globally (requires python3-venv from setup_runtime_tools)
+# System packages used by VM services and provision plugins
+ADD rootfs/files/configs/etc/dpkg/dpkg.cfg.d/force-confold ${OUTPUTDIR}/etc/dpkg/dpkg.cfg.d/force-confold
+ADD rootfs/files/scripts/install_extra_packages.sh /buildroot/files/scripts/
+RUN --security=insecure bash /buildroot/files/scripts/install_extra_packages.sh
+
+# install PKI npm components globally
 ARG PKI_SYNC_CLIENT_VERSION=5.0.9
 ARG PKI_CERT_GENERATOR_VERSION=5.0.4
 ARG PKI_VM_MEASUREMENTS_VERSION=1.0.5
@@ -385,15 +387,6 @@ ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
 RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh \
     "${PKI_SYNC_CLIENT_VERSION}" "${PKI_CERT_GENERATOR_VERSION}" "${PKI_VM_MEASUREMENTS_VERSION}"
-
-# Extra system packages required by provision plugins at runtime
-# mysql-client: bootstrap-services.sh and provision plugins use mysql CLI to talk to SwarmDB
-# unzip: download-services.sh extracts service archives
-# netcat-openbsd: provision plugins use nc for port readiness checks (e.g. cockroachdb plugin)
-# dnsutils: DNS tools (nsupdate) used by rke2 plugin for Knot DNS updates
-ADD rootfs/files/configs/etc/dpkg/dpkg.cfg.d/force-confold ${OUTPUTDIR}/etc/dpkg/dpkg.cfg.d/force-confold
-ADD rootfs/files/scripts/install_extra_packages.sh /buildroot/files/scripts/
-RUN --security=insecure bash /buildroot/files/scripts/install_extra_packages.sh
 
 # Python runtime dependencies used by Swarm services and provision plugins
 ADD rootfs/files/configs/python/requirements.lock /buildroot/files/configs/python/requirements.lock

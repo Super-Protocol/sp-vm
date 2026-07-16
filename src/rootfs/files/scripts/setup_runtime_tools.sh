@@ -16,18 +16,6 @@ function setup_runtime_tools() {
     log_info "creating policy-rc.d to prevent daemon autostart in chroot"
     printf '#!/bin/sh\nexit 101\n' > "${OUTPUTDIR}/usr/sbin/policy-rc.d"
     chmod +x "${OUTPUTDIR}/usr/sbin/policy-rc.d"
-
-    log_info "installing runtime packages into rootfs (python3, mysql client, openssl, netcat, dns tools, curl, s3fs)"
-    chroot "${OUTPUTDIR}" /usr/bin/apt update
-    chroot "${OUTPUTDIR}" /usr/bin/apt install -y --no-install-recommends \
-        mysql-client python3 python3-pip python3-venv openssl netcat-openbsd dnsutils curl nano ncurses-term s3fs
-    chroot "${OUTPUTDIR}" /usr/bin/apt clean
-
-    # Required by provider-config-s3fs.service, which mounts /sp for
-    # processes running as non-root users.
-    if ! grep -qxF 'user_allow_other' "${OUTPUTDIR}/etc/fuse.conf"; then
-        printf 'user_allow_other\n' >> "${OUTPUTDIR}/etc/fuse.conf"
-    fi
 }
 
 chroot_init
