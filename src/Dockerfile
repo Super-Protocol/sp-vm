@@ -1,127 +1,4 @@
-# syntax=docker/dockerfile:1-labs
-
-### Start busybox ###
-FROM ubuntu:24.04 AS busybox_builder
-RUN apt-get update && apt-get install -y wget gcc make build-essential
-ARG busybox_version=1_36_1
-ADD https://github.com/mirror/busybox/archive/refs/tags/${busybox_version}.tar.gz /tmp/busybox-${busybox_version}.tar.gz
-RUN tar -C /tmp -xvf/tmp/busybox-${busybox_version}.tar.gz
-WORKDIR /tmp/busybox-${busybox_version}
-ADD initramfs/files/busybox_config /tmp/busybox-${busybox_version}/.config
-RUN make -j
-RUN mkdir -p /initramfs-root/sbin
-RUN cp /tmp/busybox-${busybox_version}/busybox /initramfs-root/sbin/busybox
-### End busybox ###
-
-### Start util_linux ###
-FROM ubuntu:24.04 AS util_linux_builder
-RUN apt-get update && apt-get install -y wget gcc make build-essential
-ARG util_linux_version=2.41
-ADD https://www.kernel.org/pub/linux/utils/util-linux/v${util_linux_version}/util-linux-${util_linux_version}.tar.gz /tmp/util-linux-${util_linux_version}.tar.gz
-RUN tar -C /tmp -xvf/tmp/util-linux-${util_linux_version}.tar.gz
-WORKDIR /tmp/util-linux-${util_linux_version}
-RUN ./configure --disable-shared --enable-static --disable-liblastlog2 --without-tinfo --without-ncurses --disable-ipv6 --disable-pylibmount
-RUN make -j blkid wipefs lsblk LDFLAGS="--static"
-RUN strip blkid wipefs lsblk
-RUN mkdir -p /initramfs-root/sbin
-RUN cp /tmp/util-linux-${util_linux_version}/blkid /initramfs-root/sbin/blkid
-RUN cp /tmp/util-linux-${util_linux_version}/wipefs /initramfs-root/sbin/wipefs
-RUN cp /tmp/util-linux-${util_linux_version}/lsblk /initramfs-root/sbin/lsblk
-### End util_linux ###
-
-### Start lvm2 ###
-FROM ubuntu:24.04 AS lvm2_builder
-RUN apt-get update && apt-get install -y wget gcc make build-essential git libblkid-dev libaio-dev uuid-dev pkg-config
-ARG lvm2_repo=https://github.com/lvmteam/lvm2
-ARG lvm2_version=v2_03_16
-RUN git clone --depth 1 --branch "${lvm2_version}" "${lvm2_repo}" /tmp/lvm2
-WORKDIR /tmp/build-root
-RUN /tmp/lvm2/configure --enable-static_link --disable-selinux --prefix /initramfs-root
-RUN make -j
-RUN make install
-### End lvm2 ###
-
-### Start cryptsetup ###
-FROM ubuntu:24.04 AS cryptsetup_builder
-RUN apt-get update && apt-get install -y wget gcc make build-essential git libblkid-dev libaio-dev autoconf automake autopoint libtool gettext libssl-dev zlib1g-dev libseccomp2 libseccomp-dev uuid-dev pkg-config libgcrypt20-dev libpopt-dev libjson-c-dev
-COPY --from=lvm2_builder /initramfs-root /initramfs-root
-COPY --from=lvm2_builder /tmp/build-root/libdm/libdevmapper.pc /usr/lib/pkgconfig/devmapper.pc
-ARG cryptsetup_repo=https://gitlab.com/cryptsetup/cryptsetup
-ARG cryptsetup_version=v2.5.0
-RUN git clone --depth 1 --branch "${cryptsetup_version}" "${cryptsetup_repo}" /tmp/cryptsetup
-WORKDIR /tmp/cryptsetup
-RUN /tmp/cryptsetup/autogen.sh
-WORKDIR /tmp/build-root
-RUN CFLAGS="-I/initramfs-root/include" CXXFLAGS="-I/initramfs-root/include" LDFLAGS="-L/initramfs-root/lib" /tmp/cryptsetup/configure --enable-static --enable-static-cryptsetup --disable-udev --disable-external-tokens --disable-ssh-token --disable-asciidoc --prefix /initramfs-root
-RUN make -j
-RUN make install
-RUN strip /initramfs-root/sbin/veritysetup.static
-RUN strip /initramfs-root/sbin/cryptsetup.static
-### End cryptsetup ###
-
-### Start gen_init_cpio ###
-FROM ubuntu:24.04 AS gen_init_cpio_builder
-RUN apt-get update && apt-get install -y wget gcc make build-essential
-RUN apt -y install git
-RUN git clone --depth 1 --filter=blob:none --sparse https://github.com/torvalds/linux.git /tmp/linux
-WORKDIR /tmp/linux
-RUN git sparse-checkout add usr
-WORKDIR /tmp/linux/usr
-RUN make -j gen_init_cpio
-RUN install gen_init_cpio /usr/sbin/
-### End gen_init_cpio ###
-
-### Start e2fsprogs ###
-FROM ubuntu:24.04 AS e2fsprogs_builder
-RUN apt-get update && apt-get install -y wget gcc make build-essential
-ARG e2fsprogs_version=1.47.3
-ADD https://github.com/tytso/e2fsprogs/archive/refs/tags/v${e2fsprogs_version}.tar.gz /tmp/e2fsprogs-${e2fsprogs_version}.tar.gz
-RUN tar -C /tmp -xvf/tmp/e2fsprogs-${e2fsprogs_version}.tar.gz
-WORKDIR /tmp/e2fsprogs-${e2fsprogs_version}
-RUN ./configure CFLAGS='-g -O2 -static' LDFLAGS='-static'
-RUN make -j
-RUN mkdir -p /initramfs-root/sbin
-RUN cp /tmp/e2fsprogs-${e2fsprogs_version}/misc/mke2fs /initramfs-root/sbin/mkfs.ext4
-RUN strip /initramfs-root/sbin/mkfs.ext4
-### End e2fsprogs ###
-
-### Start initramfs ###
-FROM gen_init_cpio_builder AS initramfs_builder
-COPY --from=busybox_builder /initramfs-root/sbin/busybox /initramfs-root/sbin/
-COPY --from=util_linux_builder /initramfs-root/sbin/blkid /initramfs-root/sbin/
-COPY --from=util_linux_builder /initramfs-root/sbin/lsblk /initramfs-root/sbin/
-COPY --from=util_linux_builder /initramfs-root/sbin/wipefs /initramfs-root/sbin/
-COPY --from=cryptsetup_builder /initramfs-root/sbin/veritysetup.static /initramfs-root/sbin/
-COPY --from=cryptsetup_builder /initramfs-root/sbin/cryptsetup.static /initramfs-root/sbin/
-COPY --from=e2fsprogs_builder /initramfs-root/sbin/mkfs.ext4 /initramfs-root/sbin/
-ADD initramfs/files/initramfs.list /initramfs-root/initramfs.list
-ADD initramfs/files/init.sh /initramfs-root/sbin/init.sh
-RUN gen_init_cpio /initramfs-root/initramfs.list | gzip -9 -n > /initramfs-root/initramfs.cpio.gz
-### End  ###
-
-### Start kernel ###
-FROM ubuntu:24.04 AS kernel_builder
-RUN apt-get update && apt-get install -y wget gcc make build-essential curl libssl-dev bc elfutils libelf-dev bison flex cpio kmod rsync debhelper
-ARG KERNEL_VERSION=6.12.13
-ARG KERNEL_SHA256=191dc5aae14a4223f0d5ce4e88cbbd29f0377703b9f0b70d4903734de641fb6a
-
-WORKDIR /buildroot
-
-ADD general/files/scripts/log.sh /buildroot/files/scripts/
-
-ADD kernel/files/scripts/download_and_verify_kernel_src.sh /buildroot/files/scripts/
-RUN /buildroot/files/scripts/download_and_verify_kernel_src.sh
-
-ADD kernel/files/scripts/merge-configs.sh /buildroot/files/scripts/
-ADD kernel/files/scripts/merge_config.sh /buildroot/files/scripts/
-ADD kernel/files/configs /buildroot/files/configs
-RUN /buildroot/files/scripts/merge-configs.sh
-
-COPY --from=initramfs_builder /initramfs-root/initramfs.cpio.gz /buildroot/files/
-ADD kernel/files/scripts/build-kernel.sh /buildroot/files/scripts/
-RUN /buildroot/files/scripts/build-kernel.sh
-### End kernel ###
-
+# syntax=docker/dockerfile:1-labs@sha256:7d49dad25a050e14338ba7028b0460243f9d911dedc160a8fe20c34738fef3af
 
 ### Start rootfs ###
 FROM ubuntu:noble-20250714@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS rootfs_base
@@ -166,9 +43,53 @@ RUN /buildroot/files/scripts/export_base_system.sh
 FROM scratch AS rootfs_base_export
 COPY --from=rootfs_base_artifact /output/rootfs-base-artifacts/ /
 
+### Start low-level release assets ###
+FROM rootfs_base AS low_level_release_download
+ARG LOW_LEVEL_RELEASE=sp-vm-low-level-v1
+ARG LOW_LEVEL_SHA256SUMS=71c28b3260dddfc1506521034c4fdd69686a88813e3861681a2089c448edbf8a
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN set -eu; \
+    [[ "$LOW_LEVEL_RELEASE" =~ ^sp-vm-low-level-v[0-9]+$ ]] \
+        || { echo "Invalid LOW_LEVEL_RELEASE: $LOW_LEVEL_RELEASE" >&2; exit 1; }; \
+    [[ "$LOW_LEVEL_SHA256SUMS" =~ ^[0-9a-f]{64}$ ]] \
+        || { echo "LOW_LEVEL_SHA256SUMS must contain the pinned SHA-256 of SHA256SUMS" >&2; exit 1; }; \
+    base_url="https://github.com/Super-Protocol/sp-vm/releases/download/${LOW_LEVEL_RELEASE}"; \
+    mkdir -p /low-level-release; \
+    cd /low-level-release; \
+    wget --https-only --output-document=SHA256SUMS "${base_url}/SHA256SUMS"; \
+    printf '%s  %s\n' "$LOW_LEVEL_SHA256SUMS" SHA256SUMS | sha256sum --check -; \
+    while read -r checksum filename extra; do \
+        [[ "$checksum" =~ ^[0-9a-f]{64}$ ]] && [[ -z "${extra:-}" ]] \
+            || { echo "Invalid SHA256SUMS entry" >&2; exit 1; }; \
+        case "$filename" in \
+            vmlinuz|OVMF.fd|OVMF_AMD.fd|OVMF_TDX.fd|*.deb) ;; \
+            *) echo "Unexpected low-level asset in SHA256SUMS: $filename" >&2; exit 1 ;; \
+        esac; \
+        wget --https-only --output-document="$filename" "${base_url}/${filename}"; \
+    done < SHA256SUMS; \
+    sha256sum --check SHA256SUMS
+
+# A named BuildKit context called low_level_assets overrides this stage and may
+# point directly to a flat local low-level export directory.
+FROM scratch AS low_level_assets
+COPY --from=low_level_release_download /low-level-release/ /
+
+FROM rootfs_base AS low_level_assets_validated
+COPY --from=low_level_assets / /low-level/
+RUN set -eu; \
+    test -s /low-level/vmlinuz; \
+    test -s /low-level/OVMF.fd; \
+    test -s /low-level/OVMF_AMD.fd; \
+    test -s /low-level/OVMF_TDX.fd; \
+    test -n "$(find /low-level -maxdepth 1 -type f -name 'linux-image*.deb' -print -quit)"; \
+    unexpected="$(find /low-level -mindepth 1 ! -type f -print -quit)"; \
+    test -z "$unexpected" \
+        || { echo "Low-level export must be flat, found: $unexpected" >&2; exit 1; }
+### End low-level release assets ###
+
 FROM rootfs_base AS rootfs_builder
 
-COPY --from=kernel_builder /output/deb ${OUTPUTDIR}/kernel_deb
+COPY --from=low_level_assets_validated /low-level/*.deb ${OUTPUTDIR}/kernel_deb/
 ADD rootfs/files/scripts/install_kernel.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/install_kernel.sh
 
@@ -415,7 +336,6 @@ ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
 
 # is required by passing build arg, value example: SP_VM_IMAGE_VERSION=build-1
 ARG SP_VM_IMAGE_VERSION
-ARG KERNEL_VERSION=6.12.13
 
 WORKDIR /output
 ADD general/files/scripts/log.sh /buildroot/files/scripts/
@@ -426,59 +346,15 @@ RUN --mount=type=bind,target=/output/rootfs,readonly,from=rootfs_builder,source=
     /buildroot/files/scripts/create_image.sh
 ### End image ###
 
-### Start ovmf_builder_base ###
-FROM ubuntu:24.04 AS ovmf_builder_base
-RUN apt update && apt install -y wget gcc make build-essential git uuid-dev python-is-python3 nasm iasl dpkg-dev lsb-release quilt
-
-WORKDIR /buildroot
-
-ADD bios/files/configs/gitconfig /root/.gitconfig
-### End ovmf_builder_base ###
-
-### Start ovmf_builder_sev ###
-FROM ovmf_builder_base AS ovmf_builder_sev
-RUN git clone --single-branch --depth 1 --branch edk2-stable202508 https://github.com/tianocore/edk2.git ovmf
-WORKDIR /buildroot/ovmf
-ADD bios/files/configs/AmdSev-support-vm-over-1TB.patch /buildroot/ovmf
-RUN git apply AmdSev-support-vm-over-1TB.patch
-RUN git submodule update --init --recursive
-
-RUN make -C BaseTools
-ADD bios/files/configs/target_amd_sev.txt /buildroot/ovmf/Conf/target.txt
-RUN touch OvmfPkg/AmdSev/Grub/grub.efi
-RUN bash -c 'source /buildroot/ovmf/edksetup.sh && build clean'
-RUN bash -c 'source /buildroot/ovmf/edksetup.sh && build'
-RUN test -f Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd
-### End ovmf_builder_sev ###
-
-### Start ovmf_builder_tdx ###
-FROM ovmf_builder_base AS ovmf_builder_tdx
-WORKDIR /buildroot/src/
-ARG OVMF_TDX_SHA256=b07df0e4f75c46408bc7a73c943003cfda6b546c4a7fa8fed2410bd944be35dd
-RUN wget -O /buildroot/src/ovmf_2024.05-2ubuntu0.1+tdx1.0_all.deb https://ppa.launchpadcontent.net/kobuk-team/tdx-release/ubuntu/pool/main/e/edk2/ovmf_2024.05-2ubuntu0.1+tdx1.0_all.deb
-RUN echo "${OVMF_TDX_SHA256}  /buildroot/src/ovmf_2024.05-2ubuntu0.1+tdx1.0_all.deb" | sha256sum -c -
-RUN dpkg-deb -x /buildroot/src/ovmf_2024.05-2ubuntu0.1+tdx1.0_all.deb /buildroot/ovmf_tdx
-RUN test -f /buildroot/ovmf_tdx/usr/share/ovmf/OVMF.fd
-
-### End ovmf_builder_tdx ###
-
-### Start ovmf_centos_tdx ###
-FROM ubuntu:24.04 AS ovmf_centos_tdx
-RUN apt-get update && apt-get install -y wget rpm2cpio cpio
-RUN wget -O /tmp/edk2-ovmf.rpm https://mirror.stream.centos.org/10-stream/AppStream/x86_64/os/Packages/edk2-ovmf-20260221-3.el10.noarch.rpm
-RUN cd /tmp && rpm2cpio edk2-ovmf.rpm | cpio -idm './usr/share/edk2/ovmf/OVMF.inteltdx.fd'
-RUN test -f /tmp/usr/share/edk2/ovmf/OVMF.inteltdx.fd
-### End ovmf_centos_tdx ###
-
 ### Start vm_json_builder ###
 FROM ubuntu:24.04 AS vm_json_builder
 ARG SP_VM_IMAGE_VERSION
 ARG S3_BUCKET
 COPY --from=image_builder /output /output
-COPY --from=ovmf_builder_sev /buildroot/ovmf/Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd /output/OVMF_AMD.fd
-COPY --from=ovmf_builder_tdx /buildroot/ovmf_tdx/usr/share/ovmf/OVMF.fd /output/OVMF.fd
-COPY --from=ovmf_centos_tdx /tmp/usr/share/edk2/ovmf/OVMF.inteltdx.fd /output/OVMF_TDX.fd
-COPY --from=kernel_builder /output/boot/vmlinuz-6.12.13-nvidia-gpu-confidential /output/vmlinuz
+COPY --from=low_level_assets_validated /low-level/OVMF_AMD.fd /output/OVMF_AMD.fd
+COPY --from=low_level_assets_validated /low-level/OVMF.fd /output/OVMF.fd
+COPY --from=low_level_assets_validated /low-level/OVMF_TDX.fd /output/OVMF_TDX.fd
+COPY --from=low_level_assets_validated /low-level/vmlinuz /output/vmlinuz
 ADD bundle/files/scripts/generate_vm_json.sh /buildroot/files/scripts/
 RUN /buildroot/files/scripts/generate_vm_json.sh
 ### End vm_json_builder ###

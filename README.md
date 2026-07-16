@@ -22,6 +22,54 @@ docker buildx build -t sp-vm --allow security.insecure src --output type=local,d
 
 The build artifacts will be located in the $(pwd)/out directory.
 
+## Low-level components
+
+The kernel packages, the kernel image, and the three OVMF images are built
+separately from the main VM image:
+
+```bash
+docker buildx build \
+  --file src/Dockerfile.low-level \
+  --target low_level_export \
+  --output type=local,dest=./low-level-out \
+  src
+
+(cd low-level-out && sha256sum --check SHA256SUMS)
+```
+
+The `Build low-level components` workflow publishes the complete output as an
+Actions artifact and as individual assets of a prerelease named
+`sp-vm-low-level-v<github.run_number>`. The main Dockerfile pins both a release
+and the SHA-256 of its `SHA256SUMS`. To use another published release, override
+both values together:
+
+```bash
+docker buildx build \
+  --allow security.insecure \
+  --build-arg LOW_LEVEL_RELEASE=sp-vm-low-level-v42 \
+  --build-arg LOW_LEVEL_SHA256SUMS=<sha256-of-SHA256SUMS> \
+  src \
+  --output type=local,dest=./out
+```
+
+For local development, replace the release stage with a named BuildKit context:
+
+```bash
+docker buildx build \
+  --build-context low_level_assets="$(realpath ./low-level-out)" \
+  --allow security.insecure \
+  src \
+  --output type=local,dest=./out
+```
+
+The local directory must be flat and contain `vmlinuz`, `OVMF.fd`,
+`OVMF_AMD.fd`, `OVMF_TDX.fd`, and at least one `linux-image*.deb`. It normally
+also contains the other kernel DEBs. `SHA256SUMS` is optional in local mode and
+is not used to validate local files; the common stage still validates the
+required layout. The `build-sp-vm` workflow supports release overrides through
+the paired `low-level-release` and `low-level-sha256sums` inputs, but does not
+accept a local directory.
+
 ## Base rootfs reproducibility test
 
 The Ubuntu Noble base rootfs is built from the pinned `20260714T000000Z`

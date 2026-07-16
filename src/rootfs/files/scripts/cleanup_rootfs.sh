@@ -21,14 +21,15 @@ function cleanup_rootfs() {
     # best-effort removal of heavy toolchain packages only; keep core dev libs (libc6-dev, linux-libc-dev, etc.)
     # so that OpenResty and other components depending on them continue to work.
     chroot "$OUTPUTDIR" /bin/bash -c \
-        'dpkg -r \
+        'kernel_headers="$(dpkg-query -W -f="${binary:Package}\n" "linux-headers-*-nvidia-gpu-confidential" 2>/dev/null || true)"; \
+        dpkg -r \
             build-essential \
             g++-13 \
             g++-13-x86-64-linux-gnu \
             g++-x86-64-linux-gnu \
-            linux-headers-6.12.13-nvidia-gpu-confidential \
             g++ \
-            gcc';
+            gcc \
+            $kernel_headers';
     rm -rf ${OUTPUTDIR}/tmp/*;
     rm -rf ${OUTPUTDIR}/usr/share/{bash-completion,bug,doc,info,lintian,locale,man,menu,misc,pixmaps,zsh};
     find "${OUTPUTDIR}/var/run" -mindepth 1 -maxdepth 1 -exec rm -rf {} \; || true;

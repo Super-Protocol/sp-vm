@@ -29,12 +29,29 @@ ROOTFS_HASH_PART="p5";
 # private vars, unset
 # LOOP_DEV
 # LOOP_DEV_NAME
+# KERNEL_FILENAME
 # ROOTFS_PART_SIZE
 # ROOTFS_HASH_PART_SIZE
 # IMAGESIZE
 
 # init loggggging;
 source "$BUILDROOT/files/scripts/log.sh";
+
+function detect_kernel() {
+    mapfile -t kernels < <(find "$OUTPUTDIR/boot" \
+        -maxdepth 1 \
+        -type f \
+        -name 'vmlinuz-*-nvidia-gpu-confidential' \
+        -printf '%f\n' \
+        | sort);
+
+    if [[ "${#kernels[@]}" -ne 1 ]]; then
+        log_fail "expected exactly one kernel in $OUTPUTDIR/boot, found ${#kernels[@]}";
+    fi
+
+    KERNEL_FILENAME="${kernels[0]}";
+    log_info "using kernel: $KERNEL_FILENAME";
+}
 
 function calculate_disk_size() {
     log_info "determinating image part size";
@@ -184,9 +201,9 @@ function template_grub_config() {
     ROOTFS_HASH="$(grep 'Root hash' "/tmp/rootfs_hash.txt" | awk '{print $3}')";
     ROOTFS_HASH="$ROOTFS_HASH" \
         SP_VM_IMAGE_VERSION="$SP_VM_IMAGE_VERSION" \
-        KERNEL_VERSION="$KERNEL_VERSION" \
+        KERNEL_FILENAME="$KERNEL_FILENAME" \
         envsubst \
-        '$ROOTFS_HASH,$SP_VM_IMAGE_VERSION,$KERNEL_VERSION' \
+        '$ROOTFS_HASH,$SP_VM_IMAGE_VERSION,$KERNEL_FILENAME' \
         > "/mnt/boot/grub/grub.cfg" \
         < "$BUILDROOT/files/configs/grub.cfg.tmpl";
     log_info "storing rootfs hash to file";
@@ -203,6 +220,7 @@ function cleanup_boot_partition() {
     rm -rf "/mnt/boot/lost+found";
 }
 
+detect_kernel;
 calculate_disk_size;
 create_empty_disk;
 create_partitions;
