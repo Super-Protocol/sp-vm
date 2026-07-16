@@ -28,10 +28,6 @@ function setup_runtime_tools() {
     if ! grep -qxF 'user_allow_other' "${OUTPUTDIR}/etc/fuse.conf"; then
         printf 'user_allow_other\n' >> "${OUTPUTDIR}/etc/fuse.conf"
     fi
-
-    log_info "installing Python runtime dependencies"
-    chroot "${OUTPUTDIR}" /bin/bash -lc 'python3 -m pip install --break-system-packages SQLAlchemy PyMySQL requests redis cryptography'
-
 }
 
 chroot_init

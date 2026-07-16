@@ -395,7 +395,8 @@ ADD rootfs/files/configs/etc/dpkg/dpkg.cfg.d/force-confold ${OUTPUTDIR}/etc/dpkg
 ADD rootfs/files/scripts/install_extra_packages.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_extra_packages.sh
 
-# Python dependencies required by provision plugins (redis-py for rke2/redis plugins, podman-compose for container plugins)
+# Python runtime dependencies used by Swarm services and provision plugins
+ADD rootfs/files/configs/python/requirements.lock /buildroot/files/configs/python/requirements.lock
 ADD rootfs/files/scripts/install_python_deps.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_python_deps.sh
 
