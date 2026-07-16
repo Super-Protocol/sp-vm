@@ -17,8 +17,8 @@ if [[ ! -d "$BUILD_DIR" ]]; then
     exit 1;
 fi
 
-# walking throught files in outdir
-for FILE in $(find "$BUILD_DIR" -type f -exec basename {} \;); do
+# Stable ordering keeps vm.json reproducible across filesystems and builders.
+while IFS= read -r FILE; do
     case "$FILE" in
         "sp-vm-${SP_VM_IMAGE_VERSION}.img") KEY="image" ;;
         OVMF.fd) KEY="bios" ;;
@@ -39,7 +39,7 @@ for FILE in $(find "$BUILD_DIR" -type f -exec basename {} \;); do
     JSON+="    \"filename\": \"$FILE\",\n";
     JSON+="    \"sha256\": \"$SHA256\"\n";
     JSON+="  },\n";
-done
+done < <(find "$BUILD_DIR" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
 
 JSON="${JSON%,*}";
 JSON+="\n}";

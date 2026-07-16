@@ -328,10 +328,44 @@ COPY --from=rootfs_artifact /output/rootfs-artifacts/ /
 ### End logical rootfs reproducibility export ###
 
 ### Start image ###
-FROM ubuntu:24.04 AS image_builder
+FROM ubuntu:noble-20250714@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS image_builder
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt update && apt -y install qemu-utils grub-pc parted udev fdisk e2fsprogs dosfstools kpartx cryptsetup-bin
-RUN apt -y install grub-efi  # this needs to be installed separately!
+ARG UBUNTU_SNAPSHOT_ID=20260714T000000Z
+ARG SOURCE_DATE_EPOCH=1783987200
+ARG ROOTFS_UUID=9d8ae77c-0f99-4b4c-a919-0de57b426ced
+ARG ROOTFS_DIR_HASH_SEED=7ebf1975-28bf-544d-948f-5bb483eff52e
+ARG ROOTFS_VERITY_UUID=0ff7f592-c526-46f7-83d5-f47ad3f69e89
+ARG ROOTFS_VERITY_SALT=7ebf197528bf544d348f5bb483eff52ea41e0f99dac93882965f65924d1f87a6
+ARG BOOT_UUID=53e6f641-37c0-46d2-a729-7d9f49fcf589
+ARG BOOT_DIR_HASH_SEED=696833d7-b1d1-4f05-8ede-1a62f2e0a70d
+ARG ESP_VOLUME_ID=A1B2C3D4
+ARG DISK_GUID=6f873c23-1b65-4b5c-8e67-8f4f3c3419a1
+ARG BOOT_PART_GUID=4389386d-d949-4b54-942d-3f6b1148c8d1
+ARG BIOS_PART_GUID=f4958893-2686-4bca-8251-1499197a2774
+ARG ESP_PART_GUID=58f79298-702d-4a8b-b53c-73a76da19e77
+ARG ROOTFS_PART_GUID=ec6a4d3f-0f19-47df-9c1f-8f221bbf175b
+ARG ROOTFS_HASH_PART_GUID=672b89b6-76c3-45a5-af55-0a401f2d5a6f
+RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
+    && printf 'deb http://archive.ubuntu.com/ubuntu/ noble main\n' > /etc/apt/sources.list \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates \
+    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble main universe\n' \
+        "$UBUNTU_SNAPSHOT_ID" \
+        > /etc/apt/sources.list \
+    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble-updates main universe\n' \
+        "$UBUNTU_SNAPSHOT_ID" \
+        >> /etc/apt/sources.list \
+    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble-security main universe\n' \
+        "$UBUNTU_SNAPSHOT_ID" \
+        >> /etc/apt/sources.list \
+    && printf 'Acquire::Languages "none";\n' > /etc/apt/apt.conf.d/50snapshot \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        cryptsetup-bin dosfstools e2fsprogs faketime gdisk gettext-base \
+        grub-pc-bin grub-efi-amd64-bin grub2-common kpartx mtools util-linux \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 ARG OUTPUTROOT=/output
 ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
@@ -343,13 +377,14 @@ WORKDIR /output
 ADD general/files/scripts/log.sh /buildroot/files/scripts/
 
 ADD image/files/scripts/create_image.sh /buildroot/files/scripts/
+ADD image/files/scripts/create_rootfs_verity.sh /buildroot/files/scripts/
 ADD image/files/configs/grub.cfg.tmpl /buildroot/files/configs/
 RUN --mount=type=bind,target=/output/rootfs,readonly,from=rootfs_builder,source=/output/rootfs --security=insecure \
     /buildroot/files/scripts/create_image.sh
 ### End image ###
 
 ### Start vm_json_builder ###
-FROM ubuntu:24.04 AS vm_json_builder
+FROM ubuntu:noble-20250714@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS vm_json_builder
 ARG SP_VM_IMAGE_VERSION
 ARG S3_BUCKET
 COPY --from=image_builder /output /output

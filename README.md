@@ -88,6 +88,52 @@ Set `KEEP_ROOTFS_REPRO_OUTPUT=1` to retain successful build artifacts for
 inspection. `ROOTFS_REPRO_RUNS` can change the number of runs, but must be at
 least two.
 
+## Rootfs ext4 and dm-verity reproducibility test
+
+The ext4 and dm-verity stage can be tested repeatedly without rebuilding or
+reinstalling the logical rootfs. Point the test at any retained logical rootfs
+export containing `rootfs.tar`:
+
+```bash
+ROOTFS_ARTIFACT_DIR=/path/to/rootfs-export \
+  src/image/tests/check_rootfs_verity_reproducibility.sh
+```
+
+The test performs three independent no-cache image builds from the same tar and
+compares `rootfs.ext4`, `rootfs.verity`, the root hash, and the verity metadata.
+Use `ROOTFS_VERITY_REPRO_RUNS` to change the run count (minimum two), and
+`KEEP_ROOTFS_VERITY_REPRO_OUTPUT=1` to retain the generated blobs.
+The test requires a Buildx builder with the `security.insecure` entitlement,
+because a complete rootfs tar can contain device nodes.
+
+The main image build uses the same implementation. It creates the complete
+ext4 and dm-verity partition blobs before allocating the GPT image, then writes
+the blobs byte-for-byte into the `rootfs` and `rootfs_hash` partitions.
+
+## Complete disk image reproducibility test
+
+The final raw image is deterministic as well. The build pins the disk and
+partition GUIDs, ext4 UUIDs and directory hash seeds, FAT volume ID, GRUB input,
+dm-verity UUID and salt, and timestamps. Boot ext4 and ESP are created as
+canonical blobs; GPT partitions are written at fixed offsets. BIOS GRUB is
+embedded into the dedicated partition and the canonical boot blob is restored
+afterwards, so mounting during BIOS setup cannot change the output.
+
+Use an existing logical rootfs export to test the whole disk without rebuilding
+or reinstalling the rootfs:
+
+```bash
+ROOTFS_ARTIFACT_DIR=/path/to/rootfs-export \
+  src/image/tests/check_disk_image_reproducibility.sh
+```
+
+The test performs three independent no-cache builds and compares SHA-256 of the
+entire `sp-vm-repro-test.img`, including the protective MBR, BIOS GRUB, primary
+and backup GPT, boot ext4, ESP FAT32, rootfs ext4, and dm-verity tree. Set
+`DISK_IMAGE_REPRO_RUNS` to change the run count and
+`KEEP_DISK_IMAGE_REPRO_OUTPUT=1` to retain the images. Reproducibility assumes
+identical build arguments, including `SP_VM_IMAGE_VERSION`.
+
 ## Local Build - PKI Image Access
 
 For successful local builds, you need permission to pull the image from the repository https://github.com/Super-Protocol/tee-pki/pkgs/container/tee-pki-authority-service-lxc . This may require running `docker login ghcr.io` and an access token.
