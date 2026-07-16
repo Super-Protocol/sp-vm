@@ -5,33 +5,20 @@ set -euo pipefail;
 
 # public, required
 # OUTPUTDIR
+# NODEJS_VERSION
+# NODEJS_DEB_SHA256
 
-# private
 BUILDROOT="/buildroot";
-
-# init loggggging;
-source "${BUILDROOT}/files/scripts/log.sh";
-
-# chroot functions
 source "${BUILDROOT}/files/scripts/chroot.sh";
 
-function install_nodejs() {
-    log_info "adding NodeSource repository";
-    chroot "${OUTPUTDIR}" /bin/bash -c 'curl -sL https://deb.nodesource.com/setup_24.x | bash -';
+PACKAGE_FILENAME="nodejs_${NODEJS_VERSION}_amd64.deb";
+PACKAGE_PATH="${OUTPUTDIR}/tmp/${PACKAGE_FILENAME}";
 
-    log_info "installing Node.js";
-    chroot "${OUTPUTDIR}" /bin/bash -c 'DEBIAN_FRONTEND=noninteractive apt install -y nodejs';
-
-    # Verify installation
-    local NODE_VERSION=$(chroot "${OUTPUTDIR}" /bin/bash -c 'node --version' 2>/dev/null || true);
-    if [ -z "${NODE_VERSION}" ]; then
-        log_fail "Node.js installation failed";
-        return 1;
-    fi
-
-    log_info "Node.js ${NODE_VERSION} installed successfully";
-}
+wget "https://deb.nodesource.com/node_${NODEJS_VERSION%%.*}.x/pool/main/n/nodejs/${PACKAGE_FILENAME}" \
+    -O "$PACKAGE_PATH";
+printf '%s  %s\n' "$NODEJS_DEB_SHA256" "$PACKAGE_PATH" | sha256sum --check --strict -;
 
 chroot_init;
-install_nodejs;
+chroot "${OUTPUTDIR}" apt-get install -y --no-install-recommends "/tmp/${PACKAGE_FILENAME}";
 chroot_deinit;
+rm -f "$PACKAGE_PATH";

@@ -356,6 +356,8 @@ RUN chmod +x \
     ${OUTPUTDIR}/usr/local/lib/swarm-cloud-api/schema-sync
 
 # install Node.js (required by PCCS npm install and swarm-cloud-api)
+ARG NODEJS_VERSION=24.18.0-1nodesource1
+ARG NODEJS_DEB_SHA256=9d80b9f2728e92b9bcd7fcef7124d9139dadefc2289170a7fcc6cb1ba5271e7c
 ADD rootfs/files/scripts/install_nodejs.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_nodejs.sh
 
