@@ -104,17 +104,6 @@ GenerateName=yes
 EOF
     chmod 0600 "${OUTPUTDIR}/etc/iscsi/initiatorname.iscsi";
 
-    # useradd records the current day in /etc/shadow. Locked system accounts do
-    # not use this field for password expiry, so pin it to the snapshot day.
-    local shadow_tmp="${OUTPUTDIR}/etc/shadow.reproducible";
-    local snapshot_day="$(( SOURCE_DATE_EPOCH / 86400 ))";
-    awk -F: -v OFS=: -v snapshot_day="$snapshot_day" \
-        '$2 ~ /^[!*]/ {$3 = snapshot_day} {print}' \
-        "${OUTPUTDIR}/etc/shadow" > "$shadow_tmp";
-    chown --reference="${OUTPUTDIR}/etc/shadow" "$shadow_tmp";
-    chmod --reference="${OUTPUTDIR}/etc/shadow" "$shadow_tmp";
-    mv "$shadow_tmp" "${OUTPUTDIR}/etc/shadow";
-
     find "${OUTPUTDIR}/var/log" -type f -exec truncate --size=0 {} +;
     rm -f "${OUTPUTDIR}/var/lib/systemd/random-seed";
     rm -rf "${OUTPUTDIR}/tmp"/*;
@@ -127,16 +116,10 @@ EOF
     printf 'sp-vm\n' > "${OUTPUTDIR}/etc/hostname";
 
     # debootstrap copies the builder resolver configuration. Replace it with
-    # the repository-owned configuration before normalizing timestamps.
+    # the repository-owned configuration.
     install -m 0644 \
         "$BUILDROOT/files/configs/etc/resolv.conf" \
         "${OUTPUTDIR}/etc/resolv.conf";
-}
-
-function normalize_timestamps() {
-    log_info "normalizing rootfs mtimes to SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH";
-    find "$OUTPUTDIR" -xdev -depth \
-        -exec touch --no-dereference --date="@${SOURCE_DATE_EPOCH}" {} +;
 }
 
 function create_base_system() {
@@ -159,7 +142,6 @@ function create_base_system() {
     configure_snapshot_sources;
     apply_snapshot_updates;
     sanitize_generated_state;
-    normalize_timestamps;
 }
 
 validate_reproducibility_inputs;

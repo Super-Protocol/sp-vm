@@ -18,7 +18,7 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
         "$UBUNTU_SNAPSHOT_ID" > /etc/apt/apt.conf.d/50snapshot \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        wget gcc make build-essential debootstrap petname gettext \
+        wget gcc make build-essential debootstrap gettext \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -35,13 +35,6 @@ ADD general/files/scripts/log.sh /buildroot/files/scripts/
 ADD rootfs/files/scripts/create_base_system.sh /buildroot/files/scripts/
 ADD rootfs/files/configs/etc/resolv.conf /buildroot/files/configs/etc/resolv.conf
 RUN /buildroot/files/scripts/create_base_system.sh
-
-FROM rootfs_base AS rootfs_base_artifact
-ADD rootfs/files/scripts/export_base_system.sh /buildroot/files/scripts/
-RUN /buildroot/files/scripts/export_base_system.sh
-
-FROM scratch AS rootfs_base_export
-COPY --from=rootfs_base_artifact /output/rootfs-base-artifacts/ /
 
 ### Start low-level release assets ###
 FROM rootfs_base AS low_level_release_download
@@ -133,7 +126,7 @@ RUN if [ "$SP_VM_BUILD_TYPE" = "release" ]; then \
     fi
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
 
-RUN echo "sp-$(petname)" > "${OUTPUTDIR}/etc/hostname"
+RUN printf 'sp-vm\n' > "${OUTPUTDIR}/etc/hostname"
 RUN mkdir -p "${OUTPUTDIR}/etc/rancher/rke2"
 ADD rootfs/files/configs/etc/cni/podman/net.d/87-podman-bridge.conflist \
     ${OUTPUTDIR}/etc/cni/podman/net.d/87-podman-bridge.conflist
@@ -324,6 +317,15 @@ RUN rm -f ${OUTPUTDIR}/usr/sbin/policy-rc.d
 ADD rootfs/files/scripts/cleanup_rootfs.sh /buildroot/files/scripts/
 RUN --security=insecure /buildroot/files/scripts/cleanup_rootfs.sh
 ### End rootfs ###
+
+### Start logical rootfs reproducibility export ###
+FROM rootfs_builder AS rootfs_artifact
+ADD rootfs/files/scripts/export_base_system.sh /buildroot/files/scripts/
+RUN /buildroot/files/scripts/export_base_system.sh
+
+FROM scratch AS rootfs_export
+COPY --from=rootfs_artifact /output/rootfs-artifacts/ /
+### End logical rootfs reproducibility export ###
 
 ### Start image ###
 FROM ubuntu:24.04 AS image_builder

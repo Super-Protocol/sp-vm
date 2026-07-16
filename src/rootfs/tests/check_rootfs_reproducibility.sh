@@ -11,6 +11,8 @@ RUN_COUNT="${ROOTFS_REPRO_RUNS:-3}"
 UBUNTU_SNAPSHOT_ID="${UBUNTU_SNAPSHOT_ID:-20260714T000000Z}"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1783987200}"
 KEEP_OUTPUT="${KEEP_ROOTFS_REPRO_OUTPUT:-0}"
+SP_VM_BUILD_TYPE="${SP_VM_BUILD_TYPE:-release}"
+SP_VM_IMAGE_VERSION="${SP_VM_IMAGE_VERSION:-rootfs-repro-test}"
 
 if [[ ! "$RUN_COUNT" =~ ^[1-9][0-9]*$ ]] || (( RUN_COUNT < 2 )); then
     echo "ROOTFS_REPRO_RUNS must be an integer greater than or equal to 2" >&2
@@ -35,14 +37,17 @@ function build_rootfs() {
     local output_dir="$WORK_DIR/run-$run_number"
     mkdir -p "$output_dir"
 
-    echo "Building base rootfs run $run_number/$RUN_COUNT"
+    echo "Building complete logical rootfs run $run_number/$RUN_COUNT"
     docker buildx build \
         --file "$DOCKERFILE" \
-        --target rootfs_base_export \
+        --target rootfs_export \
         --no-cache \
         --pull=false \
+        --allow security.insecure \
         --build-arg "UBUNTU_SNAPSHOT_ID=$UBUNTU_SNAPSHOT_ID" \
         --build-arg "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH" \
+        --build-arg "SP_VM_BUILD_TYPE=$SP_VM_BUILD_TYPE" \
+        --build-arg "SP_VM_IMAGE_VERSION=$SP_VM_IMAGE_VERSION" \
         --output "type=local,dest=$output_dir" \
         "$BUILD_CONTEXT"
 
@@ -87,10 +92,10 @@ for ((run = 2; run <= RUN_COUNT; run++)); do
     candidate_dir="$WORK_DIR/run-$run"
     candidate_hash="$(awk '{print $1}' "$candidate_dir/rootfs.tar.sha256")"
     if [[ "$candidate_hash" != "$reference_hash" ]]; then
-        echo "Base rootfs is not reproducible: run 1 and run $run differ" >&2
+        echo "Logical rootfs is not reproducible: run 1 and run $run differ" >&2
         show_difference "$reference_dir" "$candidate_dir"
         exit 1
     fi
 done
 
-echo "Base rootfs is reproducible across $RUN_COUNT clean builds: $reference_hash"
+echo "Logical rootfs is reproducible across $RUN_COUNT clean builds: $reference_hash"

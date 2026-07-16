@@ -66,24 +66,27 @@ The local directory must be flat and contain `vmlinuz`, `OVMF.fd`,
 `OVMF_AMD.fd`, `OVMF_TDX.fd`, and at least one `linux-image*.deb`. It normally
 also contains the other kernel DEBs. `SHA256SUMS` is optional in local mode and
 is not used to validate local files; the common stage still validates the
-required layout. The `build-sp-vm` workflow supports release overrides through
-the paired `low-level-release` and `low-level-sha256sums` inputs, but does not
-accept a local directory.
+required layout. The `build-sp-vm` workflow always uses the release and
+manifest checksum pinned in the main Dockerfile; overrides and local directories
+are supported only by local CLI builds.
 
-## Base rootfs reproducibility test
+## Logical rootfs reproducibility test
 
-The Ubuntu Noble base rootfs is built from the pinned `20260714T000000Z`
-snapshot, including the release, updates, and security pockets. To build it
-three times without BuildKit cache and compare canonical rootfs archives:
+The complete logical rootfs is exported after package installation and final
+cleanup, before creating any ext4 image. The Ubuntu base uses the pinned
+`20260714T000000Z` snapshot, including the release, updates, and security
+pockets. To build the full rootfs three times without BuildKit cache and compare
+canonical rootfs archives:
 
 ```bash
-src/rootfs/tests/check_base_reproducibility.sh
+src/rootfs/tests/check_rootfs_reproducibility.sh
 ```
 
-The test requires Docker Buildx and network access to
-`snapshot.ubuntu.com`. Set `KEEP_ROOTFS_REPRO_OUTPUT=1` to retain successful
-build artifacts for inspection. `ROOTFS_REPRO_RUNS` can change the number of
-runs, but must be at least two.
+The test requires Docker Buildx, the `security.insecure` entitlement, and network
+access to all package sources used by the rootfs. It does not run `mkfs.ext4`.
+Set `KEEP_ROOTFS_REPRO_OUTPUT=1` to retain successful build artifacts for
+inspection. `ROOTFS_REPRO_RUNS` can change the number of runs, but must be at
+least two.
 
 ## Local Build - PKI Image Access
 

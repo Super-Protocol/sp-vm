@@ -9,9 +9,9 @@ set -euo pipefail
 # UBUNTU_SNAPSHOT_ID
 # SOURCE_DATE_EPOCH
 
-ARTIFACT_DIR="${OUTPUTROOT}/rootfs-base-artifacts"
+ARTIFACT_DIR="${OUTPUTROOT}/rootfs-artifacts"
 
-function verify_base_system() {
+function verify_rootfs() {
     grep -Fxq "APT::Snapshot \"${UBUNTU_SNAPSHOT_ID}\";" \
         "${OUTPUTDIR}/etc/apt/apt.conf.d/50snapshot"
     grep -Fxq "deb http://archive.ubuntu.com/ubuntu/ ${VERSION_CODENAME} main universe" \
@@ -64,13 +64,13 @@ function write_metadata_manifest() {
     ) > "$ARTIFACT_DIR/rootfs.symlinks"
 }
 
-function export_base_system() {
+function export_rootfs() {
     rm -rf "$ARTIFACT_DIR"
     install -d -m 0755 "$ARTIFACT_DIR"
 
-    chroot "$OUTPUTDIR" dpkg-query -W \
-        --showformat='${binary:Package}\t${Version}\t${Architecture}\n' \
-        | LC_ALL=C sort > "$ARTIFACT_DIR/packages.manifest"
+    install -m 0644 \
+        "/buildroot/rootfs-packages.manifest" \
+        "$ARTIFACT_DIR/packages.manifest"
 
     write_metadata_manifest
 
@@ -93,5 +93,5 @@ function export_base_system() {
     )
 }
 
-verify_base_system
-export_base_system
+verify_rootfs
+export_rootfs
