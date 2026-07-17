@@ -1,0 +1,11 @@
+{
+  "name": "sp-vm-pki-components-deployment",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deployment-only dependency graph for PKI components shipped in sp-vm",
+  "dependencies": {
+    "@super-protocol/pki-cert-generator": "5.0.5",
+    "@super-protocol/pki-sync-client": "5.0.10",
+    "@super-protocol/pki-vm-measurements": "1.0.6"
+  }
+}

@@ -293,14 +293,12 @@ ADD rootfs/files/configs/etc/dpkg/dpkg.cfg.d/force-confold ${OUTPUTDIR}/etc/dpkg
 ADD rootfs/files/scripts/install_extra_packages.sh /buildroot/files/scripts/
 RUN --security=insecure bash /buildroot/files/scripts/install_extra_packages.sh
 
-# install PKI npm components globally
-ARG PKI_SYNC_CLIENT_VERSION=5.0.9
-ARG PKI_CERT_GENERATOR_VERSION=5.0.4
-ARG PKI_VM_MEASUREMENTS_VERSION=1.0.5
+# install PKI npm components from the deployment lock
+ADD rootfs/files/configs/npm/pki-components/package.json /buildroot/files/configs/npm/pki-components/package.json
+ADD rootfs/files/configs/npm/pki-components/package-lock.json /buildroot/files/configs/npm/pki-components/package-lock.json
 ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
-RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh \
-    "${PKI_SYNC_CLIENT_VERSION}" "${PKI_CERT_GENERATOR_VERSION}" "${PKI_VM_MEASUREMENTS_VERSION}"
+RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh
 
 # Python runtime dependencies used by Swarm services and provision plugins
 ADD rootfs/files/configs/python/requirements.lock /buildroot/files/configs/python/requirements.lock
