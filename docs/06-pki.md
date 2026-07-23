@@ -21,9 +21,10 @@ flowchart TD
     R --> E --> EV
 ```
 
-The device subroot separates node enrollment from evidence signing.
-Compromising the key for one role must not automatically grant the permissions
-of the other.
+The subroot CAs are intermediate certificate authorities with distinct roles.
+The Device Enrollment Subroot issues node certificates, while the Evidence
+Subroot signs evidence. Compromising the key for one role must not
+automatically grant the permissions of the other.
 
 ## Root CA
 
@@ -43,25 +44,26 @@ both the cryptographic PKI root and an attested object.
 
 ## VM Certificate
 
-During enrollment, the Authority issues an end-entity certificate. System
-extensions are created only by the server:
+During enrollment, the Authority issues a certificate for the specific VM.
+This certificate is not a certificate authority. System extensions are
+created only by the server:
 
 | OID | Contents |
 |---|---|
 | `1.3.6.1.3.8888.1.1` | Challenge type. |
 | `1.3.6.1.3.8888.1.2` | Verified challenge ID; for a CPU TEE, the normalized `mrEnclave`. |
-| `1.3.6.1.3.8888.1.4.1` | Protobuf list of verified NVIDIA GPUs. |
-| `1.3.6.1.3.8888.1.6` | Empty extension marking successful validation. |
+| `1.3.6.1.3.8888.1.4.1` | List of verified NVIDIA GPUs in the compact Protobuf binary format. |
+| `1.3.6.1.3.8888.1.6` | Empty extension added by the server to mark successful attestation. |
 | `0.6.9.42.840.113741.1337.6` | Serialized CPU TEE evidence. |
 | `1.3.6.1.3.8888.4` | Network type, primarily on the root CA. |
 
-A client cannot replace system OIDs through `clientExtensionAttrs`; values
-using system prefixes are filtered before certificate issuance.
+A client cannot supply or replace these system extensions. The PKI Authority
+creates their values exclusively from the verified challenge.
 
 ## Evidence in the Certificate
 
-The VM certificate contains CPU TEE evidence. GPU metadata is stored in a
-separate compact protobuf extension.
+The VM certificate contains CPU TEE evidence. Verified GPU information is
+stored in a separate compact Protobuf extension.
 
 ## Storage on the First VM
 
@@ -73,8 +75,8 @@ The generator writes material to:
 /etc/super/certs/swarm-init/
 ```
 
-The directory contains the certificates and private keys for the root CA,
-device-enrollment subroot, and evidence subroot.
+The directory contains the certificates and private keys for the root CA and
+the two intermediate CAs.
 
 Private keys are created with mode `0600`.
 
@@ -112,8 +114,8 @@ With the `vm` prefix, the following files are used:
 
 | File | Contents |
 |---|---|
-| `vm_key.pem` | Leaf-certificate private key, mode `0600`. |
-| `vm_cert.pem` | Leaf and intermediate certificates. |
+| `vm_key.pem` | VM-certificate private key, mode `0600`. |
+| `vm_cert.pem` | VM certificate and intermediate certificates. |
 | `vm_ca.pem` | Root CA. |
 
 > Note: in the current implementation, these files are used by the PKI sync
@@ -153,13 +155,13 @@ a static symmetric value protecting inter-node communication.
 The Authority listens for HTTPS connections on `0.0.0.0:9443`.
 
 A joining VM builds its HTTPS endpoint list from `pki_authority.servers` and
-the hosts in `swarm_db.join_addresses`.
+the node addresses in `swarm_db.join_addresses`.
 
 ## Trust Lifecycle
 
 1. The root CA is created inside the attested first VM.
 2. Every joining node verifies its CPU evidence.
-3. The Authority verifies each new node and issues a leaf certificate.
+3. The Authority verifies each new node and issues an individual VM certificate.
 4. The certificate grants access to the network secret.
-5. All nodes store the same root CA and `swarm key`, while retaining distinct
-   leaf keys and certificates.
+5. All nodes store the same root CA and `swarm key`, while retaining their own
+   VM keys and certificates.

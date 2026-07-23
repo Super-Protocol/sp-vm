@@ -7,7 +7,7 @@ TDX and SEV-SNP use different hardware formats. The system converts them to a
 
 - is deterministic for an equivalent trusted configuration;
 - can be verified from hardware evidence;
-- can be signed and published as a reference value;
+- can be published as a reference value;
 - does not depend on vCPU count, RAM size, or GPU presence.
 
 `mrEnclave` is an application-protocol term. It must not be equated with only
@@ -49,10 +49,14 @@ calculation must be a 48-byte SHA-384 value.
 
 ### 1. Quote Verification
 
-The quote is checked by the DCAP verifier, including its signature and
-collateral status. Non-critical verifier statuses may be recorded without
-stopping the process, but a critical error or non-zero verification result
-rejects the evidence.
+The DCAP verifier checks the quote signature and the Intel verification data
+required to confirm that the quote was produced by a genuine TDX platform with
+an acceptable security state.
+
+Attestation continues only when the verifier reports success. An invalid
+signature, missing or unusable verification data, an unacceptable platform
+security state, or an internal verification error means that trust in the
+quote cannot be established. In all such cases, the evidence is rejected.
 
 ### 2. Event Log Integrity
 
@@ -84,8 +88,6 @@ All fields are concatenated as binary arrays without text encoding or
 delimiters:
 
 ```text
-normalizedRTMR0 = fold_SHA384(filteredEventLog)
-
 mrEnclave = SHA-256(
     TDATTRIBUTES ||
     MRTD ||
@@ -111,7 +113,7 @@ flowchart TD
     Q["TDX quote"]
     E["Event log"]
     V["DCAP verification"]
-    F["Full SHA-384 fold"]
+    F["Sequential SHA-384 calculation"]
     C{"Equals RTMR0?"}
     N["Firmware blob event filter"]
     R["Normalized RTMR0"]
@@ -133,7 +135,7 @@ flowchart TD
 
 Verification and normalization use:
 
-- the raw SNP report;
+- the original binary SNP report;
 - the hardware `MEASUREMENT` field;
 - the build identifier;
 - the kernel command-line hash;
@@ -142,14 +144,16 @@ Verification and normalization use:
 
 ### 1. Cryptographic Verification
 
-The SNP report and platform trust chain are verified. When a security policy
-is configured, report fields are also checked against that policy.
+The SNP report signature and platform certificate chain are verified. When
+additional security requirements are configured, report values are checked
+against them as well. For example, a minimum acceptable version of platform
+components can be required.
 
 ### 2. Obtaining Build Artifacts
 
-The build identifier is included in SEV-SNP evidence metadata. When evidence is
-created, the value is extracted from the running VM kernel command line. It is
-not obtained from the trusted measurement registry.
+The build identifier is included in the supporting fields of SEV-SNP evidence.
+When evidence is created, the value is extracted from the running VM kernel
+command line. It is not obtained from the trusted measurement registry.
 
 The build identifies the data needed to reproduce the launch measurement:
 published kernel and initrd hashes and the matching OVMF image. The kernel and
@@ -198,9 +202,10 @@ singleCoreMeasure = ComputeLaunchDigest(
     MILAN_CPU_SIGNATURE,
     1
 )
-
-mrEnclave = Normalize(singleCoreMeasure)
 ```
+
+The final normalized 32-byte `mrEnclave` is derived from
+`singleCoreMeasure`.
 
 The actual CPU signature and vCPU count are used only to verify that the SNP
 report `MEASUREMENT` corresponds to the running VM. They are replaced with

@@ -83,9 +83,10 @@ A GPU is classified as untrusted when:
 - protected memory has zero size;
 - at least one KiB of unprotected memory is available.
 
-Every display GPU is checked. Errors are collected together with their BDF.
-Any error raises `UntrustedGpusError` and stops challenge creation. This also
-applies when one invalid GPU is present alongside several valid GPUs.
+Every display GPU is checked. If the state of any device cannot be confirmed
+or does not meet the requirements, challenge creation stops. Diagnostics
+identify the affected device by BDF. This also applies when one invalid GPU is
+present alongside several valid GPUs.
 
 If there are no PCI display devices, the preliminary check succeeds and no
 NVIDIA token is created.
@@ -156,33 +157,27 @@ compared with the public key in the certificate request.
 
 ## NVIDIA Verification Policy
 
-The NVIDIA verifier checks the token as a GPU device. The built-in policy
-requires, among other conditions:
+The NVIDIA verifier confirms that the token belongs to the same request and
+describes a genuine device in an acceptable state. It verifies:
 
-- `x-nvidia-overall-att-result = true`;
-- claims version `3.0`;
-- successful measurement results;
-- successful parsing of the GPU attestation report;
-- matching nonce;
-- a valid attestation-report signature;
-- a valid certificate chain and good OCSP status;
-- matching firmware identity;
-- successful retrieval, schema validation, and signature verification of the
-  driver RIM;
-- a matching driver RIM version;
-- available driver measurements;
-- successful retrieval, schema validation, and signature verification of the
-  VBIOS RIM;
-- a matching VBIOS RIM version;
-- available VBIOS measurements;
-- no conflicting VBIOS index.
+- an overall successful attestation result and a supported token format;
+- a matching nonce, which prevents reuse of an old token;
+- the GPU attestation-report signature, certificate chain, and the absence of
+  certificate revocation indications;
+- firmware identity;
+- the authenticity of the driver and VBIOS reference descriptions and the
+  correspondence of their versions and measurements to the actual GPU;
+- the absence of conflicting VBIOS information.
 
-A `success=false` result or verifier error blocks certificate issuance.
+The driver and VBIOS reference descriptions used by the NVIDIA verifier are
+called RIMs (Reference Integrity Manifests). If any mandatory condition cannot
+be confirmed, or the verifier cannot complete the check, no certificate is
+issued.
 
 ## Debug-Enabled GPU Rejection
 
 After cryptographic token verification, the following values are extracted
-from remote GPU claims:
+from the verified token data:
 
 - `hwmodel`;
 - NVIDIA driver version;
@@ -209,8 +204,8 @@ vbios
 dbgStat
 ```
 
-The GPU list is encoded as a protobuf message and added to the certificate
-under:
+The GPU list is encoded in the compact Protobuf binary format and added to the
+certificate under:
 
 ```text
 OID 1.3.6.1.3.8888.1.4.1
@@ -229,7 +224,7 @@ extension is omitted.
 | `protectedMemSizeKib == 0` | No | Stop: untrusted GPU. |
 | `unprotectedMemSizeKib != 0` | No | Stop: untrusted GPU. |
 | NVML, handle, or memory query fails | No | Stop: GPU trust cannot be established. |
-| NVIDIA token fails policy | Yes | Reject the certificate request. |
+| NVIDIA verifier cannot confirm mandatory token and GPU properties | Yes | Reject the certificate request. |
 | Token hash does not match CPU `reportData` | Yes | Reject: CPU and GPU evidence are not bound. |
 | One GPU has `dbgStat=true` | Yes | Reject the entire VM. |
 | Multiple GPUs, one untrusted | No | Stop the entire attestation. |

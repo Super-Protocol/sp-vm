@@ -44,16 +44,16 @@ public key and the NVIDIA token are bound to CPU evidence through
 ### PKI Sync Client
 
 The PKI sync client is used by joining VMs. Before requesting secrets, it
-validates the configured root CA: its network type, embedded CPU evidence,
-`mrEnclave`, and the corresponding trusted registry entry. It then obtains its
-own certificate and requests the `swarm key` over a protected connection.
+validates the configured root CA: its network type, embedded CPU evidence, and
+whether its `mrEnclave` is allowed by the trusted registry. It then obtains
+its own certificate and requests the `swarm key` over a protected connection.
 
 ### PKI Authority
 
 The PKI Authority validates the new CPU/GPU challenge, confirms that it is
 bound to the requested public key, and applies admission rules for the TEE type
-and `mrEnclave`. A certificate marked as validated is issued only after all
-checks pass.
+and `mrEnclave`. Only after all checks pass does it issue a certificate with a
+server-added marker recording successful attestation.
 
 ### VM Measurement API
 
@@ -79,7 +79,7 @@ The normal trusted flow relies on several independent trust roots:
 |---|---|
 | CPU manufacturer | Authenticity of the TDX quote or SEV-SNP report and the platform TCB state. |
 | GPU manufacturer | Authenticity of the NVIDIA token, firmware, driver, and VBIOS evidence. |
-| Trusted measurement registry public key | The calculated `mrEnclave` is approved by the build owner. |
+| Trusted measurement registry | The calculated `mrEnclave` is allowed for the trusted network. |
 | Swarm-specific PKI root CA | A certificate and node belong to the selected trusted network. |
 | Build artifact hashes | OVMF and other SEV-SNP calculation inputs have not been substituted. |
 
@@ -138,7 +138,7 @@ mutually exclusive paths:
 1. Before attestation, the node does not have the shared `swarm key`.
 2. The node validates the existing network root CA.
 3. The PKI Authority validates the node CPU/GPU challenge.
-4. The node receives a validated certificate.
+4. The node receives a certificate carrying the successful-attestation marker.
 5. The node uses the certificate to obtain the `swarm key`.
 6. Only then is the SwarmDB configuration created and the management
    components started.

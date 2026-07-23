@@ -71,19 +71,18 @@ and the specific GPU token together.
 The generator does not place an unchecked challenge into a certificate:
 
 - for TDX, it verifies the DCAP quote and event-log integrity;
-- for SEV-SNP, it verifies the report and platform policy and then reproduces
-  the launch measurement;
-- when a GPU is present, it verifies token binding, NVIDIA policy, and
-  `dbgStat`;
+- for SEV-SNP, it verifies report authenticity and the required platform
+  security properties, and then reproduces the launch measurement;
+- when a GPU is present, it verifies token binding, the NVIDIA verification
+  results, and the absence of debug mode;
 - the first 32 bytes of verified `reportData` must match the public key of the
   certificate being created.
 
 An independent PKI Authority does not exist yet, so the local generator does
-not use the trusted `mrEnclave` registry as an external admission gate. The
-first VM image becomes verifiable by joining nodes after its measurement is
-signature is published in the trusted registry. Joining nodes calculate
-`mrEnclave` from the root CA evidence and must verify that signature before
-enrollment.
+not decide whether to admit the first VM by consulting the trusted registry.
+Joining nodes perform this check later: they calculate `mrEnclave` from the
+root CA evidence and confirm that the measurement is approved in the trusted
+registry before enrollment.
 
 ## 4. Creating the PKI
 
@@ -103,7 +102,8 @@ The root certificate contains:
 - serialized CPU TEE evidence.
 
 The first-VM certificate also contains the challenge ID, CPU evidence, the
-validation marker, and verified GPU information when a GPU is present.
+server-added successful-attestation marker, and verified GPU information when
+a GPU is present.
 
 ## 5. Creating and Storing the `swarm key`
 
@@ -136,7 +136,7 @@ to PKI Authority persistent storage, and creates a configuration containing:
 - `networkType: trusted`;
 - a unique `networkID`;
 - allowed `tdx`, `tdx-google`, and `sev-snp` challenges;
-- reference measurement verification through the signed registry;
+- `mrEnclave` verification through the trusted registry;
 - the `swarmKey` issued to attested nodes;
 - an HTTPS endpoint on port `9443`.
 
@@ -150,7 +150,7 @@ Bootstrap is complete when the following exist:
 
 - a trusted-network root CA containing CPU TEE evidence;
 - device and evidence subroot CAs;
-- a validated first-VM certificate;
+- a first-VM certificate carrying the successful-attestation marker;
 - the `swarm key`;
 - a running PKI Authority;
 - SwarmDB containing PKI secrets and network state.
