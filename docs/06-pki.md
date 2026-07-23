@@ -116,8 +116,9 @@ With the `vm` prefix, the following files are used:
 | `vm_cert.pem` | Leaf and intermediate certificates. |
 | `vm_ca.pem` | Root CA. |
 
-> Note: in the current implementation, the stored `vm_cert.pem` is not used
-> by other node components after the `swarm key` has been obtained.
+> Note: in the current implementation, these files are used by the PKI sync
+> client to obtain `swarmKey`. After synchronization completes, they are not
+> used by other node components.
 
 The `swarm key` is stored separately:
 

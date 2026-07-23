@@ -38,9 +38,9 @@ sequenceDiagram
     VM->>VM: Extract root CA and network type
     VM->>VM: Validate root CA CPU evidence
     VM->>VM: Calculate root CA mrEnclave
-    VM->>REG: Retrieve trusted measurement data
-    REG-->>VM: Registry result
-    VM->>VM: Confirm that mrEnclave is allowed
+    VM->>REG: Retrieve mrEnclave signature
+    REG-->>VM: Signature
+    VM->>VM: Verify signature with trusted key
     opt VM contains NVIDIA GPU
         VM->>GPU: Validate GPU and obtain token
     end
@@ -66,7 +66,8 @@ checks that:
 2. the root contains CPU TEE evidence;
 3. the quote/report signature and manufacturer collateral are valid;
 4. a normalized `mrEnclave` can be calculated from the evidence;
-5. the calculated `mrEnclave` is allowed by the trusted registry.
+5. a signature for `mrEnclave` is found in the trusted registry;
+6. the signature is verified with the embedded public key.
 
 This confirms that the configured root CA was created inside an approved
 confidential VM. Only then does the client contact the PKI Authority.
@@ -106,7 +107,7 @@ The Authority performs one ordered validation sequence:
 3. the TDX event log is consistent or the SEV-SNP launch digest is reproduced;
 4. `mrEnclave` is extracted;
 5. the public-key hash is verified;
-6. `mrEnclave` is confirmed against the trusted registry and admission rules;
+6. `mrEnclave` is checked against an allowing rule and trusted signature;
 7. when an NVIDIA token is present, its hash, policy, and `dbgStat` are checked;
 8. `networkID` is checked to prevent use of the challenge in another Swarm.
 
@@ -134,6 +135,10 @@ The client stores:
 
 `vm_cert.pem` contains the leaf and intermediate chain; `vm_ca.pem` contains
 the root CA.
+
+> Note: in the current implementation, this certificate material is used by
+> the PKI sync client to obtain `swarmKey`. After synchronization completes,
+> it is not used by other node components.
 
 ## 6. Obtaining the `swarm key`
 

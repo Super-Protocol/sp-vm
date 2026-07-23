@@ -41,7 +41,7 @@ of untrusted networks is outside the scope of this documentation.
 | **Evidence** | A serialized set of proofs: a quote/report and required supporting data, such as the TDX event log. |
 | **Launch measurement** | A measurement of the components involved in starting the VM. |
 | **`mrEnclave`** | An internal normalized platform measurement used to match a running VM against an approved reference value. It is not a single hardware quote field. |
-| **Reference measurement** | An `mrEnclave` approved by the owner of the trusted build. |
+| **Reference measurement** | An `mrEnclave` approved by the owner of the trusted build and signed with a dedicated key. |
 | **`reportData`** | Up to 64 bytes of user data cryptographically included in the CPU quote/report. |
 | **Challenge** | An attestation request containing the TEE type, CPU evidence, and an NVIDIA token when a GPU is present. |
 | **PKI Authority** | A certificate authority inside the trusted network that verifies challenges and issues node certificates. |
@@ -65,7 +65,8 @@ conditions hold:
 
 - the CPU quote/report is cryptographically valid;
 - launch measurements are consistent with the evidence;
-- the calculated `mrEnclave` is present in the trusted registry;
+- the calculated `mrEnclave` is present in the trusted registry and has a
+  valid signature;
 - CPU `reportData` is bound to the public key of the requested certificate;
 - every detected GPU uses protected memory exclusively;
 - the NVIDIA token is valid and bound to the same CPU quote/report;
@@ -76,5 +77,5 @@ not an error.
 
 The first VM cannot contact a PKI Authority that does not yet exist. During
 bootstrap, it validates its own hardware evidence locally and creates the root
-CA. Subsequent nodes trust that root only when its calculated `mrEnclave` is
-available in the trusted registry.
+CA. Subsequent nodes trust that root only when its calculated `mrEnclave` has
+been published and signed in the trusted registry.

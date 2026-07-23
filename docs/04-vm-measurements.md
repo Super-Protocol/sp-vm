@@ -7,7 +7,7 @@ TDX and SEV-SNP use different hardware formats. The system converts them to a
 
 - is deterministic for an equivalent trusted configuration;
 - can be verified from hardware evidence;
-- can be published as a reference value;
+- can be signed and published as a reference value;
 - does not depend on vCPU count, RAM size, or GPU presence.
 
 `mrEnclave` is an application-protocol term. It must not be equated with only

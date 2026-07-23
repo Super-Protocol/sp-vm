@@ -79,7 +79,7 @@ The normal trusted flow relies on several independent trust roots:
 |---|---|
 | CPU manufacturer | Authenticity of the TDX quote or SEV-SNP report and the platform TCB state. |
 | GPU manufacturer | Authenticity of the NVIDIA token, firmware, driver, and VBIOS evidence. |
-| Trusted measurement registry | The calculated `mrEnclave` is approved for use in the trusted network. |
+| Trusted measurement registry public key | The calculated `mrEnclave` is approved by the build owner. |
 | Swarm-specific PKI root CA | A certificate and node belong to the selected trusted network. |
 | Build artifact hashes | OVMF and other SEV-SNP calculation inputs have not been substituted. |
 

@@ -81,8 +81,9 @@ The generator does not place an unchecked challenge into a certificate:
 An independent PKI Authority does not exist yet, so the local generator does
 not use the trusted `mrEnclave` registry as an external admission gate. The
 first VM image becomes verifiable by joining nodes after its measurement is
-published in the trusted registry. Joining nodes calculate `mrEnclave` from
-the root CA evidence and must find the value in the registry before enrollment.
+signature is published in the trusted registry. Joining nodes calculate
+`mrEnclave` from the root CA evidence and must verify that signature before
+enrollment.
 
 ## 4. Creating the PKI
 
@@ -135,7 +136,7 @@ to PKI Authority persistent storage, and creates a configuration containing:
 - `networkType: trusted`;
 - a unique `networkID`;
 - allowed `tdx`, `tdx-google`, and `sev-snp` challenges;
-- reference measurement verification through the trusted registry;
+- reference measurement verification through the signed registry;
 - the `swarmKey` issued to attested nodes;
 - an HTTPS endpoint on port `9443`.
 
