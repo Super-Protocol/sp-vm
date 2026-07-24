@@ -5,7 +5,7 @@
   "description": "Deployment-only dependency graph for PKI components shipped in sp-vm",
   "dependencies": {
     "@super-protocol/pki-cert-generator": "5.0.5",
-    "@super-protocol/pki-sync-client": "5.0.10",
+    "@super-protocol/pki-sync-client": "5.0.11",
     "@super-protocol/pki-vm-measurements": "1.0.6"
   }
 }
