@@ -71,21 +71,24 @@ The service creates evidence with a zero-filled 64-byte `reportData`. It is
 used to measure a running VM and does not replace the enrollment challenge, in
 which `reportData` is bound to the certificate key and GPU token.
 
-## Trust Roots
+## Trust Sources
 
-The normal trusted flow relies on several independent trust roots:
+The normal trusted flow relies on several independent trust sources:
 
-| Trust root | What it proves |
+| Source | What it proves |
 |---|---|
 | CPU manufacturer | Authenticity of the TDX quote or SEV-SNP report and the platform TCB state. |
 | GPU manufacturer | Authenticity of the NVIDIA token, firmware, driver, and VBIOS evidence. |
 | Trusted measurement registry | The calculated `mrEnclave` is allowed for the trusted network. |
-| Swarm-specific PKI root CA | A certificate and node belong to the selected trusted network. |
-| Build artifact hashes | OVMF and other SEV-SNP calculation inputs have not been substituted. |
 
 No single result replaces the others. A valid hardware quote proves platform
 authenticity, while the trusted registry determines whether the measured VM
 state is allowed.
+
+The root CA is not an initial trust source for a joining VM. The node first
+validates the CPU evidence embedded in the root certificate and the resulting
+`mrEnclave`. Only after this validation is the root CA used to verify
+certificates issued within that Swarm.
 
 ## Evidence Binding
 

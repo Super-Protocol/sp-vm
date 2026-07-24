@@ -38,7 +38,7 @@ of untrusted networks is outside the scope of this documentation.
 |---|---|
 | **TEE** | Trusted Execution Environment: an isolated, hardware-protected VM environment. |
 | **Quote / report** | Hardware-signed evidence describing the TEE state and user data supplied to it. This documentation uses `quote` for TDX and `report` for SEV-SNP. |
-| **Evidence** | A serialized set of proofs: a quote/report and required supporting data, such as the TDX event log. |
+| **Evidence** | A serialized set of proofs: a quote/report and supporting data required for verification and `mrEnclave` calculation. |
 | **Launch measurement** | A measurement of the components involved in starting the VM. |
 | **`mrEnclave`** | An internal normalized platform measurement used to match a running VM against an approved reference value. It is not a single hardware quote field. |
 | **Reference measurement** | An `mrEnclave` approved by the owner of the trusted build and published in the trusted registry. |

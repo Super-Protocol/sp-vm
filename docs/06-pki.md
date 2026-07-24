@@ -11,10 +11,10 @@ this identity.
 
 ```mermaid
 flowchart TD
-    R["Root CA<br/>3650 days"]
-    D["Device Enrollment Subroot<br/>90 days"]
-    E["Evidence Subroot<br/>90 days"]
-    VM["VM certificate<br/>365 days"]
+    R["Root CA"]
+    D["Device Enrollment Subroot"]
+    E["Evidence Subroot"]
+    VM["VM certificate"]
     EV["Evidence signatures"]
 
     R --> D --> VM
@@ -154,8 +154,34 @@ a static symmetric value protecting inter-node communication.
 
 The Authority listens for HTTPS connections on `0.0.0.0:9443`.
 
+For TLS, the service uses the Device Enrollment Subroot certificate and its
+corresponding private key. The certificate is signed by the Swarm root CA. All
+`pki-authority` instances obtain this PKI material from the shared Swarm
+secrets.
+
+The Swarm root certificate is externally available at:
+
+```text
+https://<Swarm VM IP address>:9443/api/v1/pki/certs/ca
+```
+
+`pki-authority` runs on every Swarm VM, so the certificate can be retrieved
+from any reachable VM. During the initial retrieval, no trusted copy of this
+certificate exists yet, so the TLS connection alone cannot establish trust in
+the returned root CA. A joining VM separately verifies its embedded CPU
+evidence and `mrEnclave`.
+
 A joining VM builds its HTTPS endpoint list from `pki_authority.servers` and
 the node addresses in `swarm_db.join_addresses`.
+
+Before connecting, the sync client validates the root CA configured in
+`pki_authority.caBundle`. This is the only root CA trusted for TLS; system root
+certificates are not used. The TLS handshake verifies the presented certificate
+signature and chain against the configured root CA. Matching the server IP
+address or name against the certificate is disabled. After the VM certificate
+is issued, the client additionally checks that the root CA in the returned
+chain matches the configured root CA. The `swarmKey` request uses the issued VM
+certificate.
 
 ## Trust Lifecycle
 

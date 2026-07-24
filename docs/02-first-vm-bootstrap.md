@@ -2,7 +2,8 @@
 
 ## Initial State
 
-The first VM starts without existing SwarmDB addresses or a ready PKI:
+The first VM starts before the network's SwarmDB and PKI infrastructure have
+been created:
 
 ```yaml
 swarm_db:
@@ -92,8 +93,7 @@ A root CA and two specialized subroot CAs are created:
 - evidence signing.
 
 A first-VM certificate signed by the device subroot is also created. The full
-hierarchy and certificate lifetimes are described in the
-[PKI chapter](06-pki.md).
+hierarchy is described in the [PKI chapter](06-pki.md).
 
 The root certificate contains:
 
