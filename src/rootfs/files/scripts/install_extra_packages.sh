@@ -5,6 +5,37 @@ set -euo pipefail
 
 # private
 BUILDROOT="/buildroot"
+KNOT_REPOSITORY="https://pkg.labs.nic.cz/knot-dns"
+
+# package|version|architecture|repository path|SHA-256
+KNOT_PACKAGES=(
+    "knot|3.5.1-cznic.1~noble|amd64|pool/main/k/knot/knot_3.5.1-cznic.1~noble_amd64.deb|56f9363291705f8d320141182859d658e25f2585848787099e850bb087cb37e4"
+    "knot-keymgr|3.5.1-cznic.1~noble|amd64|pool/main/k/knot/knot-keymgr_3.5.1-cznic.1~noble_amd64.deb|0d3eb34b9611b540c80bc4c734a55cfa7551415a8a39ce1155faf6c0fe71a50b"
+    "libdnssec10|3.5.1-cznic.1~noble|amd64|pool/main/k/knot/libdnssec10_3.5.1-cznic.1~noble_amd64.deb|7ce01a3e67093eade91745f0fbc27bc8ff32a78ffac4729ad44e43641decff85"
+    "libknot16|3.5.1-cznic.1~noble|amd64|pool/main/k/knot/libknot16_3.5.1-cznic.1~noble_amd64.deb|a49b32019c62840a48602fbf57fe1f56139d6eeff618526838a002e22fe6f011"
+    "libzscanner5|3.5.1-cznic.1~noble|amd64|pool/main/k/knot/libzscanner5_3.5.1-cznic.1~noble_amd64.deb|ef8981acd1ee8a43a6edccbb3381cf327114d0331abd115044994789fa3c4d00"
+)
+
+UBUNTU_PACKAGES=(
+    mysql-client
+    python3
+    python3-pip
+    python3-venv
+    openssl
+    netcat-openbsd
+    dnsutils
+    curl
+    nano
+    ncurses-term
+    podman
+    unzip
+    wireguard-tools
+    redis-tools
+    valkey-tools
+    nats-server
+    wget
+    jq
+)
 
 # init logging
 source "$BUILDROOT/files/scripts/log.sh"
@@ -13,45 +44,64 @@ source "$BUILDROOT/files/scripts/log.sh"
 source "$BUILDROOT/files/scripts/chroot.sh"
 
 function install_extra_packages() {
-    log_info "installing extra system packages for cloud-init compatibility"
+    log_info "installing Ubuntu system packages"
 
-    # Add CZ.NIC Knot DNS repository
-    local knot_version="3.5.1"
-    chroot "$OUTPUTDIR" /bin/bash -lc "curl -fsSL https://pkg.labs.nic.cz/gpg -o /usr/share/keyrings/cznic-labs-pkg.gpg"
-    chroot "$OUTPUTDIR" /bin/bash -lc "echo 'deb [signed-by=/usr/share/keyrings/cznic-labs-pkg.gpg] https://pkg.labs.nic.cz/knot-dns noble main' > /etc/apt/sources.list.d/cznic-labs-knot-dns.list"
-    chroot "$OUTPUTDIR" /bin/bash -lc "printf 'Package: knot knot-* libdnssec* libzscanner* libknot* python3-libknot*\nPin-Priority: 1001\nPin: version ${knot_version}*\n' > /etc/apt/preferences.d/knot"
+    chroot "$OUTPUTDIR" apt-get update
+    chroot "$OUTPUTDIR" apt-get install -y "${UBUNTU_PACKAGES[@]}"
 
-    chroot "$OUTPUTDIR" /bin/bash -lc "apt-get update"
-
-    # unzip: used to extract service archives (download-services.sh)
-    # wireguard-tools: required by the wireguard provision service (wireguard kernel module is in BASE_PACKAGES)
-    # redis-tools: redis-cli required by the redis and redis-sentinel provision services
-    # valkey-tools: valkey-check-aof for AOF repair when Valkey fails to start (redis provision service)
-    # nats-server: required by the nats provision service
-    # knot: Knot DNS server required by the knot provision service (pinned via apt preferences)
-    # wget: required by the openresty provision service to download nginx config
-    # NOTE: mysql-client, netcat-openbsd, dnsutils are already installed by setup_runtime_tools.sh
-    chroot "$OUTPUTDIR" /bin/bash -lc "apt-get install -y \
-        podman \
-        unzip \
-        wireguard-tools \
-        redis-tools \
-        valkey-tools \
-        nats-server \
-        wget \
-        jq \
-        'knot=${knot_version}*'"
-
-    # nats-server and knot enable systemd by default; Swarm starts them only on nodes in the matching cluster.
-    chroot "$OUTPUTDIR" /bin/bash -lc "systemctl disable --now nats-server.service knot.service 2>/dev/null || true"
+    # nats-server enables itself by default; Swarm starts it only on nodes in
+    # the matching cluster.
+    chroot "$OUTPUTDIR" systemctl disable --now nats-server.service 2>/dev/null || true
 
     # apt installs 87-podman-bridge.conflist into /etc/cni/net.d; move it for kubelet isolation.
     chroot "$OUTPUTDIR" /usr/local/bin/configure-podman-cni.sh
+}
 
-    chroot "$OUTPUTDIR" /bin/bash -lc "apt-get clean"
-    log_info "extra packages installed successfully"
+function install_s3fs() {
+    log_info "installing s3fs"
+    chroot "$OUTPUTDIR" apt-get install -y s3fs
+
+    # Required by provider-config-s3fs.service, which mounts /sp for
+    # processes running as non-root users.
+    if ! grep -qxF 'user_allow_other' "${OUTPUTDIR}/etc/fuse.conf"; then
+        printf 'user_allow_other\n' >> "${OUTPUTDIR}/etc/fuse.conf"
+    fi
+}
+
+function install_knot() {
+    local package_spec package version architecture repository_path sha256;
+    local filename chroot_path host_path;
+    local package_paths=();
+    local downloaded_paths=();
+
+    log_info "installing pinned Knot DNS packages"
+
+    for package_spec in "${KNOT_PACKAGES[@]}"; do
+        IFS='|' read -r package version architecture repository_path sha256 \
+            <<< "$package_spec"
+        filename="${repository_path##*/}"
+        chroot_path="/tmp/${filename}"
+        host_path="${OUTPUTDIR}${chroot_path}"
+
+        log_info "downloading ${package}=${version} (${architecture})"
+        wget "${KNOT_REPOSITORY}/${repository_path}" -O "$host_path"
+        printf '%s  %s\n' "$sha256" "$host_path" \
+            | sha256sum --check --strict -
+
+        package_paths+=("$chroot_path")
+        downloaded_paths+=("$host_path")
+    done
+
+    chroot "$OUTPUTDIR" apt-get install -y "${package_paths[@]}"
+    rm -f "${downloaded_paths[@]}"
+
+    # Swarm starts Knot only on nodes in the matching cluster.
+    chroot "$OUTPUTDIR" systemctl disable --now knot.service 2>/dev/null || true
 }
 
 chroot_init
 install_extra_packages
+install_s3fs
+install_knot
+chroot "$OUTPUTDIR" apt-get clean
 chroot_deinit

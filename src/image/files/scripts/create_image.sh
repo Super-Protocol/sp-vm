@@ -1,221 +1,402 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# bash unofficial strict mode;
-set -euo pipefail;
+set -euo pipefail
 
-# public, required
-# OUTPUTROOT
-# OUTPUTDIR
-# IMAGESIZE
+SP_VM_IMAGE_VERSION="${SP_VM_IMAGE_VERSION:-build-local}"
+SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1783987200}"
 
-# public, optional
-SP_VM_IMAGE_VERSION="${SP_VM_IMAGE_VERSION:-"build-local"}"
+BUILDROOT="/buildroot"
+OUTPUT_FILENAME="sp-vm-${SP_VM_IMAGE_VERSION}.img"
+OUTPUT_FILE="$OUTPUTROOT/$OUTPUT_FILENAME"
 
-# private const
-BUILDROOT="/buildroot";
-OUTPUT_FILENAME="sp-vm-${SP_VM_IMAGE_VERSION}.img";
-OUTPUT_FILE="$OUTPUTROOT/$OUTPUT_FILENAME";
-BOOT_PART="p1";
-BOOT_PART_SIZE="100";  # MiB
-BIOS_PART="p2";
-BIOS_PART_SIZE="4";  # MiB
-ESP_PART="p3";
-ESP_PART_SIZE="100";  # MiB
-ROOTFS_PART="p4";
-# ROOTFS_PART_SIZE will be calculated later
-ROOTFS_HASH_PART="p5";
-# ROOTFS_HASH_PART_SIZE will be calculated later
+MIB=$((1024 * 1024))
+SECTORS_PER_MIB=2048
+BOOT_START_MIB=1
+BOOT_SIZE_MIB=100
+BIOS_START_MIB=101
+BIOS_SIZE_MIB=4
+ESP_START_MIB=105
+ESP_SIZE_MIB=100
+ROOTFS_START_MIB=205
+EXTRA_DISK_SIZE_MIB=10
 
-# private vars, unset
-# LOOP_DEV
-# LOOP_DEV_NAME
-# ROOTFS_PART_SIZE
-# ROOTFS_HASH_PART_SIZE
-# IMAGESIZE
+BOOT_UUID="${BOOT_UUID:-53e6f641-37c0-46d2-a729-7d9f49fcf589}"
+BOOT_DIR_HASH_SEED="${BOOT_DIR_HASH_SEED:-696833d7-b1d1-4f05-8ede-1a62f2e0a70d}"
+ESP_VOLUME_ID="${ESP_VOLUME_ID:-A1B2C3D4}"
+DISK_GUID="${DISK_GUID:-6f873c23-1b65-4b5c-8e67-8f4f3c3419a1}"
+BOOT_PART_GUID="${BOOT_PART_GUID:-4389386d-d949-4b54-942d-3f6b1148c8d1}"
+BIOS_PART_GUID="${BIOS_PART_GUID:-f4958893-2686-4bca-8251-1499197a2774}"
+ESP_PART_GUID="${ESP_PART_GUID:-58f79298-702d-4a8b-b53c-73a76da19e77}"
+ROOTFS_PART_GUID="${ROOTFS_PART_GUID:-ec6a4d3f-0f19-47df-9c1f-8f221bbf175b}"
+ROOTFS_HASH_PART_GUID="${ROOTFS_HASH_PART_GUID:-672b89b6-76c3-45a5-af55-0a401f2d5a6f}"
 
-# init loggggging;
-source "$BUILDROOT/files/scripts/log.sh";
+WORK_DIR="$(mktemp -d -t sp-vm-image.XXXXXXXX)"
+ROOTFS_ARTIFACT_DIR="$WORK_DIR/rootfs-verity"
+ROOTFS_IMAGE="$ROOTFS_ARTIFACT_DIR/rootfs.ext4"
+ROOTFS_VERITY_IMAGE="$ROOTFS_ARTIFACT_DIR/rootfs.verity"
+BOOT_STAGE="$WORK_DIR/boot-stage"
+ESP_STAGE="$WORK_DIR/esp-stage"
+BOOT_IMAGE="$WORK_DIR/boot.ext4"
+ESP_IMAGE="$WORK_DIR/esp.fat"
+EARLY_GRUB_CONFIG="$WORK_DIR/early-grub.cfg"
+BIOS_CORE_IMAGE="$WORK_DIR/core.img"
+EFI_GRUB_IMAGE="$WORK_DIR/BOOTX64.EFI"
+LOOP_DEV=""
 
-function calculate_disk_size() {
-    log_info "determinating image part size";
-    # adding extra 6% for ext4 meta
-    ROOTFS_PART_SIZE="$(du -sm "$OUTPUTDIR" | awk '{print int($1 * 1.06)}')";  # MiB
-    # hash part size will be ROOTFS_PART_SIZE * 0.99%
-    ROOTFS_HASH_PART_SIZE="$(echo "$ROOTFS_PART_SIZE" | awk '{x = $1 * 0.0099; print (x == int(x)) ? x : int(x)+1}' )";
-    # adding extra bytes for filling
-    IMAGESIZE="$(( BOOT_PART_SIZE + BIOS_PART_SIZE + ESP_PART_SIZE + ROOTFS_PART_SIZE + ROOTFS_HASH_PART_SIZE + 10))";
-    log_info "total image size will be: $IMAGESIZE MiB";
-}
-
-function create_empty_disk() {
-    log_info "creating empty disk";
-    qemu-img create -f raw "$OUTPUT_FILE" "${IMAGESIZE}M";
-}
-
-# Partitions etc
-function create_partitions() {
-    log_info "creating partitions";
-    local BOOT_START="1";
-    local BOOT_END="$(( BOOT_START + BOOT_PART_SIZE ))";
-    local BIOS_PART_START="$BOOT_END";
-    local BIOS_PART_END="$(( BIOS_PART_START + BIOS_PART_SIZE ))";
-    local ESP_PART_START="$BIOS_PART_END";
-    local ESP_PART_END="$(( ESP_PART_START + ESP_PART_SIZE ))";
-    local ROOTFS_PART_START="$ESP_PART_END";
-    local ROOTFS_PART_END="$(( ROOTFS_PART_START + ROOTFS_PART_SIZE ))";
-    local ROOTFS_HASH_PART_START="$ROOTFS_PART_END";
-    local ROOTFS_HASH_PART_END="$(( ROOTFS_HASH_PART_START + ROOTFS_HASH_PART_SIZE ))";
-
-    parted --script "$OUTPUT_FILE" \
-        mklabel gpt \
-        mkpart bls_boot ext4 "${BOOT_START}MiB" "${BOOT_END}MiB" \
-        set 1 bls_boot on \
-        mkpart bios_grub "${BIOS_PART_START}MiB" "${BIOS_PART_END}MiB" \
-        set 2 bios_grub on \
-        mkpart ESP fat32 "${ESP_PART_START}MiB" "${ESP_PART_END}MiB" \
-        set 3 boot on \
-        set 3 esp on \
-        mkpart rootfs ext4 "${ROOTFS_PART_START}MiB" "${ROOTFS_PART_END}MiB" \
-        mkpart rootfs_hash "${ROOTFS_HASH_PART_START}MiB" "${ROOTFS_HASH_PART_END}MiB";
-}
-
-# Mounting image
-function mount_image() {
-    log_info "mounting image";
-    LOOP_DEV=$(losetup --find --show --partscan "$OUTPUT_FILE");
-    LOOP_DEV_NAME=$(tr -d "/dev" <<< "$LOOP_DEV");
-    kpartx -av "$LOOP_DEV";
-}
+# shellcheck disable=SC1091
+source "$BUILDROOT/files/scripts/log.sh"
 
 function cleanup() {
-    log_info "umounting image";
-    for CUR in $(losetup -a | grep "($OUTPUT_FILE)" | awk -F ':' '{print $1}'); do
-        kpartx -d "$CUR" || true;
-        losetup -d $CUR || true;
+    local status=$?
+
+    if mountpoint -q /mnt/boot; then
+        umount /mnt/boot || true
+    fi
+    if [[ -n "$LOOP_DEV" ]]; then
+        kpartx -d "$LOOP_DEV" >/dev/null 2>&1 || true
+        losetup --detach "$LOOP_DEV" >/dev/null 2>&1 || true
+    fi
+    rm -rf "$WORK_DIR"
+    return "$status"
+}
+trap cleanup EXIT
+
+function fail() {
+    log_fail "$*"
+    exit 1
+}
+
+function validate_inputs() {
+    [[ -d "$OUTPUTDIR" ]] || fail "rootfs directory does not exist: $OUTPUTDIR"
+    [[ "$SOURCE_DATE_EPOCH" =~ ^[0-9]+$ ]] || fail "invalid SOURCE_DATE_EPOCH"
+    [[ "$ESP_VOLUME_ID" =~ ^[0-9A-Fa-f]{8}$ ]] || fail "invalid ESP_VOLUME_ID"
+
+    local uuid_pattern='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    local value
+    for value in \
+        "$BOOT_UUID" "$BOOT_DIR_HASH_SEED" "$DISK_GUID" \
+        "$BOOT_PART_GUID" "$BIOS_PART_GUID" "$ESP_PART_GUID" \
+        "$ROOTFS_PART_GUID" "$ROOTFS_HASH_PART_GUID"; do
+        [[ "$value" =~ $uuid_pattern ]] || fail "invalid UUID/GUID: $value"
     done
 }
-trap cleanup EXIT;
 
-# Creating fsss
-function create_filesystems() {
-    log_info "creating filesystems";
-    mkfs.ext4 \
-        -O ^has_journal,^huge_file,^meta_bg,^ext_attr \
-        -L bls_boot \
-        "/dev/mapper/${LOOP_DEV_NAME}${BOOT_PART}";
-    mkfs.fat -F 32 "/dev/mapper/${LOOP_DEV_NAME}${ESP_PART}";
-    mkfs.ext4 -m 0 \
-        -O ^has_journal,^huge_file,^meta_bg,^ext_attr \
-        -L rootfs \
-        "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART}";
+function detect_kernel() {
+    mapfile -t kernels < <(
+        find "$OUTPUTDIR/boot" \
+            -maxdepth 1 \
+            -type f \
+            -name 'vmlinuz-*-nvidia-gpu-confidential' \
+            -printf '%f\n' \
+            | LC_ALL=C sort
+    )
+
+    if [[ "${#kernels[@]}" -ne 1 ]]; then
+        fail "expected exactly one confidential kernel in $OUTPUTDIR/boot, found ${#kernels[@]}"
+    fi
+    KERNEL_FILENAME="${kernels[0]}"
+    log_info "using kernel: $KERNEL_FILENAME"
 }
 
-# Mounting all shit
-function mount_partitions() {
-    log_info "mounting partitions";
-    mkdir -p "/mnt/boot";
-    mount "/dev/mapper/${LOOP_DEV_NAME}${BOOT_PART}" "/mnt/boot";
-    mkdir -p "/mnt/boot/efi";
-    mount "/dev/mapper/${LOOP_DEV_NAME}${ESP_PART}" "/mnt/boot/efi";
-    mkdir -p "/mnt/boot/efi/EFI/BOOT";
-    mkdir -p "/mnt/boot/efi/boot/grub";
-    mkdir -p "/mnt/rootfs";
-    mount "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART}" "/mnt/rootfs";
+function create_rootfs_verity() {
+    log_info "creating deterministic rootfs ext4 and dm-verity blobs"
+    "$BUILDROOT/files/scripts/create_rootfs_verity.sh" \
+        "$OUTPUTDIR" \
+        "$ROOTFS_ARTIFACT_DIR"
+
+    local rootfs_bytes
+    local rootfs_hash_bytes
+    rootfs_bytes="$(stat --format='%s' "$ROOTFS_IMAGE")"
+    rootfs_hash_bytes="$(stat --format='%s' "$ROOTFS_VERITY_IMAGE")"
+    (( rootfs_bytes % MIB == 0 && rootfs_hash_bytes % MIB == 0 )) \
+        || fail "rootfs blobs must be aligned to whole MiB"
+    ROOTFS_SIZE_MIB="$((rootfs_bytes / MIB))"
+    ROOTFS_HASH_SIZE_MIB="$((rootfs_hash_bytes / MIB))"
+    ROOTFS_HASH_START_MIB="$((ROOTFS_START_MIB + ROOTFS_SIZE_MIB))"
+    DISK_SIZE_MIB="$((ROOTFS_HASH_START_MIB + ROOTFS_HASH_SIZE_MIB + EXTRA_DISK_SIZE_MIB))"
 }
 
-function umount_boot_partitions() {
-    log_info "umounting boot partitions";
-    umount "/mnt/boot/efi";
-    umount "/mnt/boot";
+function copy_tree() {
+    local source_directory="$1"
+    local target_directory="$2"
+
+    mkdir -p "$target_directory"
+    LC_ALL=C tar \
+        --sort=name \
+        --numeric-owner \
+        --acls \
+        --xattrs \
+        --xattrs-include='*' \
+        --selinux \
+        --sparse \
+        --directory="$source_directory" \
+        --create \
+        --file=- \
+        . \
+        | tar \
+            --numeric-owner \
+            --acls \
+            --xattrs \
+            --xattrs-include='*' \
+            --selinux \
+            --sparse \
+            --directory="$target_directory" \
+            --extract \
+            --file=-
 }
 
-function umount_rootfs() {
-    log_info "umounting rootfs";
-    umount "/mnt/rootfs";
-}
+function create_grub_config() {
+    mkdir -p "$BOOT_STAGE/grub"
+    ROOTFS_HASH="$(cat "$ROOTFS_ARTIFACT_DIR/rootfs_hash.txt")"
+    [[ "$ROOTFS_HASH" =~ ^[0-9a-f]{64}$ ]] || fail "invalid rootfs hash"
 
-# Installing the GRUB
-## UEFI
-function install_grub_efi() {
-    log_info "installing EFI grub";
-    grub-install \
-        --target=x86_64-efi \
-        --efi-directory=/mnt/boot/efi \
-        --boot-directory=/mnt/boot \
-        --no-floppy \
-        --modules="normal part_gpt part_msdos multiboot" \
-        --no-nvram \
-        --removable \
-        --bootloader-id=GRUB \
-        "$LOOP_DEV";
-    mv "/mnt/boot/efi/EFI/BOOT/grub.cfg" "/mnt/boot/efi/boot/grub/";
-}
-
-## BIOS
-function install_grub_bios() {
-    log_info "installing BIOS grub";
-    grub-install \
-        --target i386-pc \
-        --boot-directory=/mnt/boot \
-        "$LOOP_DEV";
-}
-
-function copy_rootfs() {
-    log_info "copying rootfs";
-    cp -a "$OUTPUTDIR/." "/mnt/rootfs";
-}
-
-function move_boot_data() {
-    log_info "moving boot data to boot partition";
-    mv /mnt/rootfs/boot/* "/mnt/boot/";
-}
-
-function calc_rootfs_hash() {
-    log_info "calculating rootfs hash";
-    veritysetup \
-        format \
-        "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_PART}" \
-        "/dev/mapper/${LOOP_DEV_NAME}${ROOTFS_HASH_PART}" \
-        > "/tmp/rootfs_hash.txt";
-}
-
-function template_grub_config() {
-    log_info "templating grub config";
-    ROOTFS_HASH="$(grep 'Root hash' "/tmp/rootfs_hash.txt" | awk '{print $3}')";
+    # shellcheck disable=SC2016
     ROOTFS_HASH="$ROOTFS_HASH" \
         SP_VM_IMAGE_VERSION="$SP_VM_IMAGE_VERSION" \
-        KERNEL_VERSION="$KERNEL_VERSION" \
+        KERNEL_FILENAME="$KERNEL_FILENAME" \
         envsubst \
-        '$ROOTFS_HASH,$SP_VM_IMAGE_VERSION,$KERNEL_VERSION' \
-        > "/mnt/boot/grub/grub.cfg" \
-        < "$BUILDROOT/files/configs/grub.cfg.tmpl";
-    log_info "storing rootfs hash to file";
-    echo "$ROOTFS_HASH" > "$OUTPUTROOT/rootfs_hash.txt";
+        '$ROOTFS_HASH,$SP_VM_IMAGE_VERSION,$KERNEL_FILENAME' \
+        < "$BUILDROOT/files/configs/grub.cfg.tmpl" \
+        > "$BOOT_STAGE/grub/grub.cfg"
+
+    cat > "$EARLY_GRUB_CONFIG" <<'EOF'
+search --no-floppy --label bls_boot --set=root
+set prefix=($root)/grub
+configfile $prefix/grub.cfg
+EOF
+    grub-script-check "$EARLY_GRUB_CONFIG"
+    grub-script-check "$BOOT_STAGE/grub/grub.cfg"
 }
 
-function cleanup_rootfs_partition() {
-    log_info "cleaning up rootfs partition";
-    rm -rf "/mnt/rootfs/lost+found";
+function create_grub_images() {
+    log_info "creating deterministic standalone BIOS and UEFI GRUB images"
+    local bios_modules='biosdisk part_gpt ext2 normal configfile search search_label linux'
+    local efi_modules='part_gpt fat ext2 normal configfile search search_label linux'
+
+    SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" grub-mkstandalone \
+        --format=i386-pc \
+        --install-modules="$bios_modules" \
+        --fonts='' \
+        --locales='' \
+        --themes='' \
+        --output="$BIOS_CORE_IMAGE" \
+        "boot/grub/grub.cfg=$EARLY_GRUB_CONFIG"
+
+    SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" grub-mkstandalone \
+        --format=x86_64-efi \
+        --install-modules="$efi_modules" \
+        --fonts='' \
+        --locales='' \
+        --themes='' \
+        --output="$EFI_GRUB_IMAGE" \
+        "boot/grub/grub.cfg=$EARLY_GRUB_CONFIG"
+
+    mkdir -p "$BOOT_STAGE/grub/bios" "$ESP_STAGE/EFI/BOOT"
+    install -m 0644 /usr/lib/grub/i386-pc/boot.img "$BOOT_STAGE/grub/bios/boot.img"
+    install -m 0644 "$BIOS_CORE_IMAGE" "$BOOT_STAGE/grub/bios/core.img"
+    install -m 0644 "$EFI_GRUB_IMAGE" "$ESP_STAGE/EFI/BOOT/BOOTX64.EFI"
 }
 
-function cleanup_boot_partition() {
-    log_info "cleaning up boot partition";
-    rm -rf "/mnt/boot/lost+found";
+function append_inode_time_commands() {
+    local commands_file="$1"
+    local path="$2"
+
+    path="${path//\"/\\\"}"
+    {
+        printf 'set_inode_field "%s" atime @%s\n' "$path" "$SOURCE_DATE_EPOCH"
+        printf 'set_inode_field "%s" ctime @%s\n' "$path" "$SOURCE_DATE_EPOCH"
+        printf 'set_inode_field "%s" mtime @%s\n' "$path" "$SOURCE_DATE_EPOCH"
+        printf 'set_inode_field "%s" crtime @%s\n' "$path" "$SOURCE_DATE_EPOCH"
+    } >> "$commands_file"
 }
 
-calculate_disk_size;
-create_empty_disk;
-create_partitions;
-mount_image;
-create_filesystems;
-mount_partitions;
-install_grub_efi;
-install_grub_bios;
-copy_rootfs;
-move_boot_data;
-cleanup_rootfs_partition;
-umount_rootfs;
-calc_rootfs_hash;
-template_grub_config;
-cleanup_boot_partition;
-umount_boot_partitions;
+function normalize_ext4_inode_times() {
+    local source_directory="$1"
+    local image="$2"
+    local commands_file="$WORK_DIR/boot-debugfs.commands"
+    local relative_path
+
+    : > "$commands_file"
+    append_inode_time_commands "$commands_file" '/'
+    while IFS= read -r -d '' relative_path; do
+        [[ "$relative_path" != *$'\n'* && "$relative_path" != *$'\r'* ]] \
+            || fail "boot path contains a newline"
+        append_inode_time_commands "$commands_file" "/$relative_path"
+    done < <(
+        find "$source_directory" -mindepth 1 -printf '%P\0' | LC_ALL=C sort -z
+    )
+
+    LC_ALL=C TZ=UTC E2FSPROGS_FAKE_TIME="$SOURCE_DATE_EPOCH" debugfs \
+        -w -f "$commands_file" "$image" >/dev/null 2>&1
+}
+
+function create_boot_image() {
+    log_info "creating deterministic boot ext4 image"
+    local object_count
+    local inode_count
+    object_count="$(find "$BOOT_STAGE" -printf '.' | wc -c)"
+    inode_count=$((object_count + object_count / 10 + 128))
+
+    truncate --size="$((BOOT_SIZE_MIB * MIB))" "$BOOT_IMAGE"
+    LC_ALL=C TZ=UTC E2FSPROGS_FAKE_TIME="$SOURCE_DATE_EPOCH" mke2fs \
+        -q -F -t ext4 \
+        -b 4096 \
+        -I 256 \
+        -N "$inode_count" \
+        -m 0 \
+        -U "$BOOT_UUID" \
+        -L bls_boot \
+        -O '^has_journal,^huge_file,^meta_bg' \
+        -E "hash_seed=${BOOT_DIR_HASH_SEED},lazy_itable_init=0,lazy_journal_init=0,nodiscard,root_owner=0:0" \
+        -d "$BOOT_STAGE" \
+        "$BOOT_IMAGE"
+    LC_ALL=C TZ=UTC E2FSPROGS_FAKE_TIME="$SOURCE_DATE_EPOCH" debugfs \
+        -w -R 'rmdir /lost+found' "$BOOT_IMAGE" >/dev/null 2>&1
+    normalize_ext4_inode_times "$BOOT_STAGE" "$BOOT_IMAGE"
+    e2fsck -fn "$BOOT_IMAGE"
+}
+
+function create_esp_image() {
+    log_info "creating deterministic ESP FAT32 image"
+    local fake_time
+    fake_time="$(date --utc --date="@$SOURCE_DATE_EPOCH" '+%Y-%m-%d %H:%M:%S')"
+
+    truncate --size="$((ESP_SIZE_MIB * MIB))" "$ESP_IMAGE"
+    mkfs.fat \
+        --invariant \
+        -F 32 \
+        -i "$ESP_VOLUME_ID" \
+        -n ESP \
+        "$ESP_IMAGE" >/dev/null
+    TZ=UTC faketime -f "@$fake_time" mcopy \
+        -s \
+        -i "$ESP_IMAGE" \
+        "$ESP_STAGE"/* \
+        ::/
+    fsck.fat -vn "$ESP_IMAGE"
+}
+
+function create_partition_table() {
+    log_info "creating deterministic GPT"
+    local boot_start boot_end bios_start bios_end esp_start esp_end
+    local rootfs_start rootfs_end rootfs_hash_start rootfs_hash_end
+
+    boot_start=$((BOOT_START_MIB * SECTORS_PER_MIB))
+    boot_end=$(((BOOT_START_MIB + BOOT_SIZE_MIB) * SECTORS_PER_MIB - 1))
+    bios_start=$((BIOS_START_MIB * SECTORS_PER_MIB))
+    bios_end=$(((BIOS_START_MIB + BIOS_SIZE_MIB) * SECTORS_PER_MIB - 1))
+    esp_start=$((ESP_START_MIB * SECTORS_PER_MIB))
+    esp_end=$(((ESP_START_MIB + ESP_SIZE_MIB) * SECTORS_PER_MIB - 1))
+    rootfs_start=$((ROOTFS_START_MIB * SECTORS_PER_MIB))
+    rootfs_end=$(((ROOTFS_START_MIB + ROOTFS_SIZE_MIB) * SECTORS_PER_MIB - 1))
+    rootfs_hash_start=$((ROOTFS_HASH_START_MIB * SECTORS_PER_MIB))
+    rootfs_hash_end=$(((ROOTFS_HASH_START_MIB + ROOTFS_HASH_SIZE_MIB) * SECTORS_PER_MIB - 1))
+
+    truncate --size="$((DISK_SIZE_MIB * MIB))" "$OUTPUT_FILE"
+    sgdisk \
+        --clear \
+        --set-alignment="$SECTORS_PER_MIB" \
+        --disk-guid="$DISK_GUID" \
+        --new="1:${boot_start}:${boot_end}" \
+        --typecode=1:8300 \
+        --change-name=1:bls_boot \
+        --partition-guid="1:${BOOT_PART_GUID}" \
+        --new="2:${bios_start}:${bios_end}" \
+        --typecode=2:ef02 \
+        --change-name=2:bios_grub \
+        --partition-guid="2:${BIOS_PART_GUID}" \
+        --new="3:${esp_start}:${esp_end}" \
+        --typecode=3:ef00 \
+        --change-name=3:ESP \
+        --partition-guid="3:${ESP_PART_GUID}" \
+        --new="4:${rootfs_start}:${rootfs_end}" \
+        --typecode=4:8300 \
+        --change-name=4:rootfs \
+        --partition-guid="4:${ROOTFS_PART_GUID}" \
+        --new="5:${rootfs_hash_start}:${rootfs_hash_end}" \
+        --typecode=5:8300 \
+        --change-name=5:rootfs_hash \
+        --partition-guid="5:${ROOTFS_HASH_PART_GUID}" \
+        "$OUTPUT_FILE" >/dev/null
+    sgdisk --verify "$OUTPUT_FILE"
+}
+
+function write_partition_blob() {
+    local blob="$1"
+    local start_mib="$2"
+
+    dd \
+        if="$blob" \
+        of="$OUTPUT_FILE" \
+        bs=1M \
+        seek="$start_mib" \
+        conv=notrunc \
+        status=none
+}
+
+function write_partition_blobs() {
+    log_info "writing deterministic partition blobs"
+    write_partition_blob "$BOOT_IMAGE" "$BOOT_START_MIB"
+    write_partition_blob "$ESP_IMAGE" "$ESP_START_MIB"
+    write_partition_blob "$ROOTFS_IMAGE" "$ROOTFS_START_MIB"
+    write_partition_blob "$ROOTFS_VERITY_IMAGE" "$ROOTFS_HASH_START_MIB"
+}
+
+function install_bios_bootloader() {
+    log_info "embedding deterministic BIOS GRUB core image"
+    mkdir -p /mnt/boot
+    LOOP_DEV="$(losetup --find --show --partscan "$OUTPUT_FILE")"
+    local loop_name="${LOOP_DEV#/dev/}"
+    kpartx -a "$LOOP_DEV" >/dev/null
+    mount "/dev/mapper/${loop_name}p1" /mnt/boot
+    /usr/lib/grub/i386-pc/grub-bios-setup \
+        --skip-fs-probe \
+        --directory=/mnt/boot/grub/bios \
+        "$LOOP_DEV"
+    umount /mnt/boot
+
+    # Mounting changes ext4 superblock fields. Restore the canonical boot blob;
+    # grub-bios-setup writes its boot code to the MBR and BIOS partition only.
+    write_partition_blob "$BOOT_IMAGE" "$BOOT_START_MIB"
+    kpartx -d "$LOOP_DEV" >/dev/null
+    losetup --detach "$LOOP_DEV"
+    LOOP_DEV=""
+}
+
+function verify_partition_blob() {
+    local blob="$1"
+    local start_mib="$2"
+    local bytes
+    local offset
+    bytes="$(stat --format='%s' "$blob")"
+    offset=$((start_mib * MIB))
+    cmp \
+        --bytes="$bytes" \
+        --ignore-initial="0:$offset" \
+        "$blob" \
+        "$OUTPUT_FILE"
+}
+
+function verify_image() {
+    log_info "verifying final disk layout and partition contents"
+    sgdisk --verify "$OUTPUT_FILE"
+    verify_partition_blob "$BOOT_IMAGE" "$BOOT_START_MIB"
+    verify_partition_blob "$ESP_IMAGE" "$ESP_START_MIB"
+    verify_partition_blob "$ROOTFS_IMAGE" "$ROOTFS_START_MIB"
+    verify_partition_blob "$ROOTFS_VERITY_IMAGE" "$ROOTFS_HASH_START_MIB"
+
+    cp "$ROOTFS_ARTIFACT_DIR/rootfs_hash.txt" "$OUTPUTROOT/rootfs_hash.txt"
+}
+
+validate_inputs
+detect_kernel
+create_rootfs_verity
+copy_tree "$OUTPUTDIR/boot" "$BOOT_STAGE"
+create_grub_config
+create_grub_images
+create_boot_image
+create_esp_image
+create_partition_table
+write_partition_blobs
+install_bios_bootloader
+verify_image

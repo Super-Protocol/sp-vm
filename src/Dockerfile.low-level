@@ -1,0 +1,273 @@
+# syntax=docker/dockerfile:1-labs@sha256:7d49dad25a050e14338ba7028b0460243f9d911dedc160a8fe20c34738fef3af
+
+FROM ubuntu:noble-20250714@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS low_level_builder_base
+
+ARG UBUNTU_SNAPSHOT_ID=20260714T000000Z
+ARG SOURCE_DATE_EPOCH=1783987200
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONHASHSEED=0 \
+    SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
+    TZ=UTC
+
+RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
+    && printf '%s\n' \
+        'deb http://archive.ubuntu.com/ubuntu/ noble main universe' \
+        'deb http://archive.ubuntu.com/ubuntu/ noble-updates main universe' \
+        'deb http://security.ubuntu.com/ubuntu/ noble-security main universe' \
+        > /etc/apt/sources.list \
+    && printf 'APT::Snapshot "%s";\nAPT::Get::Always-Include-Phased-Updates "true";\nAcquire::Languages "none";\n' \
+        "$UBUNTU_SNAPSHOT_ID" > /etc/apt/apt.conf.d/50snapshot \
+    && printf 'Acquire::https::Verify-Peer "false";\n' > /etc/apt/apt.conf.d/00snapshot-ca-bootstrap \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && rm /etc/apt/apt.conf.d/00snapshot-ca-bootstrap \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        autoconf \
+        automake \
+        autopoint \
+        bc \
+        bison \
+        build-essential \
+        cpio \
+        curl \
+        debhelper \
+        dpkg-dev \
+        elfutils \
+        flex \
+        gcc \
+        gettext \
+        git \
+        iasl \
+        kmod \
+        libaio-dev \
+        libblkid-dev \
+        libelf-dev \
+        libgcrypt20-dev \
+        libjson-c-dev \
+        libpopt-dev \
+        libseccomp-dev \
+        libssl-dev \
+        libtool \
+        lsb-release \
+        make \
+        nasm \
+        pkg-config \
+        python-is-python3 \
+        quilt \
+        rpm2cpio \
+        rsync \
+        uuid-dev \
+        wget \
+        zlib1g-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+### initramfs: BusyBox
+FROM low_level_builder_base AS busybox_builder
+ARG BUSYBOX_VERSION=1_36_1
+ADD --checksum=sha256:ea5494846c51d946e5e801d1c099b438f683af8147e0be24ca4001073143110f \
+    https://github.com/mirror/busybox/archive/refs/tags/${BUSYBOX_VERSION}.tar.gz \
+    /tmp/busybox.tar.gz
+RUN mkdir -p /tmp/busybox /initramfs-root/sbin \
+    && tar -C /tmp/busybox --strip-components=1 -xf /tmp/busybox.tar.gz
+WORKDIR /tmp/busybox
+COPY initramfs/files/busybox_config .config
+RUN make -j"$(nproc)" \
+    && install -m 0755 busybox /initramfs-root/sbin/busybox
+
+### initramfs: util-linux
+FROM low_level_builder_base AS util_linux_builder
+ARG UTIL_LINUX_VERSION=2.41
+ADD --checksum=sha256:c014b5861695b603d0be2ad1e6f10d5838b9d7859e1dd72d01504556817d8a87 \
+    https://www.kernel.org/pub/linux/utils/util-linux/v${UTIL_LINUX_VERSION}/util-linux-${UTIL_LINUX_VERSION}.tar.gz \
+    /tmp/util-linux.tar.gz
+RUN mkdir -p /tmp/util-linux /initramfs-root/sbin \
+    && tar -C /tmp/util-linux --strip-components=1 -xf /tmp/util-linux.tar.gz
+WORKDIR /tmp/util-linux
+RUN ./configure \
+        --disable-shared \
+        --enable-static \
+        --disable-liblastlog2 \
+        --without-tinfo \
+        --without-ncurses \
+        --disable-ipv6 \
+        --disable-pylibmount \
+    && make -j"$(nproc)" blkid wipefs lsblk LDFLAGS="--static" \
+    && strip blkid wipefs lsblk \
+    && install -m 0755 blkid wipefs lsblk /initramfs-root/sbin/
+
+### initramfs: LVM2
+FROM low_level_builder_base AS lvm2_builder
+ARG LVM2_REPOSITORY=https://github.com/lvmteam/lvm2
+ARG LVM2_COMMIT=6d1e894a867681af7a811ed63bc435f3aa55fec8
+RUN git clone --filter=blob:none --no-checkout "$LVM2_REPOSITORY" /tmp/lvm2 \
+    && git -C /tmp/lvm2 checkout --detach "$LVM2_COMMIT" \
+    && test "$(git -C /tmp/lvm2 rev-parse HEAD)" = "$LVM2_COMMIT"
+WORKDIR /tmp/build-root
+RUN /tmp/lvm2/configure \
+        --enable-static_link \
+        --disable-selinux \
+        --prefix=/initramfs-root \
+    && make -j"$(nproc)" \
+    && make install
+
+### initramfs: cryptsetup
+FROM low_level_builder_base AS cryptsetup_builder
+ARG CRYPTSETUP_REPOSITORY=https://gitlab.com/cryptsetup/cryptsetup
+ARG CRYPTSETUP_COMMIT=75111d382ba95e5038db81dbf92e9244026718d8
+COPY --from=lvm2_builder /initramfs-root /initramfs-root
+COPY --from=lvm2_builder /tmp/build-root/libdm/libdevmapper.pc /usr/lib/pkgconfig/devmapper.pc
+RUN git clone --filter=blob:none --no-checkout "$CRYPTSETUP_REPOSITORY" /tmp/cryptsetup \
+    && git -C /tmp/cryptsetup checkout --detach "$CRYPTSETUP_COMMIT" \
+    && test "$(git -C /tmp/cryptsetup rev-parse HEAD)" = "$CRYPTSETUP_COMMIT"
+WORKDIR /tmp/cryptsetup
+RUN ./autogen.sh
+WORKDIR /tmp/build-root
+RUN CFLAGS="-I/initramfs-root/include" \
+    CXXFLAGS="-I/initramfs-root/include" \
+    LDFLAGS="-L/initramfs-root/lib" \
+        /tmp/cryptsetup/configure \
+            --enable-static \
+            --enable-static-cryptsetup \
+            --disable-udev \
+            --disable-external-tokens \
+            --disable-ssh-token \
+            --disable-asciidoc \
+            --prefix=/initramfs-root \
+    && make -j"$(nproc)" \
+    && make install \
+    && strip /initramfs-root/sbin/veritysetup.static \
+    && strip /initramfs-root/sbin/cryptsetup.static
+
+### Pinned Linux source shared by gen_init_cpio and the kernel build
+FROM low_level_builder_base AS kernel_source
+ARG KERNEL_VERSION=6.12.13
+ARG KERNEL_SHA256=191dc5aae14a4223f0d5ce4e88cbbd29f0377703b9f0b70d4903734de641fb6a
+WORKDIR /buildroot
+COPY general/files/scripts/log.sh /buildroot/files/scripts/
+COPY kernel/files/scripts/download_and_verify_kernel_src.sh /buildroot/files/scripts/
+RUN /buildroot/files/scripts/download_and_verify_kernel_src.sh
+
+### initramfs: gen_init_cpio from the same pinned kernel source
+FROM kernel_source AS gen_init_cpio_builder
+ARG KERNEL_VERSION=6.12.13
+WORKDIR /buildroot/src/linux-${KERNEL_VERSION}/usr
+RUN make -j"$(nproc)" gen_init_cpio \
+    && install -m 0755 gen_init_cpio /usr/sbin/gen_init_cpio
+
+### initramfs: e2fsprogs
+FROM low_level_builder_base AS e2fsprogs_builder
+ARG E2FSPROGS_VERSION=1.47.3
+ADD --checksum=sha256:9286ee5471a8a5339a61eb952739e4614a5b1dbed79ca73a78f014885ce2ad53 \
+    https://github.com/tytso/e2fsprogs/archive/refs/tags/v${E2FSPROGS_VERSION}.tar.gz \
+    /tmp/e2fsprogs.tar.gz
+RUN mkdir -p /tmp/e2fsprogs /initramfs-root/sbin \
+    && tar -C /tmp/e2fsprogs --strip-components=1 -xf /tmp/e2fsprogs.tar.gz
+WORKDIR /tmp/e2fsprogs
+RUN ./configure CFLAGS='-g -O2 -static' LDFLAGS='-static' \
+    && make -j"$(nproc)" \
+    && install -m 0755 misc/mke2fs /initramfs-root/sbin/mkfs.ext4 \
+    && strip /initramfs-root/sbin/mkfs.ext4
+
+FROM gen_init_cpio_builder AS initramfs_builder
+COPY --from=busybox_builder /initramfs-root/sbin/busybox /initramfs-root/sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/blkid /initramfs-root/sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/lsblk /initramfs-root/sbin/
+COPY --from=util_linux_builder /initramfs-root/sbin/wipefs /initramfs-root/sbin/
+COPY --from=cryptsetup_builder /initramfs-root/sbin/veritysetup.static /initramfs-root/sbin/
+COPY --from=cryptsetup_builder /initramfs-root/sbin/cryptsetup.static /initramfs-root/sbin/
+COPY --from=e2fsprogs_builder /initramfs-root/sbin/mkfs.ext4 /initramfs-root/sbin/
+COPY initramfs/files/initramfs.list /initramfs-root/initramfs.list
+COPY initramfs/files/init.sh /initramfs-root/sbin/init.sh
+RUN gen_init_cpio -t "$SOURCE_DATE_EPOCH" /initramfs-root/initramfs.list \
+        | gzip -9 -n \
+        > /initramfs-root/initramfs.cpio.gz
+
+### Kernel and Debian packages
+FROM kernel_source AS kernel_builder
+ARG KERNEL_VERSION=6.12.13
+ARG SOURCE_DATE_EPOCH=1783987200
+ENV KBUILD_BUILD_HOST=sp-vm-builder \
+    KBUILD_BUILD_TIMESTAMP="Tue Jul 14 00:00:00 UTC 2026" \
+    KBUILD_BUILD_USER=sp-vm \
+    KBUILD_BUILD_VERSION=1 \
+    KDEB_PKGVERSION=1 \
+    SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+COPY kernel/files/scripts/merge-configs.sh /buildroot/files/scripts/
+COPY kernel/files/scripts/merge_config.sh /buildroot/files/scripts/
+COPY kernel/files/configs /buildroot/files/configs
+COPY kernel/files/configs/sp-vm-module-signing-cert.pem \
+    /buildroot/src/linux-${KERNEL_VERSION}/certs/sp-vm-module-signing-cert.pem
+RUN /buildroot/files/scripts/merge-configs.sh
+COPY --from=initramfs_builder /initramfs-root/initramfs.cpio.gz /buildroot/files/
+COPY kernel/files/scripts/build-kernel.sh /buildroot/files/scripts/
+RUN /buildroot/files/scripts/build-kernel.sh
+
+### AMD SEV OVMF
+FROM low_level_builder_base AS ovmf_builder_amd
+ARG EDK2_REPOSITORY=https://github.com/tianocore/edk2.git
+ARG EDK2_COMMIT=d46aa46c8361194521391aa581593e556c707c6e
+WORKDIR /buildroot
+COPY bios/files/configs/gitconfig /root/.gitconfig
+RUN git clone --filter=blob:none --no-checkout "$EDK2_REPOSITORY" ovmf \
+    && git -C ovmf checkout --detach "$EDK2_COMMIT" \
+    && test "$(git -C ovmf rev-parse HEAD)" = "$EDK2_COMMIT" \
+    && git -C ovmf submodule update --init --recursive
+WORKDIR /buildroot/ovmf
+COPY bios/files/configs/AmdSev-support-vm-over-1TB.patch .
+RUN git apply AmdSev-support-vm-over-1TB.patch \
+    && make -C BaseTools
+COPY bios/files/configs/target_amd_sev.txt /buildroot/ovmf/Conf/target.txt
+RUN touch --date="@${SOURCE_DATE_EPOCH}" \
+        OvmfPkg/AmdSev/Grub/grub.cfg \
+        OvmfPkg/AmdSev/Grub/grub.sh \
+    && touch --date="@$((SOURCE_DATE_EPOCH + 1))" OvmfPkg/AmdSev/Grub/grub.efi \
+    && bash -c 'source ./edksetup.sh && build clean && build' \
+    && test -s Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd
+
+### Ubuntu TDX OVMF package
+FROM low_level_builder_base AS ovmf_builder_ubuntu_tdx
+ADD --checksum=sha256:b07df0e4f75c46408bc7a73c943003cfda6b546c4a7fa8fed2410bd944be35dd \
+    https://ppa.launchpadcontent.net/kobuk-team/tdx-release/ubuntu/pool/main/e/edk2/ovmf_2024.05-2ubuntu0.1+tdx1.0_all.deb \
+    /tmp/ovmf-tdx.deb
+RUN dpkg-deb -x /tmp/ovmf-tdx.deb /tmp/ovmf-tdx \
+    && test -s /tmp/ovmf-tdx/usr/share/ovmf/OVMF.fd
+
+### CentOS Intel TDX OVMF package
+FROM low_level_builder_base AS ovmf_builder_centos_tdx
+ADD --checksum=sha256:c31b41656d0b2908e4a3363948649059a4a93d5a67582694b0ee3792bdfb428e \
+    https://mirror.stream.centos.org/10-stream/AppStream/x86_64/os/Packages/edk2-ovmf-20260221-3.el10.noarch.rpm \
+    /tmp/edk2-ovmf.rpm
+RUN cd /tmp \
+    && rpm2cpio edk2-ovmf.rpm | cpio -idm './usr/share/edk2/ovmf/OVMF.inteltdx.fd' \
+    && test -s /tmp/usr/share/edk2/ovmf/OVMF.inteltdx.fd
+
+### Canonical flat artifact set
+FROM low_level_builder_base AS low_level_artifacts
+ARG KERNEL_VERSION=6.12.13
+WORKDIR /output
+COPY --from=kernel_builder /output/deb/*.deb ./
+COPY --from=kernel_builder /output/boot/vmlinuz-${KERNEL_VERSION}-nvidia-gpu-confidential ./vmlinuz
+COPY --from=ovmf_builder_amd /buildroot/ovmf/Build/AmdSev/RELEASE_GCC5/FV/OVMF.fd ./OVMF_AMD.fd
+COPY --from=ovmf_builder_ubuntu_tdx /tmp/ovmf-tdx/usr/share/ovmf/OVMF.fd ./OVMF.fd
+COPY --from=ovmf_builder_centos_tdx /tmp/usr/share/edk2/ovmf/OVMF.inteltdx.fd ./OVMF_TDX.fd
+RUN set -eu; \
+    image_deb="$(find . -maxdepth 1 -type f -name 'linux-image*.deb' -print -quit)"; \
+    test -n "$image_deb"; \
+    mkdir /tmp/kernel-deb; \
+    dpkg-deb -x "$image_deb" /tmp/kernel-deb; \
+    packaged_vmlinuz="$(find /tmp/kernel-deb/boot -maxdepth 1 -type f -name 'vmlinuz-*' -print -quit)"; \
+    test -n "$packaged_vmlinuz"; \
+    cmp vmlinuz "$packaged_vmlinuz"; \
+    find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
+        | sort -z \
+        | xargs -0 sha256sum > SHA256SUMS; \
+    sha256sum --check SHA256SUMS
+
+FROM scratch AS low_level_export
+COPY --from=low_level_artifacts /output/ /
