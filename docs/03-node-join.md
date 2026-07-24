@@ -59,16 +59,23 @@ sequenceDiagram
 
 ## 1. Root CA Verification Before Enrollment
 
-Exactly one self-signed root is extracted from `caBundle`. The client then
-checks that:
+The self-signed root certificate is extracted from `caBundle`. Providing
+multiple self-signed root certificates is an error. The certificate extensions
+referenced in the checks are described in
+[Certificate Extensions and OIDs](06-pki.md#certificate-extensions-and-oids).
+The client then checks that:
 
-1. the network-type extension is present and equals local `trusted`;
-2. the root contains CPU TEE evidence;
+1. the network-type extension equals `trusted`;
+2. the root contains CPU TEE evidence of a supported hardware type: `tdx`,
+   `tdx-google`, or `sev-snp`;
 3. the quote/report signature and manufacturer verification data confirm
    platform authenticity and an acceptable security state;
 4. a normalized `mrEnclave` can be calculated from the evidence;
 5. the calculated `mrEnclave` is among the values allowed by the trusted
    registry.
+
+A root certificate with `network type=untrusted` or with `untrusted` evidence
+is rejected and cannot be used to join a trusted Swarm.
 
 This confirms that the configured root CA was created inside an approved
 confidential VM. Only then does the client contact the PKI Authority.
@@ -111,12 +118,12 @@ The Authority performs one ordered validation sequence:
 6. `mrEnclave` is among the values allowed by the trusted registry;
 7. when an NVIDIA token is present, its hash, mandatory NVIDIA verification
    results, and the absence of debug mode are checked;
-8. `networkID` is checked to prevent use of the challenge in another Swarm.
+8. `networkID` matches the value configured for the current Swarm.
 
 If any mandatory check fails, a certificate carrying the
-successful-attestation marker is not issued, so the request cannot be used to
-obtain `swarmKey`. Normal trusted-node enrollment requires the entire sequence
-to pass.
+[successful-attestation marker](06-pki.md#certificate-extensions-and-oids) is
+not issued, so the request cannot be used to obtain `swarmKey`. Normal
+trusted-node enrollment requires the entire sequence to pass.
 
 ## 5. Certificate Issuance Result
 
@@ -128,6 +135,9 @@ containing:
 - CPU TEE evidence;
 - the server-added successful-attestation marker;
 - NVIDIA GPU information when GPU evidence was supplied.
+
+The corresponding extensions are listed in
+[Certificate Extensions and OIDs](06-pki.md#certificate-extensions-and-oids).
 
 The client stores:
 
@@ -154,14 +164,16 @@ issued certificate. Before releasing the secret, the Authority:
 3. validates the chain signatures and integrity against the current network
    root CA;
 4. identifies the VM certificate in the chain and requires its
-   successful-attestation marker;
+   successful-attestation marker described in
+   [Certificate Extensions and OIDs](06-pki.md#certificate-extensions-and-oids);
 5. requires a non-empty list of requested secrets;
 6. obtains `swarmKey` from configured storage and confirms that it exists.
 
 A request without a client certificate, with an invalid chain, or without the
-successful-attestation marker is rejected. A TLS connection alone is therefore
-insufficient: the secret is available only to a node holding a certificate
-issued after successful challenge validation.
+[successful-attestation marker](06-pki.md#certificate-extensions-and-oids) is
+rejected. A TLS connection alone is therefore insufficient: the secret is
+available only to a node holding a certificate issued after successful
+challenge validation.
 
 The client stores the received `swarmKey` in:
 

@@ -21,17 +21,17 @@ specific VM instance.
 
 ## Measurement API
 
-The measurement API is available at:
+Every VM runs the Measurement API service. It can be used to request the
+calculated VM measurement and the evidence from which it was obtained:
 
 ```text
-GET http://127.0.0.1:9180/v1/getMeasure
-GET http://127.0.0.1:9180/api/v1/getMeasure
+GET http://<VM-IP>:9180/v1/getMeasure
+GET http://<VM-IP>:9180/api/v1/getMeasure
 ```
 
 Both paths are equivalent.
 
-The response contains the calculated measurement and the evidence from which it
-was obtained:
+The response contains:
 
 ```json
 {
@@ -63,8 +63,11 @@ The following TDX quote fields are used:
 | `RTMR3` | 48 bytes |
 | `REPORTDATA` | 64 bytes |
 
-The evidence also contains the TDX event log. Every event digest used in the
-calculation must be a 48-byte SHA-384 value.
+TDX evidence contains both the quote and the `RTMR0` event list, and they are
+transmitted together. Each event entry contains only the event type and its
+48-byte SHA-384 digest; raw event payloads and event logs for `RTMR1`–`RTMR3`
+are not included. `mrEnclave` cannot be calculated without the `RTMR0` event
+list.
 
 ### 1. Quote Verification
 
@@ -77,9 +80,10 @@ signature, missing or unusable verification data, an unacceptable platform
 security state, or an internal verification error means that trust in the
 quote cannot be established. In all such cases, the evidence is rejected.
 
-### 2. Event Log Integrity
+### 2. RTMR0 Event Log Integrity
 
-The RTMR value is reconstructed starting with 48 zero bytes:
+`RTMR0` is reconstructed from all entries in the transmitted list, starting
+with 48 zero bytes:
 
 ```text
 R₀ = 0x00 × 48
@@ -87,7 +91,11 @@ Rᵢ = SHA-384(Rᵢ₋₁ || eventDigestᵢ)
 ```
 
 The fully reconstructed `Rₙ` is compared with quote `RTMR0`. A mismatch means
-that the event log does not represent the hardware-attested state.
+that the transmitted event list does not represent the hardware-attested
+state.
+
+`RTMR1`, `RTMR2`, and `RTMR3` are read directly from the verified quote and are
+not reconstructed from event logs.
 
 ### 3. RTMR0 Normalization
 
@@ -127,65 +135,59 @@ through `reportData`; GPU evidence is not part of `mrEnclave`.
 
 ### TDX Data Flow
 
-```mermaid
-flowchart TD
-    Q["TDX quote"]
-    E["Event log"]
-    V["DCAP verification"]
-    F["Sequential SHA-384 calculation"]
-    C{"Equals RTMR0?"}
-    N["Firmware blob event filter"]
-    R["Normalized RTMR0"]
-    H["SHA-256 of concatenated fields"]
-    M["mrEnclave, 32 bytes"]
+![TDX measurement data flow](assets/tdx-data-flow.svg)
+<!-- Mermaid source: assets/mermaid/tdx-data-flow.mmd -->
 
-    Q --> V
-    E --> F --> C
-    Q --> C
-    C -->|yes| N
-    E --> N --> R
-    Q --> H
-    R --> H --> M
-```
+### Conditions That Reject TDX Evidence
+
+- DCAP verification fails;
+- the transmitted event list does not reproduce quote `RTMR0`;
+- the calculated `mrEnclave` is absent from the trusted registry.
 
 ## AMD SEV-SNP
 
-### Report Input
+### Evidence Contents
 
-Verification and normalization use:
+SEV-SNP evidence transmits the original binary SNP report together with the
+supporting fields required to verify and normalize its measurement:
 
 - the original binary SNP report;
-- the hardware `MEASUREMENT` field;
 - the build identifier;
 - the kernel command-line hash;
 - the CPU signature;
 - the vCPU count.
+
+The build identifier, kernel command-line hash, CPU signature, and vCPU count
+are part of the serialized evidence; they are not obtained separately by the
+verifier.
 
 ### 1. Cryptographic Verification
 
 The SNP report signature is verified using the platform VCEK certificate, AMD
 CA chain, and certificate revocation lists (CRLs) provided through AMD KDS. The
 verifier builds the chain to an AMD CA and confirms that the certificates
-involved in verification have not been revoked. When additional security
-requirements are configured, report values are checked against them as well.
-For example, a minimum acceptable version of platform components can be
-required.
+involved in verification have not been revoked.
 
-### 2. Obtaining Build Artifacts
+### 2. TCB and Security Flag Verification
+
+The `debugAllowed`, `ciphertextHiding`, `pageSwapDisabled`, and `snp` fields are
+extracted from the SNP report and checked separately. These fields must have
+the recommended values. Evidence is rejected if they do not.
+
+### 3. Obtaining Build Artifacts
 
 The build identifier is included in the supporting fields of SEV-SNP evidence.
 When evidence is created, the value is extracted from the running VM kernel
-command line. It is not obtained from the trusted measurement registry.
+command line.
 
-The build identifies the data needed to reproduce the launch measurement:
-published kernel and initrd hashes and the matching OVMF image. The kernel and
-initrd are not downloaded again; their existing hashes are used. OVMF is
-downloaded and its integrity is verified.
+The build identifier selects the matching OVMF image for download and the
+published kernel and initrd hashes used to reproduce the launch measurement.
 
-### 3. Verifying the Actual Launch Measurement
+### 4. Verifying the Actual Launch Measurement
 
-The SNP launch digest is reproduced from OVMF, component hashes, and the actual
-report parameters:
+The SNP launch digest is reproduced from OVMF and the component hashes.
+`cpuSig` and `cores` are transmitted as supporting evidence fields; they are
+not extracted from the binary SNP report:
 
 ```text
 expectedMeasure = ComputeLaunchDigest(
@@ -193,16 +195,22 @@ expectedMeasure = ComputeLaunchDigest(
     kernelHash,
     initrdHash,
     cmdLineHash,
-    report.cpuSig,
-    report.cores
+    evidence.cpuSig,
+    evidence.cores
 )
 ```
+
+The launch measurement algorithm is published and can be reproduced by the
+verifier. The system uses a small fork of the
+[Rust SEV-SNP measurement implementation](https://github.com/Super-Protocol/sp-sev)
+that accepts the existing kernel and initrd hashes instead of the corresponding
+files. This avoids downloading those files during verification.
 
 The result is compared with the hardware `MEASUREMENT` in the report. A
 mismatch stops attestation. The build identifier alone is therefore not proof:
 the report contents must be reproducible from the published artifacts.
 
-### 4. Normalization
+### 5. Normalization
 
 After the actual VM is verified, the launch digest is recalculated for a
 canonical configuration:
@@ -237,24 +245,14 @@ inputs to `ComputeLaunchDigest` or the final formula. The normalized SEV-SNP
 
 ### SEV-SNP Data Flow
 
-```mermaid
-flowchart LR
-    E["SEV-SNP evidence<br/>and build"]
-    A["Component hashes<br/>and verified OVMF"]
-    V["Verify actual<br/>launch measurement"]
-    N["Normalize<br/>CPU and vCPU"]
-    M["mrEnclave"]
+![SEV-SNP measurement data flow](assets/sev-snp-data-flow.svg)
+<!-- Mermaid source: assets/mermaid/sev-snp-data-flow.mmd -->
 
-    E --> A --> V --> N --> M
-```
+### Conditions That Reject SEV-SNP Evidence
 
-## Conditions That Reject the Measurement
-
-- invalid quote/report hardware signature;
-- the TDX event log does not reproduce `RTMR0`;
-- a measurement field has an invalid size;
+- SNP report cryptographic verification fails;
+- the TCB fields or security flags do not have the recommended values;
+- SEV-SNP evidence fields have an invalid format or size;
 - the SEV-SNP build is unknown or unavailable;
 - required build data or artifacts are unavailable;
-- OVMF integrity verification fails;
-- the SEV-SNP launch digest does not match the report;
-- the calculated `mrEnclave` is absent from the trusted registry.
+- the calculated SEV-SNP launch digest does not match report `MEASUREMENT`.

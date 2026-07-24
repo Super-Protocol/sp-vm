@@ -41,7 +41,7 @@ sequenceDiagram
         PKI->>NRAS: Verify token against GPU policy
         NRAS-->>PKI: Verification result
         PKI->>PKI: Require dbgStat=false
-        PKI-->>VM: Certificate with GPU extension
+        PKI-->>VM: Certificate with verified GPU information
     end
 ```
 
@@ -210,6 +210,10 @@ certificate under:
 ```text
 OID 1.3.6.1.3.8888.1.4.1
 ```
+
+The OID is also included in the consolidated
+[Certificate Extensions and OIDs](06-pki.md#certificate-extensions-and-oids)
+table.
 
 The extension is created by the PKI component. A client-supplied extension
 with the same OID is discarded. If no NVIDIA token is present, the GPU

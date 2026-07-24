@@ -2,8 +2,20 @@
 
 ## Initial State
 
-The first VM starts before the network's SwarmDB and PKI infrastructure have
-been created:
+The first VM starts in `init` mode and initializes SwarmDB and the PKI
+infrastructure for a new Swarm.
+
+To select this mode, the following fields in `/sp/swarm/config.yaml` must be
+empty:
+
+- `swarm_db.join_addresses: []` — no existing SwarmDB nodes;
+- `pki_authority.caBundle: ""` — no root CA of an existing Swarm;
+- `pki_authority.servers: []` — no existing PKI Authority endpoints.
+
+An omitted field or a field with a `null` value is treated as empty. The
+explicit empty values below show the expected field types.
+
+The relevant configuration fragment is:
 
 ```yaml
 swarm_db:
@@ -14,8 +26,8 @@ pki_authority:
   servers: []
 ```
 
-All three values must be empty at the same time. The detector writes the
-`init` mode to `/etc/swarm/swarm-vm-mode`.
+All three fields must be empty simultaneously. The mode detector then writes
+`init` to `/etc/swarm/swarm-vm-mode`.
 
 ## Sequence
 
@@ -48,9 +60,19 @@ sequenceDiagram
 
 The CPU TEE type is detected automatically:
 
-- `/dev/tdx_guest` identifies Intel TDX;
-- `/dev/sev-guest` identifies AMD SEV-SNP;
+- character device `/dev/tdx_guest` identifies Intel TDX;
+- character device `/dev/sev-guest` identifies AMD SEV-SNP;
 - the absence of a supported device stops attestation.
+
+For a TDX VM, the detector also requests:
+
+```text
+http://169.254.169.254/computeMetadata/v1/instance/id
+```
+
+The request includes the `Metadata-Flavor: Google` header and has a 500 ms
+timeout. A successful response containing a non-empty instance ID selects the
+`tdx-google` evidence type. Otherwise, the regular `tdx` type is used.
 
 The detected CPU type is written to `/etc/swarm/swarm-cpu-type`.
 
@@ -104,6 +126,9 @@ The root certificate contains:
 The first-VM certificate also contains the challenge metadata and CPU evidence,
 as well as verified GPU information when a GPU is present.
 
+The certificate fields and their OIDs are described in
+[Certificate Extensions and OIDs](06-pki.md#certificate-extensions-and-oids).
+
 ## 5. Creating and Storing the `swarm key`
 
 The first VM generates one random 32-byte value, represented by 64 hexadecimal
@@ -119,25 +144,28 @@ After local SwarmDB starts, the bootstrap procedure stores:
 
 - root and subroot certificates;
 - their private keys;
-- the PKI management token;
 - the `swarm key`;
 - the evidence-signing key.
 
-PKI material is stored as `SwarmSecrets`. After a successful import, the
-temporary `/etc/super/certs/swarm-init` directory is removed to avoid retaining
-a second copy of private keys.
+PKI material is stored as `SwarmSecrets`. After a successful import,
+`/etc/super/certs/swarm-init` is removed.
 
 ## 6. Starting the PKI Authority
 
-The provisioning component obtains secrets from replicated state, writes them
-to PKI Authority persistent storage, and creates a configuration containing:
+When PKI Authority starts, it obtains the PKI material and `swarmKey` from
+`SwarmSecrets` and reads its settings from `/sp/swarm/config.yaml`:
 
 - `networkType: trusted`;
-- a unique `networkID`;
-- allowed `tdx`, `tdx-google`, and `sev-snp` challenges;
-- `mrEnclave` verification through the trusted registry;
-- the `swarmKey` issued to attested nodes;
-- an HTTPS endpoint on port `9443`.
+- `networkID` from `pki_authority.networkID`;
+- allowed attested device types: `tdx`, `tdx-google`, and `sev-snp`.
+
+`networkID` is not a secret. It identifies the Swarm in the PKI enrollment
+protocol and prevents two clusters from being mixed accidentally. The value is
+provided through the configuration and must be the same on every VM in that
+Swarm; PKI Authority does not generate it. A challenge carrying a different
+`networkID` is not accepted.
+
+PKI Authority exposes its HTTPS endpoint on port `9443`.
 
 After startup, the PKI Authority on the first VM becomes the enrollment point
 for new nodes. Its addresses and CA bundle must be passed to joining VMs
@@ -149,7 +177,6 @@ Bootstrap is complete when the following exist:
 
 - a trusted-network root CA containing CPU TEE evidence;
 - device and evidence subroot CAs;
-- a bootstrap-generated certificate for the first VM;
 - the `swarm key`;
-- a running PKI Authority;
-- SwarmDB containing PKI secrets and network state.
+- SwarmDB containing PKI secrets and network state;
+- a running PKI Authority.

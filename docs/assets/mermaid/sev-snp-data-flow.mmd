@@ -1,0 +1,55 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#0f172a",
+    "primaryBorderColor": "#cbd5e1",
+    "lineColor": "#64748b"
+  },
+  "flowchart": {
+    "curve": "stepAfter",
+    "htmlLabels": true,
+    "nodeSpacing": 55,
+    "rankSpacing": 60
+  }
+}}%%
+flowchart TB
+    E["SEV-SNP evidence<br/><small>Report + build and VM parameters</small>"]
+    K["AMD KDS<br/><small>VCEK, AMD CA chain and CRLs</small>"]
+    S["SuperProtocol VM Storage<br/><small>OVMF image + kernel and initrd hashes</small>"]
+    C["Cryptographic verification<br/><small>Validate report and certificate chain</small>"]
+    P["Check TCB and security policy<br/><small>debugAllowed · ciphertextHiding · pageSwapDisabled · snp</small>"]
+    A["Obtain build artifacts<br/><small>Select by evidence build identifier</small>"]
+    L["Calculate actual launch measurement<br/><small>OVMF + hashes + evidence parameters</small>"]
+    V["Compare launch measurement<br/><small>Calculated value = report MEASUREMENT</small>"]
+    X["Reject evidence<br/><small>Values do not match</small>"]
+    N["Normalize CPU and vCPU<br/><small>Canonical CPU signature and one vCPU</small>"]
+    M["mrEnclave · 32 bytes"]
+
+    E --> C
+    K --> C
+    C --> P
+    S --> A
+    P --> L
+    A --> L
+    L --> V
+    E -->|"Report MEASUREMENT"| V
+    V -->|"mismatch"| X
+    V -->|"match"| N
+    N --> M
+
+    classDef input fill:#ffffff,stroke:#cbd5e1,color:#0f172a,stroke-width:1.5px;
+    classDef verify fill:#eff6ff,stroke:#60a5fa,color:#0f172a,stroke-width:1.5px;
+    classDef policy fill:#fffbeb,stroke:#fbbf24,color:#0f172a,stroke-width:1.5px;
+    classDef artifact fill:#f5f3ff,stroke:#a78bfa,color:#0f172a,stroke-width:1.5px;
+    classDef normalize fill:#f0fdfa,stroke:#2dd4bf,color:#0f172a,stroke-width:1.5px;
+    classDef result fill:#ecfdf5,stroke:#34d399,color:#0f172a,stroke-width:2px;
+    classDef reject fill:#fef2f2,stroke:#f87171,color:#0f172a,stroke-width:1.5px;
+    class E,K,S input;
+    class C,L verify;
+    class P,V policy;
+    class A artifact;
+    class N normalize;
+    class M result;
+    class X reject;

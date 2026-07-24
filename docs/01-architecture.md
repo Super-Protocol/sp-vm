@@ -19,7 +19,8 @@ The diagram contains three parts:
 
 - **Bootstrap VM:** initializes a new Swarm network by creating its PKI
   certificates and `swarm key`. The bootstrap VM hardware evidence is embedded
-  in the root certificate.
+  in the
+  [root-certificate extension](06-pki.md#certificate-extensions-and-oids).
 - **Joining VM:** validates the provided network root CA and creates an
   attestation challenge for the certificate request. After verifying the
   challenge, the PKI Authority issues a VM certificate that provides access to
@@ -48,9 +49,10 @@ authenticity, while the trusted registry determines whether the measured VM
 state is allowed.
 
 The root CA is not an initial trust source for a joining VM. The node first
-validates the CPU evidence embedded in the root certificate and the resulting
-`mrEnclave`. Only after this validation is the root CA used to verify
-certificates issued within that Swarm.
+validates the
+[CPU evidence embedded in the root certificate](06-pki.md#certificate-extensions-and-oids)
+and the resulting `mrEnclave`. Only after this validation is the root CA used
+to verify certificates issued within that Swarm.
 
 ## PKI Authority
 
@@ -77,15 +79,17 @@ accepts the request only after it:
 Failure of any required check stops certificate issuance. After successful
 verification, PKI Authority issues a VM certificate containing the verified
 CPU evidence, the attestation result marker, and verified GPU information when
-applicable.
+applicable. The corresponding extensions are listed in
+[Certificate Extensions and OIDs](06-pki.md#certificate-extensions-and-oids).
 
 ### `swarm key` Release
 
 The `swarm key` is obtained through a separate request authenticated with the
 issued VM certificate. PKI Authority verifies the client certificate chain
 against the root CA of the current Swarm and requires the certificate to carry
-the successful-attestation marker. A request without such a certificate does
-not provide access to the secret.
+the successful-attestation marker described in
+[Certificate Extensions and OIDs](06-pki.md#certificate-extensions-and-oids).
+A request without such a certificate does not provide access to the secret.
 
 The detailed enrollment sequence is described in
 [Joining Subsequent VMs](03-node-join.md), and the certificate hierarchy and

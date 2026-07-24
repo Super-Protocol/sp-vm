@@ -38,11 +38,14 @@ The root certificate is self-signed and contains:
 | Network type | `trusted`. |
 | TEE evidence | Serialized CPU quote/report of the first VM. |
 
+The corresponding OIDs are listed in
+[Certificate Extensions and OIDs](#certificate-extensions-and-oids).
+
 TEE evidence is bound to the root public key through `reportData`, because the
 challenge is created from the SHA-256 hash of that key. The root is therefore
 both the cryptographic PKI root and an attested object.
 
-## VM Certificate
+## Certificate Extensions and OIDs
 
 During enrollment, the Authority issues a certificate for the specific VM.
 This certificate is not a certificate authority. System extensions are
@@ -82,14 +85,14 @@ Private keys are created with mode `0600`.
 
 ### After SwarmDB Starts
 
-Bootstrap transfers the root and subroot certificates and private keys, the
-PKI management token, and the evidence-signing key to `SwarmSecrets`.
+Bootstrap transfers the root and subroot certificates and private keys and the
+evidence-signing key to `SwarmSecrets`.
 
 After a successful transfer, `/etc/super/certs/swarm-init` is removed.
 
 ### PKI Authority Persistent Storage
 
-PKI Authority provisioning synchronizes the required `SwarmSecrets` to:
+PKI Authority uses the required data from `SwarmSecrets`, synchronized to:
 
 ```text
 /etc/pki-authority/swarm-storage/
@@ -169,7 +172,7 @@ https://<Swarm VM IP address>:9443/api/v1/pki/certs/ca
 from any reachable VM. During the initial retrieval, no trusted copy of this
 certificate exists yet, so the TLS connection alone cannot establish trust in
 the returned root CA. A joining VM separately verifies its embedded CPU
-evidence and `mrEnclave`.
+[evidence extension](#certificate-extensions-and-oids) and `mrEnclave`.
 
 A joining VM builds its HTTPS endpoint list from `pki_authority.servers` and
 the node addresses in `swarm_db.join_addresses`.
