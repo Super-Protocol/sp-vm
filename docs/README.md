@@ -58,7 +58,7 @@ The attestation process uses two linked mechanisms:
    hash is included in CPU `reportData`, so CPU and GPU evidence cannot be
    substituted independently.
 
-## Successful Attestation Criteria
+## Successful Attestation Criteria for a Joining VM
 
 For a VM with a GPU, a certificate is issued only when all of the following
 conditions hold:
@@ -78,6 +78,7 @@ For a VM without a GPU, the NVIDIA portion is absent. The absence of a GPU is
 not an error.
 
 The first VM cannot contact a PKI Authority that does not yet exist. During
-bootstrap, it validates its own hardware evidence locally and creates the root
-CA. Subsequent nodes trust that root only after checking its calculated
-`mrEnclave` against the trusted registry.
+bootstrap, it creates hardware evidence, verifies its cryptographic
+correctness and hardware integrity, and embeds it in the PKI certificates. It
+does not compare its own `mrEnclave` with the trusted registry. Joining nodes
+perform the registry check before accepting the root CA.

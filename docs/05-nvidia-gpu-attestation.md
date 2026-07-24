@@ -14,7 +14,7 @@ GPU is present, CPU-only attestation remains valid.
 
 ```mermaid
 sequenceDiagram
-    participant VM as Challenge generator
+    participant VM as PKI sync client
     participant PCI as sysfs/NVML
     participant NRAS as NVIDIA verifier
     participant CPU as CPU TEE

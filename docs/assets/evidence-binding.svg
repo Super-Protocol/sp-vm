@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="520" viewBox="0 0 1280 520" role="img" aria-labelledby="title desc">
+  <title id="title">CPU and GPU evidence binding</title>
+  <desc id="desc">The public key hash and optional serialized NVIDIA token hash are placed in CPU reportData. The PKI Authority recalculates them before issuing a certificate.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#eef2ff"/>
+    </linearGradient>
+    <linearGradient id="report" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#1d4ed8"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+    <linearGradient id="authority" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#c2410c"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feDropShadow dx="0" dy="7" stdDeviation="10" flood-color="#0f172a" flood-opacity=".10"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <style>
+      .title { font: 700 26px Inter, Segoe UI, Arial, sans-serif; fill: #0f172a; }
+      .label { font: 650 16px Inter, Segoe UI, Arial, sans-serif; fill: #0f172a; }
+      .small { font: 500 13px Inter, Segoe UI, Arial, sans-serif; fill: #475569; }
+      .white { font: 650 16px Inter, Segoe UI, Arial, sans-serif; fill: #fff; }
+      .node { fill: #fff; stroke: #cbd5e1; stroke-width: 1.5; }
+      .joiningNode { fill: #fff; stroke: #a7f3d0; stroke-width: 2; }
+      .flow { fill: none; stroke: #64748b; stroke-width: 2.3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1280" height="520" rx="24" fill="url(#background)"/>
+  <text x="640" y="42" text-anchor="middle" class="title">CPU and GPU evidence binding</text>
+
+  <g filter="url(#shadow)">
+    <rect x="60" y="105" width="285" height="100" rx="16" class="joiningNode"/>
+    <circle cx="103" cy="155" r="23" fill="#d1fae5"/>
+    <circle cx="98" cy="151" r="5" fill="none" stroke="#047857" stroke-width="2.3"/>
+    <path d="M102 155l11 11m-4-4 3-3m-7 0 3-3" fill="none" stroke="#047857" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="140" y="148" class="label">Certificate public key</text>
+    <text x="140" y="173" class="small">SHA-256 → 32 bytes</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="60" y="300" width="285" height="100" rx="16" class="joiningNode"/>
+    <circle cx="103" cy="350" r="23" fill="#d1fae5"/>
+    <svg x="91" y="338" width="24" height="24" viewBox="0 0 24 24" aria-label="NVIDIA">
+      <path fill="#76B900" d="M8.948 8.798v-1.43a6.7 6.7 0 0 1 .424-.018c3.922-.124 6.493 3.374 6.493 3.374s-2.774 3.851-5.75 3.851c-.398 0-.787-.062-1.158-.185v-4.346c1.528.185 1.837.857 2.747 2.385l2.04-1.714s-1.492-1.952-4-1.952a6.016 6.016 0 0 0-.796.035m0-4.735v2.138l.424-.027c5.45-.185 9.01 4.47 9.01 4.47s-4.08 4.964-8.33 4.964c-.37 0-.733-.035-1.095-.097v1.325c.3.035.61.062.91.062 3.957 0 6.82-2.023 9.593-4.408.459.371 2.34 1.263 2.73 1.652-2.633 2.208-8.772 3.984-12.253 3.984-.335 0-.653-.018-.971-.053v1.864H24V4.063zm0 10.326v1.131c-3.657-.654-4.673-4.46-4.673-4.46s1.758-1.944 4.673-2.262v1.237H8.94c-1.528-.186-2.73 1.245-2.73 1.245s.68 2.412 2.739 3.11M2.456 10.9s2.164-3.197 6.5-3.533V6.201C4.153 6.59 0 10.653 0 10.653s2.35 6.802 8.948 7.42v-1.237c-4.84-.6-6.492-5.936-6.492-5.936z"/>
+    </svg>
+    <text x="140" y="342" class="label">Serialized NVIDIA token</text>
+    <text x="140" y="367" class="small">SHA-256 → 32 bytes, optional</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="445" y="155" width="330" height="195" rx="20" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+    <path d="M465 155 H755 A20 20 0 0 1 775 175 V210 H445 V175 A20 20 0 0 1 465 155 Z" fill="url(#report)"/>
+    <text x="610" y="190" text-anchor="middle" class="white">CPU reportData</text>
+    <rect x="485" y="220" width="250" height="48" rx="10" fill="#fff" stroke="#bfdbfe" stroke-width="1.5"/>
+    <text x="610" y="242" text-anchor="middle" class="label">publicKeyHash</text>
+    <text x="610" y="260" text-anchor="middle" class="small">bytes 0–31</text>
+    <rect x="485" y="280" width="250" height="48" rx="10" fill="#fff" stroke="#bfdbfe" stroke-width="1.5"/>
+    <text x="610" y="302" text-anchor="middle" class="label">nvidiaTokenHash</text>
+    <text x="610" y="320" text-anchor="middle" class="small">bytes 32–63, when GPU is present</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="890" y="125" width="330" height="255" rx="20" fill="#fffaf5" stroke="#fed7aa" stroke-width="2"/>
+    <path d="M910 125 H1200 A20 20 0 0 1 1220 145 V183 H890 V145 A20 20 0 0 1 910 125 Z" fill="url(#authority)"/>
+    <text x="1055" y="160" text-anchor="middle" class="white">PKI Authority (TEE-PKI)</text>
+    <circle cx="930" cy="221" r="15" fill="#ffedd5"/>
+    <path d="M923 221l5 5 10-12" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="960" y="226" class="label">Verify CPU quote/report</text>
+    <circle cx="930" cy="274" r="15" fill="#ffedd5"/>
+    <path d="M923 274l5 5 10-12" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="960" y="279" class="label">Recalculate both hashes</text>
+    <circle cx="930" cy="327" r="15" fill="#ffedd5"/>
+    <path d="M923 327l5 5 10-12" fill="none" stroke="#c2410c" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="960" y="332" class="label">Issue certificate on match</text>
+  </g>
+
+  <path d="M345 155 H395 V245 H445" class="flow"/>
+  <path d="M345 350 H395 V304 H445" class="flow"/>
+  <path d="M775 252 H888" class="flow"/>
+
+  <rect x="425" y="423" width="430" height="54" rx="13" fill="#eff6ff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="640" y="446" text-anchor="middle" class="label">reportData = publicKeyHash || nvidiaTokenHash</text>
+  <text x="640" y="466" text-anchor="middle" class="small">Without a GPU, reportData contains only publicKeyHash</text>
+</svg>

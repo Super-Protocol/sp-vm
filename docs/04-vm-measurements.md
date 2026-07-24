@@ -19,7 +19,9 @@ build with different vCPU counts, RAM sizes, and with or without GPUs. The
 underlying hardware evidence may still contain additional information about a
 specific VM instance.
 
-The local measurement API is available at:
+## Measurement API
+
+The measurement API is available at:
 
 ```text
 GET http://127.0.0.1:9180/v1/getMeasure
@@ -27,6 +29,23 @@ GET http://127.0.0.1:9180/api/v1/getMeasure
 ```
 
 Both paths are equivalent.
+
+The response contains the calculated measurement and the evidence from which it
+was obtained:
+
+```json
+{
+  "type": "<hardware evidence type>",
+  "evidence": "<base64>",
+  "mrenclaveHex": "<hex>"
+}
+```
+
+The `type` field identifies the hardware evidence type. The API creates
+evidence with a zero-filled 64-byte `reportData`; this evidence is intended for
+measuring the running VM. It is not an enrollment challenge, where
+`reportData` binds the certificate public key and, when present, the serialized
+NVIDIA token.
 
 ## Intel TDX
 
@@ -144,10 +163,13 @@ Verification and normalization use:
 
 ### 1. Cryptographic Verification
 
-The SNP report signature and platform certificate chain are verified. When
-additional security requirements are configured, report values are checked
-against them as well. For example, a minimum acceptable version of platform
-components can be required.
+The SNP report signature is verified using the platform VCEK certificate, AMD
+CA chain, and certificate revocation lists (CRLs) provided through AMD KDS. The
+verifier builds the chain to an AMD CA and confirms that the certificates
+involved in verification have not been revoked. When additional security
+requirements are configured, report values are checked against them as well.
+For example, a minimum acceptable version of platform components can be
+required.
 
 ### 2. Obtaining Build Artifacts
 

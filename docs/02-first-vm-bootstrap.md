@@ -35,7 +35,7 @@ sequenceDiagram
         VM->>GPU: Obtain token with nonce
     end
     VM->>TEE: Create evidence bound to key and GPU token
-    GEN->>GEN: Validate CPU and GPU evidence
+    GEN->>GEN: Verify CPU and GPU evidence integrity
     GEN->>GEN: Create root and specialized subroot CAs
     GEN->>GEN: Create first VM certificate
     VM->>VM: Generate swarm key
@@ -56,7 +56,7 @@ The detected CPU type is written to `/etc/swarm/swarm-cpu-type`.
 
 ## 2. Creating Keys and the Challenge
 
-When the VM has GPUs, NVIDIA verification runs before CPU evidence is created:
+When the VM has GPUs, GPU evidence is prepared before CPU evidence is created:
 
 1. GPUs exposing unprotected memory are rejected;
 2. a random nonce is generated;
@@ -69,21 +69,21 @@ and the specific GPU token together.
 
 ## 3. Local Evidence Verification
 
-The generator does not place an unchecked challenge into a certificate:
+Before creating the certificates, the generator verifies the hardware
+evidence:
 
 - for TDX, it verifies the DCAP quote and event-log integrity;
 - for SEV-SNP, it verifies report authenticity and the required platform
-  security properties, and then reproduces the launch measurement;
+  security properties, and reproduces the launch measurement;
 - when a GPU is present, it verifies token binding, the NVIDIA verification
   results, and the absence of debug mode;
-- the first 32 bytes of verified `reportData` must match the public key of the
+- the public-key hash in the verified `reportData` must match the key of the
   certificate being created.
 
-An independent PKI Authority does not exist yet, so the local generator does
-not decide whether to admit the first VM by consulting the trusted registry.
-Joining nodes perform this check later: they calculate `mrEnclave` from the
-root CA evidence and confirm that the measurement is approved in the trusted
-registry before enrollment.
+This local verification confirms the cryptographic correctness and hardware
+integrity of the reports. It does not compare the first VM's `mrEnclave` with
+the trusted registry. Joining nodes perform that registry check later, before
+accepting the root CA.
 
 ## 4. Creating the PKI
 
@@ -101,9 +101,8 @@ The root certificate contains:
 - `networkType=trusted`;
 - serialized CPU TEE evidence.
 
-The first-VM certificate also contains the challenge ID, CPU evidence, the
-server-added successful-attestation marker, and verified GPU information when
-a GPU is present.
+The first-VM certificate also contains the challenge metadata and CPU evidence,
+as well as verified GPU information when a GPU is present.
 
 ## 5. Creating and Storing the `swarm key`
 
@@ -150,7 +149,7 @@ Bootstrap is complete when the following exist:
 
 - a trusted-network root CA containing CPU TEE evidence;
 - device and evidence subroot CAs;
-- a first-VM certificate carrying the successful-attestation marker;
+- a bootstrap-generated certificate for the first VM;
 - the `swarm key`;
 - a running PKI Authority;
 - SwarmDB containing PKI secrets and network state.

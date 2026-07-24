@@ -1,75 +1,36 @@
 # Architecture and Trust Model
 
-## Components
+## Overview
 
-```mermaid
-flowchart LR
-    subgraph VM["Joining confidential VM"]
-        direction LR
-        HW["Intel TDX / AMD SEV-SNP"]
-        GPU["NVIDIA CC GPU<br/>(optional)"]
-        CG["Challenge generator"]
-        SC["PKI sync client"]
-        DB["SwarmDB"]
-        MS["VM measurement API<br/>:9180"]
+A trusted VM starts in one of two mutually exclusive modes. The mode is derived
+from the configuration before attestation begins.
 
-        HW --> CG
-        GPU --> CG
-        CG --> SC
-        SC -->|"after admission"| DB
-        HW -.-> MS
-    end
+| Mode | Purpose |
+|---|---|
+| Bootstrap VM (`init`) | Initialize a new Swarm. |
+| Joining VM (`normal`) | Add a VM to an existing Swarm. |
 
-    subgraph SERVICES["Verification and trust services"]
-        direction TB
-        NRAS["NVIDIA Remote<br/>Attestation Service"]
-        PKI["PKI Authority<br/>:9443"]
-        REG["Trusted mrEnclave<br/>registry"]
-        ART["SEV-SNP artifacts<br/>component hashes + OVMF"]
-    end
+## General Flow
 
-    GPU ---|"obtain GPU token"| NRAS
-    SC ---|"attestation, certificate,<br/>and swarm key"| PKI
-    PKI ---|"measurement lookup"| REG
-    PKI ---|"launch measurement verification"| ART
-```
+![Trusted VM attestation architecture](assets/architecture-overview.svg)
+<!-- Mermaid source: assets/mermaid/architecture-overview.mmd -->
 
-### Challenge Generator
+The diagram contains three parts:
 
-The challenge generator detects the CPU TEE type, creates CPU evidence, and
-obtains an NVIDIA token when an NVIDIA GPU is present. The future certificate
-public key and the NVIDIA token are bound to CPU evidence through
-`reportData`.
+- **Bootstrap VM:** initializes a new Swarm network by creating its PKI
+  certificates and `swarm key`. The bootstrap VM hardware evidence is embedded
+  in the root certificate.
+- **Joining VM:** validates the provided network root CA and creates an
+  attestation challenge for the certificate request. After verifying the
+  challenge, the PKI Authority issues a VM certificate that provides access to
+  the `swarm key`.
+- **Trust sources:** Intel PCS, AMD KDS, and NVIDIA NRAS provide manufacturer data
+  for hardware evidence verification. The trusted `mrEnclave` registry provides
+  the measurements allowed for joining a trusted network.
 
-### PKI Sync Client
-
-The PKI sync client is used by joining VMs. Before requesting secrets, it
-validates the configured root CA: its network type, embedded CPU evidence, and
-whether its `mrEnclave` is allowed by the trusted registry. It then obtains
-its own certificate and requests the `swarm key` over a protected connection.
-
-### PKI Authority
-
-The PKI Authority validates the new CPU/GPU challenge, confirms that it is
-bound to the requested public key, and applies admission rules for the TEE type
-and `mrEnclave`. Only after all checks pass does it issue a certificate with a
-server-added marker recording successful attestation.
-
-### VM Measurement API
-
-The local service on port `9180` returns:
-
-```json
-{
-  "type": "<hardware evidence type>",
-  "evidence": "<base64>",
-  "mrenclaveHex": "<hex>"
-}
-```
-
-The service creates evidence with a zero-filled 64-byte `reportData`. It is
-used to measure a running VM and does not replace the enrollment challenge, in
-which `reportData` is bound to the certificate key and GPU token.
+The complete bootstrap and joining sequences are described in
+[First VM Bootstrap](02-first-vm-bootstrap.md) and
+[Joining Subsequent VMs](03-node-join.md).
 
 ## Trust Sources
 
@@ -77,8 +38,9 @@ The normal trusted flow relies on several independent trust sources:
 
 | Source | What it proves |
 |---|---|
-| CPU manufacturer | Authenticity of the TDX quote or SEV-SNP report and the platform TCB state. |
-| GPU manufacturer | Authenticity of the NVIDIA token, firmware, driver, and VBIOS evidence. |
+| Intel PCS | Authenticity of the TDX quote and the platform TCB state. |
+| AMD KDS | Authenticity of the VCEK and SEV-SNP certificate chain, and certificate revocation lists. |
+| NVIDIA NRAS | Authenticity of the NVIDIA token, firmware, driver, and VBIOS evidence. |
 | Trusted measurement registry | The calculated `mrEnclave` is allowed for the trusted network. |
 
 No single result replaces the others. A valid hardware quote proves platform
@@ -90,23 +52,49 @@ validates the CPU evidence embedded in the root certificate and the resulting
 `mrEnclave`. Only after this validation is the root CA used to verify
 certificates issued within that Swarm.
 
+## PKI Authority
+
+PKI Authority (TEE-PKI) is the server side of VM enrollment. It runs on every
+Swarm VM and uses the PKI material and secrets of that Swarm. Its two main
+operations are VM certificate issuance and authenticated release of the
+`swarm key`.
+
+### VM Certificate Issuance
+
+The certificate request contains the VM public key and an attestation challenge
+with CPU evidence and, when NVIDIA GPUs are present, GPU evidence. PKI Authority
+accepts the request only after it:
+
+1. verifies the CPU quote or report and the security state of the TEE platform;
+2. calculates `mrEnclave` and checks it against the trusted measurement
+   registry;
+3. confirms that `reportData` binds the CPU evidence to the public key from the
+   certificate request;
+4. verifies the NVIDIA token and its binding to the same CPU evidence when GPU
+   evidence is present;
+5. confirms that the challenge belongs to the target Swarm.
+
+Failure of any required check stops certificate issuance. After successful
+verification, PKI Authority issues a VM certificate containing the verified
+CPU evidence, the attestation result marker, and verified GPU information when
+applicable.
+
+### `swarm key` Release
+
+The `swarm key` is obtained through a separate request authenticated with the
+issued VM certificate. PKI Authority verifies the client certificate chain
+against the root CA of the current Swarm and requires the certificate to carry
+the successful-attestation marker. A request without such a certificate does
+not provide access to the secret.
+
+The detailed enrollment sequence is described in
+[Joining Subsequent VMs](03-node-join.md), and the certificate hierarchy and
+secret storage are described in [PKI Architecture](06-pki.md).
+
 ## Evidence Binding
 
-```mermaid
-flowchart TD
-    PUB["SHA-256 of public key<br/>32 bytes"]
-    TOK["SHA-256 of serialized<br/>NVIDIA token, 32 bytes"]
-    RD["reportData, up to 64 bytes"]
-    CPU["CPU quote / report"]
-    REQ["Certificate request"]
-
-    PUB --> RD
-    TOK --> RD
-    RD --> CPU
-    CPU --> REQ
-    PUB --> REQ
-    TOK --> REQ
-```
+![CPU and GPU evidence binding](assets/evidence-binding.svg)
+<!-- Mermaid source: assets/mermaid/evidence-binding.mmd -->
 
 Without a GPU, `reportData` contains only the 32-byte public-key hash. With a
 GPU:
@@ -119,7 +107,7 @@ The PKI Authority independently calculates both hashes and compares them with
 the verified CPU `reportData`. A valid GPU token or CPU quote therefore cannot
 be moved to another certificate request.
 
-## VM Mode
+## VM Mode Selection
 
 The VM mode is derived from three groups of fields in
 `/sp/swarm/config.yaml`:
@@ -133,18 +121,5 @@ The VM mode is derived from three groups of fields in
 The result is stored in `/etc/swarm/swarm-vm-mode` and selects one of two
 mutually exclusive paths:
 
-- `init` creates the PKI chains locally;
-- `normal` synchronizes with an existing PKI Authority.
-
-## Node Admission Order
-
-1. Before attestation, the node does not have the shared `swarm key`.
-2. The node validates the existing network root CA.
-3. The PKI Authority validates the node CPU/GPU challenge.
-4. The node receives a certificate carrying the successful-attestation marker.
-5. The node uses the certificate to obtain the `swarm key`.
-6. Only then is the SwarmDB configuration created and the management
-   components started.
-
-Access to the symmetric network secret is therefore a consequence of
-successful attestation, not a prerequisite for it.
+- `init` initializes a new Swarm cluster;
+- `normal` joins the VM to an existing Swarm network.
