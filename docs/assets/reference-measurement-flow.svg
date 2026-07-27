@@ -76,10 +76,10 @@
     <path d="M720 602 V688" class="flow"/>
     <text x="734" y="651" class="tiny">allowed</text>
 
-    <rect x="1020" y="520" width="300" height="72" rx="14" class="reject"/>
-    <text x="1170" y="551" text-anchor="middle" class="label">Reject attestation</text>
-    <text x="1170" y="573" text-anchor="middle" class="small">Value absent or registry unavailable</text>
-    <path d="M940 556 H1018" class="flow"/>
-    <text x="957" y="547" class="tiny">not allowed</text>
+    <rect x="1060" y="520" width="280" height="72" rx="14" class="reject"/>
+    <text x="1200" y="551" text-anchor="middle" class="label">Reject attestation</text>
+    <text x="1200" y="573" text-anchor="middle" class="small">Value absent or registry unavailable</text>
+    <path d="M940 556 H1058" class="flow"/>
+    <text x="994" y="547" text-anchor="middle" class="tiny">not allowed</text>
   </g>
 </svg>

@@ -1,4 +1,4 @@
-# Joining a Subsequent Virtual Machine
+# 3. Joining a Subsequent Virtual Machine
 
 ## Input
 
@@ -26,36 +26,7 @@ listed in `pki_authority.servers`.
 
 ## Join Sequence
 
-```mermaid
-sequenceDiagram
-    participant VM as New VM
-    participant REG as Trusted registry
-    participant GPU as NVIDIA GPU/NRAS
-    participant PKI as PKI Authority
-    participant DB as SwarmDB
-
-    VM->>VM: Validate configured CA bundle
-    VM->>VM: Extract root CA and network type
-    VM->>VM: Validate root CA CPU evidence
-    VM->>VM: Calculate root CA mrEnclave
-    VM->>REG: Retrieve reference data for mrEnclave
-    REG-->>VM: Registry check result
-    VM->>VM: Confirm that mrEnclave is allowed
-    opt VM contains NVIDIA GPU
-        VM->>GPU: Validate GPU and obtain token
-    end
-    VM->>VM: Create key and CPU/GPU challenge
-    VM->>PKI: Request certificate
-    PKI->>PKI: Validate CPU quote/report and mrEnclave
-    PKI->>PKI: Validate publicKeyHash
-    opt Challenge contains NVIDIA token
-        PKI->>PKI: Validate tokenHash and mandatory GPU properties
-    end
-    PKI-->>VM: Certificate + CA chain
-    VM->>PKI: Request swarmKey over protected channel
-    PKI-->>VM: swarmKey
-    VM->>DB: Start node with certificate and swarmKey
-```
+![Node join sequence](assets/node-join.svg)
 
 ## 1. Root CA Verification Before Enrollment
 

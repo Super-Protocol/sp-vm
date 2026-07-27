@@ -1,4 +1,4 @@
-# Intel TDX and AMD SEV-SNP Measurements
+# 4. Intel TDX and AMD SEV-SNP Measurements
 
 ## Purpose of `mrEnclave`
 

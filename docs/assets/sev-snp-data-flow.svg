@@ -102,7 +102,8 @@
     <text x="1175" y="811" text-anchor="middle" class="label">Reject evidence</text>
     <text x="1175" y="833" text-anchor="middle" class="small">Values do not match</text>
     <path d="M940 816 H1048" class="flow"/>
-    <text x="966" y="807" class="tiny">mismatch</text>
+    <rect x="958" y="783" width="78" height="24" rx="6" fill="#fff"/>
+    <text x="997" y="800" text-anchor="middle" class="tiny">mismatch</text>
   </g>
 
   <!-- Normalization and result -->
@@ -111,7 +112,8 @@
     <text x="720" y="953" text-anchor="middle" class="label">Normalize CPU and vCPU</text>
     <text x="720" y="978" text-anchor="middle" class="small">Canonical CPU signature and one vCPU</text>
     <path d="M720 862 V916" class="flow"/>
-    <text x="734" y="890" class="tiny">match</text>
+    <rect x="738" y="868" width="56" height="24" rx="6" fill="#fff"/>
+    <text x="766" y="885" text-anchor="middle" class="tiny">match</text>
 
     <rect x="540" y="1042" width="360" height="58" rx="16" class="result"/>
     <text x="720" y="1077" text-anchor="middle" class="label">mrEnclave · 32 bytes</text>

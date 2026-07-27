@@ -1,4 +1,4 @@
-# First Virtual Machine Bootstrap
+# 2. First Virtual Machine Bootstrap
 
 ## Initial State
 
@@ -31,30 +31,7 @@ All three fields must be empty simultaneously. The mode detector then writes
 
 ## Sequence
 
-```mermaid
-sequenceDiagram
-    participant VM as First VM
-    participant GPU as NVIDIA GPU/NRAS
-    participant TEE as CPU TEE
-    participant GEN as PKI chain generator
-    participant DB as SwarmDB
-    participant PKI as PKI Authority
-
-    VM->>VM: Detect mode=init and trusted network
-    VM->>VM: Detect TDX or SEV-SNP
-    opt GPUs detected
-        VM->>GPU: Check protected/unprotected memory
-        VM->>GPU: Obtain token with nonce
-    end
-    VM->>TEE: Create evidence bound to key and GPU token
-    GEN->>GEN: Verify CPU and GPU evidence integrity
-    GEN->>GEN: Create root and specialized subroot CAs
-    GEN->>GEN: Create first VM certificate
-    VM->>VM: Generate swarm key
-    VM->>DB: Store PKI material and swarm key
-    DB->>PKI: Supply configuration and secrets
-    PKI->>PKI: Start CA for enrollment of new VMs
-```
+![Bootstrap sequence](assets/first-vm-bootstrap.svg)
 
 ## 1. Detecting the Hardware Environment
 

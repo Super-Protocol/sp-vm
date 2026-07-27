@@ -32,17 +32,20 @@ of untrusted networks is outside the scope of this documentation.
 6. [PKI architecture](06-pki.md)
 7. [Reference measurements](07-reference-measurements.md)
 
+PDF generation instructions and host dependencies are documented in
+[Building the PDF Documentation](PDF-BUILD.md).
+
 ## Terminology
 
 | Term | Meaning |
 |---|---|
 | **TEE** | Trusted Execution Environment: an isolated, hardware-protected VM environment. |
 | **Quote / report** | Hardware-signed evidence describing the TEE state and user data supplied to it. This documentation uses `quote` for TDX and `report` for SEV-SNP. |
-| **Evidence** | A serialized set of proofs: a quote/report and supporting data required for verification and `mrEnclave` calculation. |
+| **Evidence** | A serialized set of proofs: a quote/report and supporting data required for verification and mrEnclave calculation. |
 | **Launch measurement** | A measurement of the components involved in starting the VM. |
-| **`mrEnclave`** | An internal normalized platform measurement used to match a running VM against an approved reference value. It is not a single hardware quote field. |
-| **Reference measurement** | An `mrEnclave` approved by the owner of the trusted build and published in the trusted registry. |
-| **`reportData`** | Up to 64 bytes of user data cryptographically included in the CPU quote/report. |
+| **mrEnclave** | An internal normalized platform measurement used to match a running VM against an approved reference value. It is not a single hardware quote field. |
+| **Reference measurement** | An mrEnclave approved by the owner of the trusted build and published in the trusted registry. |
+| **reportData** | Up to 64 bytes of user data cryptographically included in the CPU quote/report. |
 | **Challenge** | An attestation request containing the TEE type, CPU evidence, and an NVIDIA token when a GPU is present. |
 | **PKI Authority** | A certificate authority inside the trusted network that verifies challenges and issues node certificates. |
 | **Swarm key** | A 32-byte symmetric key used for protected SwarmDB communication. |

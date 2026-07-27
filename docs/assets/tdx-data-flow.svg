@@ -71,16 +71,19 @@
     <text x="720" y="502" text-anchor="middle" class="small">Reconstructed value = quote value</text>
 
     <path d="M410 386 V414 H610 V440" class="flow"/>
-    <text x="432" y="406" class="tiny">Quote RTMR0</text>
+    <rect x="420" y="388" width="120" height="22" rx="6" fill="#fff"/>
+    <text x="480" y="403" text-anchor="middle" class="tiny">Quote RTMR0</text>
 
     <path d="M1030 386 V414 H830 V440" class="flow"/>
-    <text x="875" y="406" class="tiny">Reconstructed RTMR0</text>
+    <rect x="846" y="388" width="168" height="22" rx="6" fill="#fff"/>
+    <text x="930" y="403" text-anchor="middle" class="tiny">Reconstructed RTMR0</text>
 
     <rect x="1060" y="452" width="250" height="72" rx="14" class="reject"/>
     <text x="1185" y="483" text-anchor="middle" class="label">Reject evidence</text>
     <text x="1185" y="505" text-anchor="middle" class="small">Values do not match</text>
     <path d="M940 488 H1058" class="flow"/>
-    <text x="973" y="479" class="tiny">mismatch</text>
+    <rect x="962" y="458" width="76" height="22" rx="6" fill="#fff"/>
+    <text x="1000" y="473" text-anchor="middle" class="tiny">mismatch</text>
   </g>
 
   <!-- Normalization and final measurement -->
@@ -89,7 +92,8 @@
     <text x="720" y="637" text-anchor="middle" class="label">Normalize RTMR0</text>
     <text x="720" y="662" text-anchor="middle" class="small">Keep firmware blob events from the same list</text>
     <path d="M720 534 V600" class="flow"/>
-    <text x="734" y="574" class="tiny">match</text>
+    <rect x="738" y="552" width="56" height="22" rx="6" fill="#fff"/>
+    <text x="766" y="567" text-anchor="middle" class="tiny">match</text>
 
     <rect x="420" y="748" width="600" height="92" rx="16" class="verify"/>
     <text x="720" y="782" text-anchor="middle" class="label">Calculate SHA-256</text>

@@ -1,4 +1,4 @@
-# Architecture and Trust Model
+# 1. Architecture and Trust Model
 
 ## Overview
 

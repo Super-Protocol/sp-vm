@@ -1,4 +1,4 @@
-# NVIDIA GPU Attestation
+# 5. NVIDIA GPU Attestation
 
 ## Role of GPU Attestation
 
@@ -12,38 +12,7 @@ GPU is present, CPU-only attestation remains valid.
 
 ## Complete Flow
 
-```mermaid
-sequenceDiagram
-    participant VM as PKI sync client
-    participant PCI as sysfs/NVML
-    participant NRAS as NVIDIA verifier
-    participant CPU as CPU TEE
-    participant PKI as PKI Authority
-
-    VM->>PCI: Find PCI display devices of class 0x03
-    loop For each display GPU
-        VM->>PCI: Obtain handle by BDF
-        VM->>PCI: Read protected/unprotected memory
-    end
-    alt An untrusted GPU exists
-        VM--xVM: Stop challenge creation
-    else No GPUs
-        VM->>CPU: reportData = publicKeyHash
-    else All GPUs are trusted
-        VM->>PCI: Determine GPU topology
-        VM->>NRAS: Evidence + random nonce
-        NRAS-->>VM: GPU token
-        VM->>VM: Hash serialized token
-        VM->>CPU: reportData = publicKeyHash || tokenHash
-        CPU-->>VM: CPU evidence
-        VM->>PKI: CPU evidence + GPU token
-        PKI->>PKI: Check tokenHash in CPU reportData
-        PKI->>NRAS: Verify token against GPU policy
-        NRAS-->>PKI: Verification result
-        PKI->>PKI: Require dbgStat=false
-        PKI-->>VM: Certificate with verified GPU information
-    end
-```
+![CPU and NVIDIA GPU attestation sequence](assets/nvidia-gpu-attestation.svg)
 
 ## Preliminary Detection of Untrusted GPUs
 

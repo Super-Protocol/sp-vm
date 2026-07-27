@@ -43,8 +43,8 @@
       .label { font: 650 16px Inter, Segoe UI, Arial, sans-serif; fill: #0f172a; }
       .small { font: 500 13px Inter, Segoe UI, Arial, sans-serif; fill: #475569; }
       .tiny { font: 600 12px Inter, Segoe UI, Arial, sans-serif; fill: #64748b; letter-spacing: .02em; }
-      .greenTiny { font: 700 10px Inter, Segoe UI, Arial, sans-serif; fill: #047857; letter-spacing: .03em; }
-      .orangeTiny { font: 700 10px Inter, Segoe UI, Arial, sans-serif; fill: #c2410c; letter-spacing: .03em; }
+      .greenTiny { font: 700 11px Inter, Segoe UI, Arial, sans-serif; fill: #047857; letter-spacing: .03em; }
+      .orangeTiny { font: 700 11px Inter, Segoe UI, Arial, sans-serif; fill: #c2410c; letter-spacing: .03em; }
       .whiteSmall { font: 600 13px Inter, Segoe UI, Arial, sans-serif; fill: #fff; }
       .node { fill: #fff; stroke: #cbd5e1; stroke-width: 1.5; }
       .bootstrapNode { fill: #fff7ed; stroke: #fb923c; stroke-width: 1.5; }
@@ -189,14 +189,14 @@
   <path d="M828 748 H740 V820 H612" class="greenFlow"/>
   <path d="M612 850 H765 V770 H828" class="orangeFlow"/>
 
-  <text x="750" y="640" text-anchor="middle" class="greenTiny">
-    <tspan x="750">CERTIFICATE</tspan>
-    <tspan x="750" dy="11">REQUEST</tspan>
+  <text x="780" y="642" text-anchor="middle" class="greenTiny">
+    <tspan x="780">CERTIFICATE</tspan>
+    <tspan x="780" dy="11">REQUEST</tspan>
   </text>
-  <text x="660" y="782" text-anchor="middle" class="orangeTiny">VM CERTIFICATE</text>
-  <text x="755" y="728" text-anchor="middle" class="greenTiny">
-    <tspan x="755">SWARM KEY</tspan>
-    <tspan x="755" dy="11">REQUEST</tspan>
+  <text x="660" y="783" text-anchor="middle" class="orangeTiny">VM CERTIFICATE</text>
+  <text x="785" y="732" text-anchor="middle" class="greenTiny">
+    <tspan x="785">SWARM KEY</tspan>
+    <tspan x="785" dy="11">REQUEST</tspan>
   </text>
-  <text x="650" y="842" text-anchor="middle" class="orangeTiny">SWARM KEY</text>
+  <text x="665" y="843" text-anchor="middle" class="orangeTiny">SWARM KEY</text>
 </svg>

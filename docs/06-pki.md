@@ -1,4 +1,4 @@
-# PKI Architecture
+# 6. PKI Architecture
 
 ## Purpose
 

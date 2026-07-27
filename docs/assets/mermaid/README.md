@@ -22,4 +22,7 @@ Use the same command with:
 - `tdx-data-flow.mmd` for the TDX measurement data flow;
 - `sev-snp-data-flow.mmd` for the SEV-SNP measurement data flow;
 - `pki-hierarchy.mmd` for the PKI certificate hierarchy;
-- `reference-measurement-flow.mmd` for reference measurement verification.
+- `reference-measurement-flow.mmd` for reference measurement verification;
+- `first-vm-bootstrap.mmd` for bootstrap of the first VM;
+- `node-join.mmd` for joining a subsequent VM;
+- `nvidia-gpu-attestation.mmd` for CPU and NVIDIA GPU attestation.
