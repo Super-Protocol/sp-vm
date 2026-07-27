@@ -165,7 +165,9 @@ provided through the configuration and must be the same on every VM in that
 Swarm; PKI Authority does not generate it. A challenge carrying a different
 `networkID` is not accepted.
 
-PKI Authority exposes its HTTPS endpoint on port `9443`.
+PKI Authority exposes its HTTPS endpoint on port `9443`. Its TLS configuration
+and root CA retrieval are described in
+[PKI Endpoint](06-pki.md#pki-endpoint).
 
 After startup, the PKI Authority on the first VM becomes the enrollment point
 for new nodes. Its addresses and CA bundle must be passed to joining VMs

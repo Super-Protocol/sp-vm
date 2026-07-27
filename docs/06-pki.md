@@ -9,22 +9,16 @@ this identity.
 
 ## Certificate Hierarchy
 
-```mermaid
-flowchart TD
-    R["Root CA"]
-    D["Device Enrollment Subroot"]
-    E["Evidence Subroot"]
-    VM["VM certificate"]
-    EV["Evidence signatures"]
-
-    R --> D --> VM
-    R --> E --> EV
-```
+![PKI certificate hierarchy](assets/pki-hierarchy.svg)
+<!-- Mermaid source: assets/mermaid/pki-hierarchy.mmd -->
 
 The subroot CAs are intermediate certificate authorities with distinct roles.
 The Device Enrollment Subroot issues node certificates, while the Evidence
 Subroot signs evidence. Compromising the key for one role must not
 automatically grant the permissions of the other.
+
+Subroot certificates contain no attestation-specific fields and are standard
+X.509 intermediate CA certificates.
 
 ## Root CA
 
@@ -55,10 +49,10 @@ created only by the server:
 |---|---|
 | `1.3.6.1.3.8888.1.1` | Challenge type. |
 | `1.3.6.1.3.8888.1.2` | Verified challenge ID; for a CPU TEE, the normalized `mrEnclave`. |
-| `1.3.6.1.3.8888.1.4.1` | List of verified NVIDIA GPUs in the compact Protobuf binary format. |
+| `1.3.6.1.3.8888.1.4.1` | Verified NVIDIA GPU information. [Extension contents and format](05-nvidia-gpu-attestation.md#recording-the-result-in-the-certificate). |
 | `1.3.6.1.3.8888.1.6` | Empty extension added by the server to mark successful attestation. |
 | `0.6.9.42.840.113741.1337.6` | Serialized CPU TEE evidence. |
-| `1.3.6.1.3.8888.4` | Network type, primarily on the root CA. |
+| `1.3.6.1.3.8888.4` | Root CA network type; contains `trusted` for a trusted network. |
 
 A client cannot supply or replace these system extensions. The PKI Authority
 creates their values exclusively from the verified challenge.
@@ -67,91 +61,6 @@ creates their values exclusively from the verified challenge.
 
 The VM certificate contains CPU TEE evidence. Verified GPU information is
 stored in a separate compact Protobuf extension.
-
-## Storage on the First VM
-
-### During Bootstrap
-
-The generator writes material to:
-
-```text
-/etc/super/certs/swarm-init/
-```
-
-The directory contains the certificates and private keys for the root CA and
-the two intermediate CAs.
-
-Private keys are created with mode `0600`.
-
-### After SwarmDB Starts
-
-Bootstrap transfers the root and subroot certificates and private keys and the
-evidence-signing key to `SwarmSecrets`.
-
-After a successful transfer, `/etc/super/certs/swarm-init` is removed.
-
-### PKI Authority Persistent Storage
-
-PKI Authority uses the required data from `SwarmSecrets`, synchronized to:
-
-```text
-/etc/pki-authority/swarm-storage/
-```
-
-The directory is mounted into the Authority container as persistent storage.
-The application configuration is stored at:
-
-```text
-/etc/pki-authority/app-config.yaml
-```
-
-## Storage on a Joining VM
-
-The PKI sync client stores its certificate chain in:
-
-```text
-/etc/super/certs/vm/
-```
-
-With the `vm` prefix, the following files are used:
-
-| File | Contents |
-|---|---|
-| `vm_key.pem` | VM-certificate private key, mode `0600`. |
-| `vm_cert.pem` | VM certificate and intermediate certificates. |
-| `vm_ca.pem` | Root CA. |
-
-> Note: in the current implementation, these files are used by the PKI sync
-> client to obtain `swarmKey`. After synchronization completes, they are not
-> used by other node components.
-
-The `swarm key` is stored separately:
-
-```text
-/etc/swarm/swarm.key
-```
-
-## `swarm key` Distribution
-
-```mermaid
-sequenceDiagram
-    participant INIT as First VM
-    participant DB as SwarmDB secrets
-    participant PKI as PKI Authority
-    participant NODE as New node
-
-    INIT->>INIT: Generate 32 random bytes
-    INIT->>DB: Store swarmKey
-    DB->>PKI: Synchronize secret
-    NODE->>PKI: Attest and obtain certificate
-    NODE->>PKI: HTTPS secrets/get request with client certificate
-    PKI-->>NODE: swarmKey
-    NODE->>NODE: Store with mode 0600
-    NODE->>NODE: Create SwarmDB configuration
-```
-
-The secret is not transferred before certificate issuance. SwarmDB uses it as
-a static symmetric value protecting inter-node communication.
 
 ## PKI Endpoint
 
@@ -169,10 +78,11 @@ https://<Swarm VM IP address>:9443/api/v1/pki/certs/ca
 ```
 
 `pki-authority` runs on every Swarm VM, so the certificate can be retrieved
-from any reachable VM. During the initial retrieval, no trusted copy of this
-certificate exists yet, so the TLS connection alone cannot establish trust in
-the returned root CA. A joining VM separately verifies its embedded CPU
-[evidence extension](#certificate-extensions-and-oids) and `mrEnclave`.
+from any reachable VM. Retrieving the root CA over HTTPS does not establish
+trust in it: the PKI Authority TLS certificate is signed by that same root CA.
+The joining VM therefore verifies the root CA's embedded CPU
+[evidence extension](#certificate-extensions-and-oids) and `mrEnclave`
+separately.
 
 A joining VM builds its HTTPS endpoint list from `pki_authority.servers` and
 the node addresses in `swarm_db.join_addresses`.

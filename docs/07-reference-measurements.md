@@ -27,20 +27,8 @@ The verifying party:
 Attestation fails when the corresponding value is absent or the registry is
 unavailable.
 
-```mermaid
-flowchart LR
-    E["Verified CPU evidence"]
-    M["Calculated mrEnclave"]
-    R["Trusted registry"]
-    D{"Measurement allowed?"}
-    A["Continue attestation"]
-    X["Reject attestation"]
-
-    E --> M --> D
-    R --> D
-    D -->|yes| A
-    D -->|no| X
-```
+![Reference measurement verification](assets/reference-measurement-flow.svg)
+<!-- Mermaid source: assets/mermaid/reference-measurement-flow.mmd -->
 
 The Intel TDX and AMD SEV-SNP `mrEnclave` calculation algorithms are described
 in the [VM measurements chapter](04-vm-measurements.md).

@@ -30,7 +30,7 @@ sequenceDiagram
     else No GPUs
         VM->>CPU: reportData = publicKeyHash
     else All GPUs are trusted
-        VM->>PCI: Determine GPU/NVSwitch topology
+        VM->>PCI: Determine GPU topology
         VM->>NRAS: Evidence + random nonce
         NRAS-->>VM: GPU token
         VM->>VM: Hash serialized token
@@ -93,14 +93,8 @@ NVIDIA token is created.
 
 ## Obtaining the NVIDIA Token
 
-After the preliminary check passes, the topology is determined:
-
-```text
-gpuCount
-nvswitchCount
-```
-
-If `gpuCount == 0`, GPU attestation is skipped. Otherwise:
+After the preliminary check passes, the number of GPUs is determined. If no
+GPUs are present, GPU attestation is skipped. Otherwise:
 
 1. a cryptographically random 32-byte nonce is generated and represented by
    64 hexadecimal characters;
@@ -108,16 +102,6 @@ If `gpuCount == 0`, GPU attestation is skipped. Otherwise:
 3. evidence is sent to the remote GPU verifier;
 4. the request uses `ppcieMode=false`;
 5. an NVIDIA token is returned.
-
-The current structure supports:
-
-```text
-nvidiaTokens.gpuToken
-nvidiaTokens.nvswitchToken (optional)
-```
-
-The implemented flow creates only `gpuToken`. The NVSwitch count is represented
-in topology, but a separate NVSwitch token is not requested.
 
 ## Binding to the CPU TEE
 
@@ -205,13 +189,8 @@ dbgStat
 ```
 
 The GPU list is encoded in the compact Protobuf binary format and added to the
-certificate under:
-
-```text
-OID 1.3.6.1.3.8888.1.4.1
-```
-
-The OID is also included in the consolidated
+certificate through the NVIDIA GPU extension. The extension and its OID are
+listed in the consolidated
 [Certificate Extensions and OIDs](06-pki.md#certificate-extensions-and-oids)
 table.
 
@@ -232,4 +211,3 @@ extension is omitted.
 | Token hash does not match CPU `reportData` | Yes | Reject: CPU and GPU evidence are not bound. |
 | One GPU has `dbgStat=true` | Yes | Reject the entire VM. |
 | Multiple GPUs, one untrusted | No | Stop the entire attestation. |
-| NVSwitch is present | GPU token only | Topology is recorded; a separate switch token is not verified. |

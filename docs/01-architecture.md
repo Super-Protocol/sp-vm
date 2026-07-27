@@ -111,6 +111,9 @@ The PKI Authority independently calculates both hashes and compares them with
 the verified CPU `reportData`. A valid GPU token or CPU quote therefore cannot
 be moved to another certificate request.
 
+GPU evidence collection, binding, and verification are described in detail in
+[NVIDIA GPU Attestation](05-nvidia-gpu-attestation.md).
+
 ## VM Mode Selection
 
 The VM mode is derived from three groups of fields in
