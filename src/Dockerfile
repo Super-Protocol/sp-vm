@@ -238,7 +238,8 @@ RUN if [ "$SP_VM_BUILD_TYPE" = "debug" ]; then \
         if [ -f "${OUTPUTDIR}/etc/securetty" ] && ! grep -qx ttyS0 "${OUTPUTDIR}/etc/securetty"; then \
             echo ttyS0 >> "${OUTPUTDIR}/etc/securetty"; \
         fi; \
-        echo "root:supersecret" | chpasswd -R "${OUTPUTDIR}"; \
+        printf '%s\n' 'root:$6$spvmdebug$PTGAQP81GCtHRi/j3PTmp6yrKvvXGrTUILaTvAQnI.bH6M.baPLiVwYuasyXrK8sECBZ49p1N/cMqK5/jvYLS0' \
+            | chpasswd --encrypted -R "${OUTPUTDIR}"; \
     else \
         ln -sf /dev/null "${OUTPUTDIR}/etc/systemd/system/serial-getty@ttyS0.service"; \
         rm -f "${OUTPUTDIR}/etc/systemd/system/getty.target.wants/serial-getty@ttyS0.service"; \
