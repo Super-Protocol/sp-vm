@@ -160,8 +160,14 @@ function create_grub_config() {
         > "$BOOT_STAGE/grub/grub.cfg"
 
     cat > "$EARLY_GRUB_CONFIG" <<'EOF'
-search --no-floppy --label bls_boot --set=root
-set prefix=($root)/grub
+set boot=
+search --no-floppy --label bls_boot --set=boot
+if [ -z "$boot" ]; then
+    echo "GRUB: filesystem bls_boot not found"
+    halt
+fi
+set root=$boot
+set prefix=($boot)/grub
 configfile $prefix/grub.cfg
 EOF
     grub-script-check "$EARLY_GRUB_CONFIG"
@@ -170,12 +176,13 @@ EOF
 
 function create_grub_images() {
     log_info "creating deterministic standalone BIOS and UEFI GRUB images"
-    local bios_modules='biosdisk part_gpt ext2 normal configfile search search_label linux'
-    local efi_modules='part_gpt fat ext2 normal configfile search search_label linux'
+    local bios_modules='biosdisk part_gpt ext2 normal configfile search search_label test echo halt linux'
+    local efi_modules='part_gpt fat ext2 normal configfile search search_label test echo halt linux'
 
     SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" grub-mkstandalone \
         --format=i386-pc \
         --install-modules="$bios_modules" \
+        --modules="$bios_modules" \
         --fonts='' \
         --locales='' \
         --themes='' \
@@ -185,6 +192,7 @@ function create_grub_images() {
     SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" grub-mkstandalone \
         --format=x86_64-efi \
         --install-modules="$efi_modules" \
+        --modules="$efi_modules" \
         --fonts='' \
         --locales='' \
         --themes='' \
