@@ -13,14 +13,19 @@ source "$BUILDROOT/files/scripts/log.sh"
 source "$BUILDROOT/files/scripts/chroot.sh"
 
 function install_python_deps() {
-    log_info "installing Python dependencies for provision plugins"
-    # redis-py is already installed by setup_runtime_tools.sh, but ensure correct version range
-    # (setup_runtime_tools.sh installs latest; provision plugins require >=5.0.0,<6.0.0)
-    chroot "$OUTPUTDIR" /bin/bash -lc "pip3 install --break-system-packages 'redis>=5.0.0,<6.0.0'"
-    # podman-compose: required for provision plugins that orchestrate Podman containers
-    chroot "$OUTPUTDIR" /bin/bash -lc "pip3 install --break-system-packages podman-compose"
-    # pyyaml: required by swarm-init.sh to parse /etc/swarm/config.yaml at runtime
-    chroot "$OUTPUTDIR" /bin/bash -lc "pip3 install --break-system-packages pyyaml"
+    log_info "installing Python runtime dependencies"
+    cp "$BUILDROOT/files/configs/python/requirements.lock" \
+        "$OUTPUTDIR/tmp/python-requirements.lock"
+    chroot "$OUTPUTDIR" python3 -m pip install \
+        --break-system-packages \
+        --disable-pip-version-check \
+        --ignore-installed \
+        --no-cache-dir \
+        --no-compile \
+        --only-binary=:all: \
+        --require-hashes \
+        --requirement /tmp/python-requirements.lock
+    rm -f "${OUTPUTDIR}/tmp/python-requirements.lock"
     log_info "Python dependencies installed successfully"
 }
 

@@ -19,6 +19,11 @@ function copy_previous_arfifacts() {
     log_info "staring copying previous artifacts";
     cp "$BUILDROOT/files/initramfs.cpio.gz" "$KERNEL_SRC/";
     cp "$BUILDROOT/files/configs/fragments/$ARCH/.config" "$KERNEL_SRC/";
+    # Linux 6.12's mkdebian ignores SOURCE_DATE_EPOCH for the changelog date.
+    # Keep generated Debian packages stable without carrying a downstream patch.
+    sed -i \
+        's/$(date -R)/$(date -R --date="@${SOURCE_DATE_EPOCH}")/' \
+        "$KERNEL_SRC/scripts/package/mkdebian";
 }
 
 function build_kernel() {

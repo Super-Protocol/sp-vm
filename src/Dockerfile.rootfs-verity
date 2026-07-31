@@ -1,0 +1,101 @@
+# syntax=docker/dockerfile:1-labs@sha256:7d49dad25a050e14338ba7028b0460243f9d911dedc160a8fe20c34738fef3af
+
+FROM ubuntu:noble-20250714@sha256:a08e551cb33850e4740772b38217fc1796a66da2506d312abe51acda354ff061 AS rootfs_verity_tools
+
+ARG UBUNTU_SNAPSHOT_ID=20260714T000000Z
+RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
+    && printf 'deb http://archive.ubuntu.com/ubuntu/ noble main\n' > /etc/apt/sources.list \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates \
+    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble main universe\n' \
+        "$UBUNTU_SNAPSHOT_ID" \
+        > /etc/apt/sources.list \
+    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble-updates main universe\n' \
+        "$UBUNTU_SNAPSHOT_ID" \
+        >> /etc/apt/sources.list \
+    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble-security main universe\n' \
+        "$UBUNTU_SNAPSHOT_ID" \
+        >> /etc/apt/sources.list \
+    && printf 'Acquire::Languages "none";\n' > /etc/apt/apt.conf.d/50snapshot \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        cryptsetup-bin dosfstools e2fsprogs faketime gdisk gettext-base \
+        grub-pc-bin grub-efi-amd64-bin grub2-common kpartx mtools util-linux \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY image/files/scripts/create_rootfs_verity.sh /usr/local/sbin/create-rootfs-verity
+COPY image/files/scripts/create_rootfs_verity.sh /buildroot/files/scripts/create_rootfs_verity.sh
+COPY image/files/scripts/create_image.sh /buildroot/files/scripts/create_image.sh
+COPY general/files/scripts/log.sh /buildroot/files/scripts/log.sh
+COPY image/files/configs/grub.cfg.tmpl /buildroot/files/configs/grub.cfg.tmpl
+
+# A named BuildKit context with this name must contain rootfs.tar.
+FROM scratch AS rootfs_input
+
+FROM rootfs_verity_tools AS rootfs_verity_builder
+
+ARG SOURCE_DATE_EPOCH=1783987200
+ARG ROOTFS_UUID=9d8ae77c-0f99-4b4c-a919-0de57b426ced
+ARG ROOTFS_DIR_HASH_SEED=7ebf1975-28bf-544d-948f-5bb483eff52e
+ARG ROOTFS_VERITY_UUID=0ff7f592-c526-46f7-83d5-f47ad3f69e89
+ARG ROOTFS_VERITY_SALT=7ebf197528bf544d348f5bb483eff52ea41e0f99dac93882965f65924d1f87a6
+
+RUN --mount=type=bind,from=rootfs_input,target=/rootfs-input,readonly \
+    --security=insecure \
+    test -f /rootfs-input/rootfs.tar \
+    && mkdir -p /input/rootfs \
+    && tar \
+        --numeric-owner \
+        --acls \
+        --xattrs \
+        --xattrs-include='*' \
+        --selinux \
+        --directory=/input/rootfs \
+        --extract \
+        --file=/rootfs-input/rootfs.tar \
+    && create-rootfs-verity /input/rootfs /output \
+    && rm -rf /input/rootfs
+
+FROM scratch AS rootfs_verity_export
+COPY --from=rootfs_verity_builder /output/ /
+
+FROM rootfs_verity_tools AS disk_image_builder
+
+ARG SOURCE_DATE_EPOCH=1783987200
+ARG SP_VM_IMAGE_VERSION=repro-test
+ARG OUTPUTROOT=/output
+ARG OUTPUTDIR=/output/rootfs
+ARG ROOTFS_UUID=9d8ae77c-0f99-4b4c-a919-0de57b426ced
+ARG ROOTFS_DIR_HASH_SEED=7ebf1975-28bf-544d-948f-5bb483eff52e
+ARG ROOTFS_VERITY_UUID=0ff7f592-c526-46f7-83d5-f47ad3f69e89
+ARG ROOTFS_VERITY_SALT=7ebf197528bf544d348f5bb483eff52ea41e0f99dac93882965f65924d1f87a6
+ARG BOOT_UUID=53e6f641-37c0-46d2-a729-7d9f49fcf589
+ARG BOOT_DIR_HASH_SEED=696833d7-b1d1-4f05-8ede-1a62f2e0a70d
+ARG ESP_VOLUME_ID=A1B2C3D4
+ARG DISK_GUID=6f873c23-1b65-4b5c-8e67-8f4f3c3419a1
+ARG BOOT_PART_GUID=4389386d-d949-4b54-942d-3f6b1148c8d1
+ARG BIOS_PART_GUID=f4958893-2686-4bca-8251-1499197a2774
+ARG ESP_PART_GUID=58f79298-702d-4a8b-b53c-73a76da19e77
+ARG ROOTFS_PART_GUID=ec6a4d3f-0f19-47df-9c1f-8f221bbf175b
+ARG ROOTFS_HASH_PART_GUID=672b89b6-76c3-45a5-af55-0a401f2d5a6f
+
+RUN --mount=type=bind,from=rootfs_input,target=/rootfs-input,readonly \
+    --security=insecure \
+    test -f /rootfs-input/rootfs.tar \
+    && mkdir -p "$OUTPUTDIR" \
+    && tar \
+        --numeric-owner \
+        --acls \
+        --xattrs \
+        --xattrs-include='*' \
+        --selinux \
+        --directory="$OUTPUTDIR" \
+        --extract \
+        --file=/rootfs-input/rootfs.tar \
+    && /buildroot/files/scripts/create_image.sh \
+    && rm -rf "$OUTPUTDIR"
+
+FROM scratch AS disk_image_export
+COPY --from=disk_image_builder /output/ /
