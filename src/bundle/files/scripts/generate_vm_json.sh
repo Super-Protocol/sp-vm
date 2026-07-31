@@ -39,7 +39,7 @@ while IFS= read -r FILE; do
     JSON+="    \"filename\": \"$FILE\",\n";
     JSON+="    \"sha256\": \"$SHA256\"\n";
     JSON+="  },\n";
-done < <(find "$BUILD_DIR" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
+done < <(find "$BUILD_DIR" -maxdepth 1 -type f ! -name vm.json -printf '%f\n' | LC_ALL=C sort)
 
 JSON="${JSON%,*}";
 JSON+="\n}";

@@ -27,7 +27,7 @@ function cleanup_rootfs() {
             g++-x86-64-linux-gnu \
             g++ \
             gcc \
-            $kernel_headers';
+            $kernel_headers || true';
 
     # Preserve the final package inventory outside rootfs before /var/lib is
     # removed. The export stage uses it as a diagnostic manifest.

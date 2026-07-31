@@ -355,7 +355,8 @@ function install_bios_bootloader() {
     mkdir -p /mnt/boot
     LOOP_DEV="$(losetup --find --show --partscan "$OUTPUT_FILE")"
     local loop_name="${LOOP_DEV#/dev/}"
-    kpartx -a "$LOOP_DEV" >/dev/null
+    # Wait for the partition mapping and udev device node before mounting it.
+    kpartx -as "$LOOP_DEV" >/dev/null
     mount "/dev/mapper/${loop_name}p1" /mnt/boot
     /usr/lib/grub/i386-pc/grub-bios-setup \
         --skip-fs-probe \
