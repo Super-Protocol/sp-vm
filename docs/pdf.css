@@ -2,6 +2,13 @@
   size: A4;
   margin: 18mm 16mm 20mm 18mm;
 
+  @top-center {
+    content: "SUPER PROTOCOL CONFIDENTIAL – FOR RECIPIENTS ONLY – DO NOT DISTRIBUTE";
+    color: #991b1b;
+    font: 700 7pt "DejaVu Sans", sans-serif;
+    letter-spacing: 0.04em;
+  }
+
   @bottom-center {
     content: counter(page);
     color: #64748b;
