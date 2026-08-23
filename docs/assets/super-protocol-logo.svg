@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Super Protocol</title>
+  <desc id="desc">Super Protocol company logo.</desc>
+  <rect width="128" height="128" rx="26" fill="#111111"/>
+  <path d="M23 82h14.6c9.2 0 14.6-4.6 17.8-14.1l12.8-37c2.8-8.7 9.1-12.8 18.3-12.8H105v18.3H91.8c-3.7 0-5.9 1.8-7.3 5.9L71.7 79.4c-5 14.2-15.1 21-29.7 21H23z" fill="#ffffff"/>
+</svg>

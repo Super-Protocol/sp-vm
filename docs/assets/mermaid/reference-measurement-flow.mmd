@@ -1,0 +1,42 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#0f172a",
+    "primaryBorderColor": "#cbd5e1",
+    "lineColor": "#64748b"
+  },
+  "flowchart": {
+    "curve": "stepAfter",
+    "htmlLabels": true,
+    "nodeSpacing": 75,
+    "rankSpacing": 75
+  }
+}}%%
+flowchart TB
+    E["Verified CPU evidence<br/><small>Hardware verification passed</small>"]
+    M["Calculate normalized mrEnclave<br/><small>TDX or SEV-SNP measurement algorithm</small>"]
+    R["Trusted mrEnclave registry<br/><small>Allowed reference values</small>"]
+    D["Check calculated mrEnclave<br/><small>Value is present in the trusted registry</small>"]
+    A["Continue attestation"]
+    X["Reject attestation<br/><small>Value is absent or registry is unavailable</small>"]
+
+    E --> M
+    M --> D
+    R --> D
+    D -->|"allowed"| A
+    D -->|"not allowed"| X
+
+    classDef input fill:#ffffff,stroke:#cbd5e1,color:#0f172a,stroke-width:1.5px;
+    classDef verify fill:#eff6ff,stroke:#60a5fa,color:#0f172a,stroke-width:1.5px;
+    classDef registry fill:#f5f3ff,stroke:#a78bfa,color:#0f172a,stroke-width:1.5px;
+    classDef decision fill:#fffbeb,stroke:#fbbf24,color:#0f172a,stroke-width:1.5px;
+    classDef result fill:#ecfdf5,stroke:#34d399,color:#0f172a,stroke-width:2px;
+    classDef reject fill:#fef2f2,stroke:#f87171,color:#0f172a,stroke-width:1.5px;
+    class E input;
+    class M verify;
+    class R registry;
+    class D decision;
+    class A result;
+    class X reject;

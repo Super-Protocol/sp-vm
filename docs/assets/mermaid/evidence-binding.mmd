@@ -1,0 +1,46 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#0f172a",
+    "primaryBorderColor": "#cbd5e1",
+    "lineColor": "#64748b"
+  },
+  "flowchart": {
+    "curve": "step",
+    "htmlLabels": true,
+    "nodeSpacing": 50,
+    "rankSpacing": 70
+  }
+}}%%
+flowchart LR
+    PUB["Certificate public key<br/><small>SHA-256 → 32 bytes</small>"]
+    TOK["Serialized NVIDIA token<br/><small>SHA-256 → 32 bytes, optional</small>"]
+
+    subgraph DATA["CPU reportData"]
+        direction TB
+        PH["publicKeyHash<br/><small>bytes 0–31</small>"]
+        TH["nvidiaTokenHash<br/><small>bytes 32–63, when GPU is present</small>"]
+    end
+
+    subgraph AUTH["PKI Authority (TEE-PKI)"]
+        direction TB
+        CPU["Verify CPU quote/report"]
+        HASH["Recalculate both hashes"]
+        CERT["Issue certificate on match"]
+        CPU --> HASH --> CERT
+    end
+
+    PUB --> PH
+    TOK --> TH
+    PH --> CPU
+    TH --> CPU
+
+    classDef input fill:#ffffff,stroke:#10b981,color:#0f172a,stroke-width:1.5px;
+    classDef report fill:#eff6ff,stroke:#2563eb,color:#0f172a,stroke-width:1.5px;
+    classDef authority fill:#fff7ed,stroke:#f97316,color:#0f172a,stroke-width:1.5px;
+    class PUB,TOK input;
+    class PH,TH report;
+    class CPU,HASH,CERT authority;
+    linkStyle default stroke:#64748b,stroke-width:2px;

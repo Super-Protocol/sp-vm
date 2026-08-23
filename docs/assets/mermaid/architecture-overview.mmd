@@ -1,0 +1,77 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#0f172a",
+    "primaryBorderColor": "#cbd5e1",
+    "lineColor": "#64748b",
+    "clusterBkg": "#f8fafc",
+    "clusterBorder": "#cbd5e1"
+  },
+  "flowchart": {
+    "curve": "stepAfter",
+    "htmlLabels": true,
+    "nodeSpacing": 35,
+    "rankSpacing": 48
+  }
+}}%%
+flowchart TB
+    subgraph TRUST["3. Trust sources"]
+        direction LR
+        PCS["Intel PCS"]
+        KDS["AMD KDS"]
+        NRAS["NVIDIA NRAS"]
+        REG["Trusted mrEnclave registry"]
+        VERIFY["Hardware evidence verification"]
+
+        PCS --> VERIFY
+        KDS --> VERIFY
+        NRAS --> VERIFY
+    end
+
+    subgraph BOOT["1. Bootstrap VM"]
+        direction TB
+        BPKI["Create the PKI hierarchy<br/><small>Root CA with hardware evidence and subroot CAs</small>"]
+        BKEY["Generate the swarm key"]
+        BSVC["Bootstrap completed"]
+        BAUTH["PKI Authority (TEE-PKI)<br/><small>Verifies joining VMs</small>"]
+
+        BPKI --> BKEY --> BSVC
+        BSVC -.-> BAUTH
+    end
+
+    subgraph JOIN["2. Joining VM"]
+        direction TB
+        JROOT["Validate network root CA<br/><small>Verify evidence and mrEnclave</small>"]
+        JCH["Create CPU/GPU challenge<br/><small>Bind certificate key and GPU token</small>"]
+        JCERT["Request VM certificate<br/><small>Send the CPU/GPU challenge</small>"]
+        JKEY["Request swarm key<br/><small>Authenticate with the VM certificate</small>"]
+        JSVC["Joining successful"]
+
+        JROOT --> JCH --> JCERT --> JKEY --> JSVC
+    end
+
+    VERIFY --> BPKI
+    VERIFY --> JROOT
+    REG --> JROOT
+    VERIFY --> BAUTH
+    REG --> BAUTH
+    JCERT -->|"certificate<br/>request"| BAUTH
+    BAUTH -->|"VM certificate"| JCERT
+    JKEY -->|"swarm key<br/>request"| BAUTH
+    BAUTH -->|"swarm key"| JKEY
+
+    classDef trust fill:#faf5ff,stroke:#8b5cf6,color:#0f172a,stroke-width:1.5px;
+    classDef hardware fill:#eff6ff,stroke:#2563eb,color:#0f172a,stroke-width:1.5px;
+    classDef bootstrap fill:#fff7ed,stroke:#f97316,color:#0f172a,stroke-width:1.5px;
+    classDef joining fill:#ecfdf5,stroke:#10b981,color:#0f172a,stroke-width:1.5px;
+    class PCS,KDS,NRAS,REG trust;
+    class VERIFY hardware;
+    class BPKI,BKEY,BSVC,BAUTH bootstrap;
+    class JROOT,JCH,JCERT,JKEY,JSVC joining;
+    linkStyle 3,4,5 stroke:#ea580c,stroke-width:2px;
+    linkStyle 10,11,13 stroke:#2563eb,stroke-width:2px,stroke-dasharray:8 6;
+    linkStyle 12,14 stroke:#7c3aed,stroke-width:2px,stroke-dasharray:8 6;
+    linkStyle 15,17 stroke:#059669,stroke-width:2px;
+    linkStyle 16,18 stroke:#ea580c,stroke-width:2px;

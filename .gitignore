@@ -144,3 +144,6 @@ src/rootfs/files/configs/cert/superprotocol-ca.crt
 
 #.DS_Store
 .DS_Store
+
+# Generated documentation
+docs/**/*.pdf

@@ -1,0 +1,32 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#0f172a",
+    "primaryBorderColor": "#cbd5e1",
+    "lineColor": "#64748b"
+  },
+  "flowchart": {
+    "curve": "stepAfter",
+    "htmlLabels": true,
+    "nodeSpacing": 100,
+    "rankSpacing": 90
+  }
+}}%%
+flowchart TB
+    R["Root CA<br/><small>Self-signed · hardware evidence</small>"]
+    D["Device Enrollment Subroot<br/><small>Standard X.509 intermediate CA</small>"]
+    E["Evidence Subroot<br/><small>Standard X.509 intermediate CA</small>"]
+    VM["VM certificates<br/><small>Attested node identities</small>"]
+    EV["Evidence signatures<br/><small>Signed evidence</small>"]
+
+    R --> D --> VM
+    R --> E --> EV
+
+    classDef root fill:#eff6ff,stroke:#60a5fa,color:#0f172a,stroke-width:2px;
+    classDef subroot fill:#f5f3ff,stroke:#a78bfa,color:#0f172a,stroke-width:1.8px;
+    classDef leaf fill:#ecfdf5,stroke:#34d399,color:#0f172a,stroke-width:1.8px;
+    class R root;
+    class D,E subroot;
+    class VM,EV leaf;

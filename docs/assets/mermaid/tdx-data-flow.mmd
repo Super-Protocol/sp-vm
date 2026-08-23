@@ -1,0 +1,49 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#0f172a",
+    "primaryBorderColor": "#cbd5e1",
+    "lineColor": "#64748b"
+  },
+  "flowchart": {
+    "curve": "stepAfter",
+    "htmlLabels": true,
+    "nodeSpacing": 60,
+    "rankSpacing": 65
+  }
+}}%%
+flowchart TB
+    Q["TDX quote<br/><small>Signed hardware report</small>"]
+    E["RTMR0 event list<br/><small>Event type + SHA-384 digest</small>"]
+    V["DCAP verification<br/><small>Validate signature and platform state</small>"]
+    R["Reconstruct RTMR0<br/><small>SHA-384(previous RTMR0 || digest)</small>"]
+    C["Compare RTMR0<br/><small>Reconstructed value = quote value</small>"]
+    X["Reject evidence<br/><small>Values do not match</small>"]
+    N["Normalize RTMR0<br/><small>Keep firmware blob events from the same list</small>"]
+    H["Calculate SHA-256<br/><small>TDATTRIBUTES || MRTD || normalizedRTMR0 || RTMR1 || RTMR2 || RTMR3</small>"]
+    M["mrEnclave · 32 bytes"]
+
+    Q --> V
+    E --> R
+    V -->|"Quote RTMR0"| C
+    R -->|"Reconstructed RTMR0"| C
+    C -->|"mismatch"| X
+    C -->|"match"| N
+    N --> H
+    V -->|"Verified quote fields"| H
+    H --> M
+
+    classDef input fill:#ffffff,stroke:#cbd5e1,color:#0f172a,stroke-width:1.5px;
+    classDef verify fill:#eff6ff,stroke:#60a5fa,color:#0f172a,stroke-width:1.5px;
+    classDef integrity fill:#fffbeb,stroke:#fbbf24,color:#0f172a,stroke-width:1.5px;
+    classDef normalize fill:#f0fdfa,stroke:#2dd4bf,color:#0f172a,stroke-width:1.5px;
+    classDef result fill:#ecfdf5,stroke:#34d399,color:#0f172a,stroke-width:2px;
+    classDef reject fill:#fef2f2,stroke:#f87171,color:#0f172a,stroke-width:1.5px;
+    class Q,E input;
+    class V,R,H verify;
+    class C integrity;
+    class N normalize;
+    class M result;
+    class X reject;
