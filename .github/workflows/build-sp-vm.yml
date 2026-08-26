@@ -38,11 +38,31 @@ jobs:
           SWARM_DB_SCHEMA_RELEASE: schema-v1.1.0
           SWARM_DB_SCHEMA_SHA256: cf20aa0329c0738c5995a7e3e36b1cc16f6714dfcd94ec795954e19430c76715
         run: |
+          set -eu
           mkdir -p swarm-db-schema
-          gh release download "$SWARM_DB_SCHEMA_RELEASE" \
-            --repo Super-Protocol/swarm-cloud \
-            --pattern schema.yaml \
-            --dir swarm-db-schema
+          rel_file="$(mktemp)"
+          curl -sfL \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Super-Protocol/swarm-cloud/releases/tags/${SWARM_DB_SCHEMA_RELEASE}" \
+            -o "$rel_file"
+          asset_id="$(python3 -c "
+          import json, sys
+          with open(sys.argv[1]) as f:
+              data = json.load(f)
+          for a in data.get('assets', []):
+              if a.get('name') == 'schema.yaml':
+                  print(a['id'])
+                  break
+          else:
+              raise SystemExit('asset schema.yaml not found')
+          " "$rel_file")"
+          rm -f "$rel_file"
+          curl -sfL \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/octet-stream" \
+            -o swarm-db-schema/schema.yaml \
+            "https://api.github.com/repos/Super-Protocol/swarm-cloud/releases/assets/${asset_id}"
           printf '%s  %s\n' "$SWARM_DB_SCHEMA_SHA256" swarm-db-schema/schema.yaml | sha256sum --check -
 
       - name: Set up Docker Buildx
