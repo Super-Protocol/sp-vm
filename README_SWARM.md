@@ -23,6 +23,7 @@ File: `src/swarm-scripts/swarm-cli.py`
   - `ClusterPolicyAffinityRules`
   - `ClusterPolicyMeasurementRules`
   - `ClusterPolicyPreferenceRules`
+  - `ClusterPolicyLabelRules`
   - `SwarmSecrets`
 - The CLI reads DB connection parameters from environment variables (`DB_HOST`, `DB_PORT` / `SWARM_DB_PORT` / `MYSQL_PORT`, `DB_USER`, `DB_NAME`, `DB_PASSWORD`), patches PyMySQL for dev/test environments, and executes parameterized SQL statements.
 
@@ -61,6 +62,17 @@ Optional clustering tuning (only written when flags are present; matches newer `
   --condition equals \
   --value true \
   --weight 1
+```
+
+- Create/update a label rule (hard nodeSelector on a policy; matches `NodeProperties` `label.<key>`):
+
+```bash
+./swarm-cli.py create ClusterPolicyLabelRules minio:sel-0 \
+  --name sel-0 \
+  --cluster_policy minio \
+  --key 'roles.swarm.io/service-plugin/minio' \
+  --operator In \
+  --value '["true"]'
 ```
 
 - Create/update a service:
@@ -122,7 +134,7 @@ Sources: `src/repos/swarm-db` and `src/repos/swarm-cloud/libs/swarm-db`
 ### swarm-db
 
 - `swarm-db` is a replicated database that stores the state of the entire Swarm cluster:
-  - cluster formation and placement policies (`ClusterPolicies`, `ClusterPolicyMeasurementRules`, `ClusterPolicyAffinityRules`, `ClusterPolicyPreferenceRules`);
+  - cluster formation and placement policies (`ClusterPolicies`, `ClusterPolicyMeasurementRules`, `ClusterPolicyAffinityRules`, `ClusterPolicyPreferenceRules`, `ClusterPolicyLabelRules`);
   - clusters and their nodes (`Clusters`, `ClusterNodes`, `ClusterProperties`, etc.);
   - service descriptions (`ClusterServices`);
   - auxiliary entities (secrets, measurements, quorum policies, etc.).
@@ -145,6 +157,7 @@ Entity: `ClusterPolicy` (`ClusterPolicies` table, see `libs/swarm-db/src/entitie
     - `ClusterPolicyMeasurementRule` — rules based on measurements (latency, etc.);
     - `ClusterPolicyAffinityRule` — affinity / anti-affinity rules towards other policies;
     - `ClusterPolicyPreferenceRule` — soft scoring from self-measurements during clustering;
+    - `ClusterPolicyLabelRule` — hard nodeSelector over admin node labels (`label.<key>` in NodeProperties);
     - `Cluster` — clusters created under this policy;
     - `ClusterService` — services that must be deployed in clusters of this policy.
 

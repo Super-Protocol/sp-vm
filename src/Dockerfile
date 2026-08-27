@@ -67,6 +67,34 @@ RUN set -eu; \
 FROM scratch AS low_level_assets
 COPY --from=low_level_release_download /low-level-release/ /
 
+### Start swarm-db schema (GitHub Release from swarm-cloud) ###
+FROM rootfs_base AS swarm_db_schema_download
+ARG SWARM_DB_SCHEMA_RELEASE=schema-v1.1.0
+ARG SWARM_DB_SCHEMA_SHA256=cf20aa0329c0738c5995a7e3e36b1cc16f6714dfcd94ec795954e19430c76715
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN set -eu; \
+    [[ "$SWARM_DB_SCHEMA_RELEASE" =~ ^schema-v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+        || { echo "Invalid SWARM_DB_SCHEMA_RELEASE: $SWARM_DB_SCHEMA_RELEASE" >&2; exit 1; }; \
+    [[ "$SWARM_DB_SCHEMA_SHA256" =~ ^[0-9a-f]{64}$ ]] \
+        || { echo "SWARM_DB_SCHEMA_SHA256 must be a SHA-256 hex digest" >&2; exit 1; }; \
+    mkdir -p /swarm-db-schema; \
+    wget --https-only --output-document=/swarm-db-schema/schema.yaml \
+        "https://github.com/Super-Protocol/swarm-cloud/releases/download/${SWARM_DB_SCHEMA_RELEASE}/schema.yaml"; \
+    printf '%s  %s\n' "$SWARM_DB_SCHEMA_SHA256" /swarm-db-schema/schema.yaml | sha256sum --check -
+
+# A named BuildKit context called swarm_db_schema overrides this stage and may
+# point to a directory that contains schema.yaml (for local or private-repo builds).
+FROM scratch AS swarm_db_schema
+COPY --from=swarm_db_schema_download /swarm-db-schema/schema.yaml /schema.yaml
+
+FROM rootfs_base AS swarm_db_schema_validated
+ARG SWARM_DB_SCHEMA_SHA256=cf20aa0329c0738c5995a7e3e36b1cc16f6714dfcd94ec795954e19430c76715
+COPY --from=swarm_db_schema /schema.yaml /swarm-db-schema/schema.yaml
+RUN set -eu; \
+    test -s /swarm-db-schema/schema.yaml; \
+    printf '%s  %s\n' "$SWARM_DB_SCHEMA_SHA256" /swarm-db-schema/schema.yaml | sha256sum --check -
+### End swarm-db schema ###
+
 FROM rootfs_base AS low_level_assets_validated
 COPY --from=low_level_assets / /low-level/
 RUN set -eu; \
@@ -254,7 +282,7 @@ RUN chmod +x ${OUTPUTDIR}/usr/local/bin/kubectl
 # swarm-db binary is downloaded at runtime by swarm-init (tags.swarm_db in /sp/swarm/config.yaml)
 # provision plugins at /etc/swarm-cloud/services are mounted into the swarm-node container at runtime
 RUN mkdir -p "${OUTPUTDIR}/etc/swarm-db" "${OUTPUTDIR}/etc/swarm-services"
-COPY repos/swarm-cloud/apps/swarm-node-e2e/fixtures/schema.yaml ${OUTPUTDIR}/etc/swarm-db/schema.yaml
+COPY --from=swarm_db_schema_validated /swarm-db-schema/schema.yaml ${OUTPUTDIR}/etc/swarm-db/schema.yaml
 
 
 # make /opt/swarm-cloud-api point to built swarm-cloud artifacts
