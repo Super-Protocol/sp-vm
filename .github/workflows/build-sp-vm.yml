@@ -188,20 +188,19 @@ jobs:
           echo "==> Cleaning up temporary GCS object"
           gsutil rm "${SOURCE_URI}"
 
-      - name: Log in to Azure
-        if: ${{ inputs.upload-to-azurecr }}
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
       - name: Push image to Azure Container Registry
         if: ${{ inputs.upload-to-azurecr }}
         working-directory: out
         env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
           AZURE_CONTAINER_REGISTRY: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
         run: |
           if [[ -z "${AZURE_CONTAINER_REGISTRY}" ]]; then
             echo "Secret AZURE_CONTAINER_REGISTRY is not set" >&2
+            exit 1
+          fi
+          if [[ -z "${AZURE_CREDENTIALS}" ]]; then
+            echo "Secret AZURE_CREDENTIALS is not set" >&2
             exit 1
           fi
 
@@ -209,8 +208,17 @@ jobs:
           LOGIN_SERVER="${ACR_NAME}.azurecr.io"
           IMAGE="${LOGIN_SERVER}/sp-vm:${SP_VM_IMAGE_VERSION}"
 
+          CLIENT_ID="$(echo "${AZURE_CREDENTIALS}" | jq -r '.clientId // .appId // empty')"
+          CLIENT_SECRET="$(echo "${AZURE_CREDENTIALS}" | jq -r '.clientSecret // .password // empty')"
+          if [[ -z "${CLIENT_ID}" || -z "${CLIENT_SECRET}" ]]; then
+            echo "AZURE_CREDENTIALS must contain clientId and clientSecret" >&2
+            exit 1
+          fi
+
           echo "==> Logging in to ACR ${LOGIN_SERVER}"
-          az acr login --name "${ACR_NAME}"
+          echo "${CLIENT_SECRET}" | docker login "${LOGIN_SERVER}" \
+            --username "${CLIENT_ID}" \
+            --password-stdin
 
           echo "==> Building OCI image ${IMAGE} from local artifacts"
           printf '%s\n' 'FROM scratch' 'COPY . /' > Dockerfile.acr
