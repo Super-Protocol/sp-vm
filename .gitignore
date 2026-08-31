@@ -137,6 +137,7 @@ kata-containers/
 *.swo
 
 src/rootfs/files/configs/cert/superprotocol-ca.crt
+/swarm-db-schema
 
 *.img
 *.raw
