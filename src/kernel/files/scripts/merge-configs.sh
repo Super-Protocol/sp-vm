@@ -45,6 +45,18 @@ function merge_configs() {
     if [[ -n "$OUTPUT" ]]; then
         log_fail "failed to merge kernel configs, reason: $OUTPUT"
     fi
+
+    # Azure Gen2 needs hv_storvsc/hv_netvsc. Docker layer cache can skip this
+    # stage while still rebuilding grub/rootfs — fail here rather than ship a virtio-only kernel.
+    if ! grep -qx 'CONFIG_HYPERV=y' "$KCONFIG_CONFIG"; then
+        log_fail "CONFIG_HYPERV=y missing after merge (see x86_64/hyperv.conf). Rebuild kernel without cache."
+    fi
+    if ! grep -qx 'CONFIG_HYPERV_STORAGE=y' "$KCONFIG_CONFIG"; then
+        log_fail "CONFIG_HYPERV_STORAGE=y missing after merge (needs CONFIG_SCSI_FC_ATTRS=y)."
+    fi
+    if ! grep -qx 'CONFIG_HYPERV_NET=y' "$KCONFIG_CONFIG"; then
+        log_fail "CONFIG_HYPERV_NET=y missing after merge"
+    fi
     popd;
 }
 
