@@ -17,11 +17,21 @@ on:
         options:
           - debug
           - release
+      upload-to-storj:
+        required: false
+        type: boolean
+        default: true
+        description: Upload image artifacts to Storj
       upload-to-gcp:
         required: false
         type: boolean
         default: false
         description: Upload image to GCP bucket and create compute image
+      upload-to-azurecr:
+        required: false
+        type: boolean
+        default: false
+        description: Push image artifacts to Azure Container Registry
 jobs:
   build-asset:
     runs-on: ${{ inputs.runs-on }}
@@ -96,6 +106,7 @@ jobs:
               --build-arg "S3_BUCKET=$S3_BUCKET";
 
       - name: Upload files to Storj
+        if: ${{ inputs.upload-to-storj }}
         working-directory: out
         run: |
           function upload_file() {
@@ -104,7 +115,7 @@ jobs:
                   echo "File $FILE not found";
                   exit 1;
               fi
-              echo "Uploading $file to ${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/"
+              echo "Uploading $FILE to ${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/"
               rclone copy \
                   --multi-thread-streams 8 \
                   --s3-provider Storj \
@@ -176,6 +187,46 @@ jobs:
 
           echo "==> Cleaning up temporary GCS object"
           gsutil rm "${SOURCE_URI}"
+
+      - name: Push image to Azure Container Registry
+        if: ${{ inputs.upload-to-azurecr }}
+        working-directory: out
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+          AZURE_CONTAINER_REGISTRY: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
+        run: |
+          if [[ -z "${AZURE_CONTAINER_REGISTRY}" ]]; then
+            echo "Secret AZURE_CONTAINER_REGISTRY is not set" >&2
+            exit 1
+          fi
+          if [[ -z "${AZURE_CREDENTIALS}" ]]; then
+            echo "Secret AZURE_CREDENTIALS is not set" >&2
+            exit 1
+          fi
+
+          ACR_NAME="${AZURE_CONTAINER_REGISTRY%.azurecr.io}"
+          LOGIN_SERVER="${ACR_NAME}.azurecr.io"
+          IMAGE="${LOGIN_SERVER}/sp-vm:${SP_VM_IMAGE_VERSION}"
+
+          CLIENT_ID="$(echo "${AZURE_CREDENTIALS}" | jq -r '.clientId // .appId // empty')"
+          CLIENT_SECRET="$(echo "${AZURE_CREDENTIALS}" | jq -r '.clientSecret // .password // empty')"
+          if [[ -z "${CLIENT_ID}" || -z "${CLIENT_SECRET}" ]]; then
+            echo "AZURE_CREDENTIALS must contain clientId and clientSecret" >&2
+            exit 1
+          fi
+
+          echo "==> Logging in to ACR ${LOGIN_SERVER}"
+          echo "${CLIENT_SECRET}" | docker login "${LOGIN_SERVER}" \
+            --username "${CLIENT_ID}" \
+            --password-stdin
+
+          echo "==> Building OCI image ${IMAGE} from local artifacts"
+          printf '%s\n' 'FROM scratch' 'COPY . /' > Dockerfile.acr
+          docker build -t "${IMAGE}" -f Dockerfile.acr .
+          rm -f Dockerfile.acr
+
+          echo "==> Pushing ${IMAGE}"
+          docker push "${IMAGE}"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
