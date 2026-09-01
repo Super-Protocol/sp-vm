@@ -29,7 +29,10 @@ function copy_previous_arfifacts() {
 function build_kernel() {
     pushd "$KERNEL_SRC";
     if ! grep -qx 'CONFIG_HYPERV=y' .config; then
-        log_fail "CONFIG_HYPERV=y missing in kernel .config before compile"
+        log_fail "CONFIG_HYPERV must be builtin (=y) before compile, got: $(grep '^CONFIG_HYPERV' .config || echo unset)"
+    fi
+    if ! grep -qx 'CONFIG_HYPERV_STORAGE=y' .config; then
+        log_fail "CONFIG_HYPERV_STORAGE must be builtin (=y), got: $(grep '^CONFIG_HYPERV_STORAGE' .config || echo unset)"
     fi
     log_info "staring building kernel";
     make \

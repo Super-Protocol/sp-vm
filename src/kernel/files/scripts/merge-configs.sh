@@ -59,14 +59,28 @@ function merge_configs() {
         --enable MICROSOFT_MANA
     make "ARCH=$ARCH" olddefconfig
 
+    # Tristate + CONFIG_MODULES=y often leaves these as =m. Initramfs is built
+    # before kernel modules, so =m means Azure sees no disks/NIC (panic in /init).
+    ./scripts/config --file "$KCONFIG_CONFIG" \
+        --set-val SCSI_FC_ATTRS y \
+        --set-val HYPERV y \
+        --set-val HYPERV_STORAGE y \
+        --set-val HYPERV_NET y \
+        --set-val PCI_HYPERV y
+    make "ARCH=$ARCH" olddefconfig
+    ./scripts/config --file "$KCONFIG_CONFIG" \
+        --set-val HYPERV y \
+        --set-val HYPERV_STORAGE y \
+        --set-val HYPERV_NET y
+
     if ! grep -qx 'CONFIG_HYPERV=y' "$KCONFIG_CONFIG"; then
-        log_fail "CONFIG_HYPERV=y missing after merge+olddefconfig (see x86_64/hyperv.conf)"
+        log_fail "CONFIG_HYPERV must be builtin (=y), got: $(grep '^CONFIG_HYPERV' "$KCONFIG_CONFIG" || echo unset)"
     fi
     if ! grep -qx 'CONFIG_HYPERV_STORAGE=y' "$KCONFIG_CONFIG"; then
-        log_fail "CONFIG_HYPERV_STORAGE=y missing after merge (needs CONFIG_SCSI_FC_ATTRS=y)"
+        log_fail "CONFIG_HYPERV_STORAGE must be builtin (=y), got: $(grep '^CONFIG_HYPERV_STORAGE' "$KCONFIG_CONFIG" || echo unset)"
     fi
     if ! grep -qx 'CONFIG_HYPERV_NET=y' "$KCONFIG_CONFIG"; then
-        log_fail "CONFIG_HYPERV_NET=y missing after merge"
+        log_fail "CONFIG_HYPERV_NET must be builtin (=y), got: $(grep '^CONFIG_HYPERV_NET' "$KCONFIG_CONFIG" || echo unset)"
     fi
     popd;
 }
