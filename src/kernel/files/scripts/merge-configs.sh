@@ -46,13 +46,24 @@ function merge_configs() {
         log_fail "failed to merge kernel configs, reason: $OUTPUT"
     fi
 
-    # Azure Gen2 needs hv_storvsc/hv_netvsc. Docker layer cache can skip this
-    # stage while still rebuilding grub/rootfs — fail here rather than ship a virtio-only kernel.
+    # allnoconfig often drops CONFIG_HYPERV=y even when the fragment requests it.
+    # Re-enable after merge, then olddefconfig to pull in dependencies (SCSI_FC_ATTRS, etc.).
+    ./scripts/config --file "$KCONFIG_CONFIG" \
+        --enable SCSI_FC_ATTRS \
+        --enable CONNECTOR \
+        --enable HYPERV \
+        --enable HYPERV_STORAGE \
+        --enable HYPERV_NET \
+        --enable PCI_HYPERV \
+        --enable NET_VENDOR_MICROSOFT \
+        --enable MICROSOFT_MANA
+    make "ARCH=$ARCH" olddefconfig
+
     if ! grep -qx 'CONFIG_HYPERV=y' "$KCONFIG_CONFIG"; then
-        log_fail "CONFIG_HYPERV=y missing after merge (see x86_64/hyperv.conf). Rebuild kernel without cache."
+        log_fail "CONFIG_HYPERV=y missing after merge+olddefconfig (see x86_64/hyperv.conf)"
     fi
     if ! grep -qx 'CONFIG_HYPERV_STORAGE=y' "$KCONFIG_CONFIG"; then
-        log_fail "CONFIG_HYPERV_STORAGE=y missing after merge (needs CONFIG_SCSI_FC_ATTRS=y)."
+        log_fail "CONFIG_HYPERV_STORAGE=y missing after merge (needs CONFIG_SCSI_FC_ATTRS=y)"
     fi
     if ! grep -qx 'CONFIG_HYPERV_NET=y' "$KCONFIG_CONFIG"; then
         log_fail "CONFIG_HYPERV_NET=y missing after merge"

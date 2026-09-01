@@ -28,11 +28,17 @@ function copy_previous_arfifacts() {
 
 function build_kernel() {
     pushd "$KERNEL_SRC";
+    if ! grep -qx 'CONFIG_HYPERV=y' .config; then
+        log_fail "CONFIG_HYPERV=y missing in kernel .config before compile"
+    fi
     log_info "staring building kernel";
     make \
         -j "$(nproc)" \
         "ARCH=$ARCH" \
         || log_fail "failed to build kernel";
+    if ! grep -qx 'CONFIG_HYPERV=y' .config; then
+        log_fail "CONFIG_HYPERV=y dropped from .config during compile"
+    fi
     popd;
 }
 
