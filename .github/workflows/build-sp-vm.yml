@@ -32,11 +32,6 @@ on:
         type: boolean
         default: false
         description: Push image artifacts to Azure Container Registry
-      no-cache-kernel:
-        required: false
-        type: boolean
-        default: false
-        description: Rebuild kernel_builder (ignore Buildx cache). Needed after kernel fragment changes on a persistent self-hosted builder.
 jobs:
   build-asset:
     runs-on: ${{ inputs.runs-on }}
@@ -100,21 +95,18 @@ jobs:
 
       - name: Build sp-vm image
         run: |
-          extra=()
-          if [[ "${{ inputs.no-cache-kernel }}" == "true" ]]; then
-            extra+=(--no-cache-filter kernel_builder)
-            echo "kernel_builder cache disabled"
-          fi
+          # Persistent self-hosted Buildx otherwise reuses kernel_builder and can
+          # ship a virtio-only kernel (CONFIG_HYPERV unset) after fragment changes.
           docker buildx build \
               -t sp-vm \
               --allow security.insecure \
+              --no-cache-filter kernel_builder \
               src \
               --output type=local,dest=./out \
               --build-context swarm_db_schema=./swarm-db-schema \
               --build-arg "SP_VM_IMAGE_VERSION=$SP_VM_IMAGE_VERSION" \
               --build-arg "SP_VM_BUILD_TYPE=${{ inputs.build-type }}" \
-              --build-arg "S3_BUCKET=$S3_BUCKET" \
-              "${extra[@]}";
+              --build-arg "S3_BUCKET=$S3_BUCKET";
 
       - name: Upload files to Storj
         if: ${{ inputs.upload-to-storj }}
