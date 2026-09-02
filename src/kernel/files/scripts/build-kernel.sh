@@ -50,14 +50,23 @@ function build_kernel() {
     if ! scripts/extract-ikconfig arch/"$ARCH"/boot/bzImage >"$ikcfg"; then
         log_fail "extract-ikconfig failed (need CONFIG_IKCONFIG=y in bzImage)"
     fi
-    for sym in CONFIG_HYPERV CONFIG_HYPERV_STORAGE CONFIG_HYPERV_NET CONFIG_SCSI_FC_ATTRS; do
+    echo "==== bzImage IKCONFIG Hyper-V ===="
+    grep -E 'CONFIG_HYPERV|CONFIG_SCSI_FC_ATTRS' "$ikcfg" || true
+    for sym in CONFIG_HYPERV CONFIG_HYPERV_STORAGE CONFIG_HYPERV_NET; do
         if ! grep -qx "${sym}=y" "$ikcfg"; then
-            grep -E 'HYPERV|SCSI_FC_ATTRS' "$ikcfg" || true
             rm -f "$ikcfg"
             log_fail "${sym}=y missing from bzImage IKCONFIG"
         fi
     done
     rm -f "$ikcfg"
+    if ! grep -q 'hv_acpi_init' System.map; then
+        log_fail "hv_acpi_init missing from System.map (CONFIG_HYPERV not linked into vmlinux)"
+    fi
+    if ! grep -q 'hv_storvsc' System.map; then
+        log_fail "hv_storvsc missing from System.map (CONFIG_HYPERV_STORAGE not linked)"
+    fi
+    echo "==== System.map Hyper-V symbols ===="
+    grep -E 'hv_acpi_init|hv_storvsc|hv_netvsc|netvsc_probe' System.map || true
     popd;
 }
 

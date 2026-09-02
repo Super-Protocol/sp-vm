@@ -38,7 +38,7 @@ function merge_configs() {
     log_info "staring config merge";
 
     OUTPUT=$("$BUILDROOT/files/scripts/merge_config.sh" \
-        -r -n $CONFIGS_FRAGMENTS \
+        -r -n -y $CONFIGS_FRAGMENTS \
         | grep 'not in final' \
         | grep -v -f "$CONFIGS_CHECK_SKIPLIST" || true);
 
@@ -48,18 +48,18 @@ function merge_configs() {
 
     # allnoconfig + CONFIG_MODULES=y often leaves Hyper-V as =m. Initramfs is
     # packed before modules_install, so =m means Azure never sees disks/NIC.
-    # Linux 6.12: HYPERV_STORAGE cannot be =y if SCSI_FC_ATTRS=m
-    # (depends on m || SCSI_FC_ATTRS != m). Do not olddefconfig after the
-    # last --set-val: it turns STORAGE back into =m.
+    # Linux 6.12: HYPERV_STORAGE cannot be builtin if SCSI_FC_ATTRS=m
+    # (depends on m || SCSI_FC_ATTRS != m). Disable unused FC attrs so
+    # olddefconfig is allowed to keep STORAGE=y.
     ./scripts/config --file "$KCONFIG_CONFIG" \
         --enable HYPERVISOR_GUEST \
         --enable X86_LOCAL_APIC \
         --enable ACPI \
         --enable SCSI \
         --enable SCSI_LOWLEVEL \
-        --enable SCSI_FC_ATTRS \
         --enable CONNECTOR \
         --enable NLS \
+        --disable SCSI_FC_ATTRS \
         --enable HYPERV \
         --enable HYPERV_STORAGE \
         --enable HYPERV_NET \
@@ -68,11 +68,17 @@ function merge_configs() {
         --enable MICROSOFT_MANA
     make "ARCH=$ARCH" olddefconfig
     ./scripts/config --file "$KCONFIG_CONFIG" \
-        --set-val SCSI_FC_ATTRS y \
+        --disable SCSI_FC_ATTRS \
         --set-val HYPERV y \
         --set-val HYPERV_STORAGE y \
         --set-val HYPERV_NET y \
         --set-val PCI_HYPERV y
+    make "ARCH=$ARCH" olddefconfig
+    ./scripts/config --file "$KCONFIG_CONFIG" \
+        --disable SCSI_FC_ATTRS \
+        --set-val HYPERV y \
+        --set-val HYPERV_STORAGE y \
+        --set-val HYPERV_NET y
 
     if ! grep -qx 'CONFIG_HYPERV=y' "$KCONFIG_CONFIG"; then
         log_fail "CONFIG_HYPERV must be builtin (=y), got: $(grep '^CONFIG_HYPERV' "$KCONFIG_CONFIG" || echo unset)"
