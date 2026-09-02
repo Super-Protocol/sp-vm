@@ -192,6 +192,9 @@ RUN gen_init_cpio -t "$SOURCE_DATE_EPOCH" /initramfs-root/initramfs.list \
 FROM kernel_source AS kernel_builder
 ARG KERNEL_VERSION=6.12.13
 ARG SOURCE_DATE_EPOCH=1783987200
+# Invalidate BuildKit cache when the image workflow rebuilds Hyper-V bits.
+ARG KERNEL_CACHEBUST=0
+RUN echo "KERNEL_CACHEBUST=${KERNEL_CACHEBUST}"
 ENV KBUILD_BUILD_HOST=sp-vm-builder \
     KBUILD_BUILD_TIMESTAMP="Tue Jul 14 00:00:00 UTC 2026" \
     KBUILD_BUILD_USER=sp-vm \

@@ -93,17 +93,26 @@ jobs:
               --name insecure-builder \
               --buildkitd-flags '--allow-insecure-entitlement security.insecure';
 
+      - name: Build kernel and firmware
+        run: |
+          docker buildx build \
+              --file src/Dockerfile.low-level \
+              --target low_level_export \
+              --no-cache-filter kernel_builder,initramfs_builder \
+              --build-arg "KERNEL_CACHEBUST=${{ github.run_id }}" \
+              --output type=local,dest=./low-level-out \
+              src
+          (cd low-level-out && sha256sum --check SHA256SUMS)
+
       - name: Build sp-vm image
         run: |
-          # Persistent self-hosted Buildx otherwise reuses kernel_builder and can
-          # ship a virtio-only kernel (CONFIG_HYPERV unset) after fragment changes.
           docker buildx build \
               -t sp-vm \
               --allow security.insecure \
-              --no-cache-filter kernel_builder,initramfs_builder \
+              --build-context low_level_assets="$(pwd)/low-level-out" \
+              --build-context swarm_db_schema=./swarm-db-schema \
               src \
               --output type=local,dest=./out \
-              --build-context swarm_db_schema=./swarm-db-schema \
               --build-arg "SP_VM_IMAGE_VERSION=$SP_VM_IMAGE_VERSION" \
               --build-arg "SP_VM_BUILD_TYPE=${{ inputs.build-type }}" \
               --build-arg "S3_BUCKET=$S3_BUCKET";
