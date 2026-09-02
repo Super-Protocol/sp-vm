@@ -42,6 +42,22 @@ function build_kernel() {
     if ! grep -qx 'CONFIG_HYPERV=y' .config; then
         log_fail "CONFIG_HYPERV=y dropped from .config during compile"
     fi
+    if ! grep -qx 'CONFIG_HYPERV_STORAGE=y' .config; then
+        log_fail "CONFIG_HYPERV_STORAGE=y dropped from .config during compile"
+    fi
+    # .config can still lie (invalid y rewritten only in auto.conf). Check bzImage.
+    ikcfg="$(mktemp)"
+    if ! scripts/extract-ikconfig arch/"$ARCH"/boot/bzImage >"$ikcfg"; then
+        log_fail "extract-ikconfig failed (need CONFIG_IKCONFIG=y in bzImage)"
+    fi
+    for sym in CONFIG_HYPERV CONFIG_HYPERV_STORAGE CONFIG_HYPERV_NET CONFIG_SCSI_FC_ATTRS; do
+        if ! grep -qx "${sym}=y" "$ikcfg"; then
+            grep -E 'HYPERV|SCSI_FC_ATTRS' "$ikcfg" || true
+            rm -f "$ikcfg"
+            log_fail "${sym}=y missing from bzImage IKCONFIG"
+        fi
+    done
+    rm -f "$ikcfg"
     popd;
 }
 

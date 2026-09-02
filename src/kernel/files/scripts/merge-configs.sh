@@ -46,11 +46,20 @@ function merge_configs() {
         log_fail "failed to merge kernel configs, reason: $OUTPUT"
     fi
 
-    # allnoconfig often drops CONFIG_HYPERV=y even when the fragment requests it.
-    # Re-enable after merge, then olddefconfig to pull in dependencies (SCSI_FC_ATTRS, etc.).
+    # allnoconfig + CONFIG_MODULES=y often leaves Hyper-V as =m. Initramfs is
+    # packed before modules_install, so =m means Azure never sees disks/NIC.
+    # Linux 6.12: HYPERV_STORAGE cannot be =y if SCSI_FC_ATTRS=m
+    # (depends on m || SCSI_FC_ATTRS != m). Do not olddefconfig after the
+    # last --set-val: it turns STORAGE back into =m.
     ./scripts/config --file "$KCONFIG_CONFIG" \
+        --enable HYPERVISOR_GUEST \
+        --enable X86_LOCAL_APIC \
+        --enable ACPI \
+        --enable SCSI \
+        --enable SCSI_LOWLEVEL \
         --enable SCSI_FC_ATTRS \
         --enable CONNECTOR \
+        --enable NLS \
         --enable HYPERV \
         --enable HYPERV_STORAGE \
         --enable HYPERV_NET \
@@ -58,20 +67,12 @@ function merge_configs() {
         --enable NET_VENDOR_MICROSOFT \
         --enable MICROSOFT_MANA
     make "ARCH=$ARCH" olddefconfig
-
-    # Tristate + CONFIG_MODULES=y often leaves these as =m. Initramfs is built
-    # before kernel modules, so =m means Azure sees no disks/NIC (panic in /init).
     ./scripts/config --file "$KCONFIG_CONFIG" \
         --set-val SCSI_FC_ATTRS y \
         --set-val HYPERV y \
         --set-val HYPERV_STORAGE y \
         --set-val HYPERV_NET y \
         --set-val PCI_HYPERV y
-    make "ARCH=$ARCH" olddefconfig
-    ./scripts/config --file "$KCONFIG_CONFIG" \
-        --set-val HYPERV y \
-        --set-val HYPERV_STORAGE y \
-        --set-val HYPERV_NET y
 
     if ! grep -qx 'CONFIG_HYPERV=y' "$KCONFIG_CONFIG"; then
         log_fail "CONFIG_HYPERV must be builtin (=y), got: $(grep '^CONFIG_HYPERV' "$KCONFIG_CONFIG" || echo unset)"

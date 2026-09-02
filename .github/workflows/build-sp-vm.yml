@@ -100,7 +100,7 @@ jobs:
           docker buildx build \
               -t sp-vm \
               --allow security.insecure \
-              --no-cache-filter kernel_builder \
+              --no-cache-filter kernel_builder,initramfs_builder \
               src \
               --output type=local,dest=./out \
               --build-context swarm_db_schema=./swarm-db-schema \
