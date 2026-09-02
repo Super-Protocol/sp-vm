@@ -45,13 +45,25 @@ function install_doca_repository() {
 }
 
 function install_nvidia_driver() {
-    log_info "installing NVIDIA R590 driver, DOCA-OFED, NVLink 5 stack, and container toolkit for rke2";
+    log_info "installing NVIDIA R590 driver, NVLink 5 stack, RDMA userspace, and container toolkit for rke2";
     chroot \
         "$OUTPUTDIR" \
         /bin/bash \
         -c '
-            set -e;
+            set -eE;
             export DEBIAN_FRONTEND=noninteractive;
+
+            dump_dkms_logs() {
+                echo "===== DKMS build logs =====" >&2;
+                find /var/lib/dkms \
+                    -path "*/build/make.log" \
+                    -type f \
+                    -print \
+                    -exec tail -n 250 {} \; \
+                    >&2 \
+                    || true;
+            }
+            trap dump_dkms_logs ERR;
 
             apt-get update;
             apt-get install -y --no-install-recommends nvidia-driver-pinning-590.48.01;
@@ -59,13 +71,20 @@ function install_nvidia_driver() {
             # Starting with R590, NVIDIA driver package names no longer carry
             # the branch suffix. nvlink5 installs the matching Fabric Manager,
             # NVLSM, NVSDM, NSCQ, IMEX, and MFT components required by B200.
-            # DOCA-OFED provides the matching RDMA stack and the ucx package
-            # required by collectx-bringup, a hard dependency of nvlink5.
+            # The guest kernel provides its in-tree mlx5 and InfiniBand
+            # modules. Do not install the doca-ofed meta-package here: it
+            # replaces them with a complete MOFED DKMS stack and also pulls
+            # unrelated xpmem/iSER/SRP modules. The userspace packages below
+            # are sufficient for NVLSM and provide ucx, which is a hard
+            # dependency of collectx-bringup from nvlink5.
             apt-get install -y --no-install-recommends \
-                doca-ofed \
+                infiniband-diags \
+                libibumad3 \
                 nvidia-open \
                 nvlink5 \
-                nvidia-container-toolkit;
+                nvidia-container-toolkit \
+                rdma-core \
+                ucx;
         ';
 }
 
