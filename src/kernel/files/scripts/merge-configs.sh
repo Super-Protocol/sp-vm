@@ -57,6 +57,10 @@ function merge_configs() {
         --enable ACPI \
         --enable SCSI \
         --enable SCSI_LOWLEVEL \
+        --enable NET \
+        --enable INET \
+        --enable IP_PNP \
+        --enable IP_PNP_DHCP \
         --enable CONNECTOR \
         --enable NLS \
         --disable SCSI_FC_ATTRS \
@@ -72,13 +76,16 @@ function merge_configs() {
         --set-val HYPERV y \
         --set-val HYPERV_STORAGE y \
         --set-val HYPERV_NET y \
-        --set-val PCI_HYPERV y
+        --set-val PCI_HYPERV y \
+        --enable IP_PNP \
+        --enable IP_PNP_DHCP
     make "ARCH=$ARCH" olddefconfig
     ./scripts/config --file "$KCONFIG_CONFIG" \
         --disable SCSI_FC_ATTRS \
         --set-val HYPERV y \
         --set-val HYPERV_STORAGE y \
-        --set-val HYPERV_NET y
+        --set-val HYPERV_NET y \
+        --enable IP_PNP_DHCP
 
     if ! grep -qx 'CONFIG_HYPERV=y' "$KCONFIG_CONFIG"; then
         log_fail "CONFIG_HYPERV must be builtin (=y), got: $(grep '^CONFIG_HYPERV' "$KCONFIG_CONFIG" || echo unset)"
