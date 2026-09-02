@@ -27,11 +27,25 @@ function install_cuda_keyring() {
 }
 
 function install_nvidia_driver() {
-    log_info "installing nvidia driver and container toolkit for rke2";
+    log_info "installing NVIDIA R590 driver, NVLink 5 stack, and container toolkit for rke2";
     chroot \
         "$OUTPUTDIR" \
         /bin/bash \
-        -c 'DEBIAN_FRONTEND=noninteractive apt update && apt install -y --no-install-recommends nvidia-driver-590-open nvidia-container-toolkit';
+        -c '
+            set -e;
+            export DEBIAN_FRONTEND=noninteractive;
+
+            apt-get update;
+            apt-get install -y --no-install-recommends nvidia-driver-pinning-590.48.01;
+
+            # Starting with R590, NVIDIA driver package names no longer carry
+            # the branch suffix. nvlink5 installs the matching Fabric Manager,
+            # NVLSM, NVSDM, NSCQ, IMEX, and MFT components required by B200.
+            apt-get install -y --no-install-recommends \
+                nvidia-open \
+                nvlink5 \
+                nvidia-container-toolkit;
+        ';
 }
 
 function create_containerd_symlink() {
