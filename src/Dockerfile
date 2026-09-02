@@ -153,6 +153,31 @@ RUN if [ "$SP_VM_BUILD_TYPE" = "release" ]; then \
         sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"; \
     fi
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-fabricmanager-condition \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition
+RUN chmod 0755 ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition
+RUN mkdir -p ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d
+ADD rootfs/files/configs/etc/systemd/system/nvidia-fabricmanager.service.d/10-sp-nvlink-condition.conf \
+    ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d/10-sp-nvlink-condition.conf
+RUN set -eu; \
+    test -x ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition; \
+    test "$(cat ${OUTPUTDIR}/etc/modules-load.d/ib_umad.conf)" = ib_umad; \
+    test -x ${OUTPUTDIR}/usr/bin/lspci; \
+    grep -qx 'ExecCondition=/usr/local/bin/sp-nvidia-fabricmanager-condition' \
+        ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d/10-sp-nvlink-condition.conf; \
+    condition_test_root=/tmp/sp-fabricmanager-condition-test; \
+    mkdir -p "$condition_test_root/pci/0000:ab:00.0" "$condition_test_root/dev"; \
+    printf '%s\n' 0x15b3 > "$condition_test_root/pci/0000:ab:00.0/vendor"; \
+    printf '%s\n' 0x1021 > "$condition_test_root/pci/0000:ab:00.0/device"; \
+    : > "$condition_test_root/pci/0000:ab:00.0/vpd"; \
+    ! SP_SYSFS_PCI_DEVICES_DIR="$condition_test_root/pci" \
+        SP_DEVICE_ROOT="$condition_test_root/dev" \
+        ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition; \
+    printf '%s\n' SW_MNG > "$condition_test_root/pci/0000:ab:00.0/vpd"; \
+    SP_SYSFS_PCI_DEVICES_DIR="$condition_test_root/pci" \
+        SP_DEVICE_ROOT="$condition_test_root/dev" \
+        ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition; \
+    rm -rf "$condition_test_root"
 
 RUN printf 'sp-vm\n' > "${OUTPUTDIR}/etc/hostname"
 RUN mkdir -p "${OUTPUTDIR}/etc/rancher/rke2"

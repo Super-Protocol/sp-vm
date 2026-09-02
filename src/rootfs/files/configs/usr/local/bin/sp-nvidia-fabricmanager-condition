@@ -1,0 +1,46 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly pci_devices_dir="${SP_SYSFS_PCI_DEVICES_DIR:-/sys/bus/pci/devices}"
+readonly device_root="${SP_DEVICE_ROOT:-/dev}"
+
+# HGX B200/B300 (NVL5+) exposes the NVLink-management ports as ConnectX-7
+# functions. SW_MNG in PCI VPD distinguishes them from ordinary CX7 NICs and
+# does not require the NVIDIA driver to be loaded.
+for device_dir in "$pci_devices_dir"/*; do
+    [[ -d "$device_dir" ]] || continue
+    [[ -r "$device_dir/vendor" && -r "$device_dir/device" ]] || continue
+    [[ "$(<"$device_dir/vendor")" == "0x15b3" ]] || continue
+    [[ "$(<"$device_dir/device")" == "0x1021" ]] || continue
+    [[ -r "$device_dir/vpd" ]] || continue
+
+    if grep -aq 'SW_MNG' "$device_dir/vpd"; then
+        echo "NVL5+ NVLink-management CX7 detected at ${device_dir##*/}";
+        exit 0
+    fi
+done
+
+# Preserve support for pre-NVL5 HGX systems. NVSwitch devices use NVIDIA's
+# vendor ID and the PCI bridge class; the device node check covers systems on
+# which the nvidia-nvswitch driver has already initialized.
+for device_dir in "$pci_devices_dir"/*; do
+    [[ -d "$device_dir" ]] || continue
+    [[ -r "$device_dir/vendor" && -r "$device_dir/class" ]] || continue
+    [[ "$(<"$device_dir/vendor")" == "0x10de" ]] || continue
+
+    case "$(<"$device_dir/class")" in
+        0x0680*)
+            echo "Legacy NVIDIA NVSwitch detected at ${device_dir##*/}";
+            exit 0
+            ;;
+    esac
+done
+
+if compgen -G "$device_root/nvidia-nvswitch[0-9]*" > /dev/null; then
+    echo "Legacy NVIDIA NVSwitch device node detected";
+    exit 0
+fi
+
+echo "No NVLink fabric-management hardware detected; skipping Fabric Manager";
+exit 1

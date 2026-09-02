@@ -83,9 +83,16 @@ function install_nvidia_driver() {
                 nvidia-open \
                 nvlink5 \
                 nvidia-container-toolkit \
+                pciutils \
                 rdma-core \
                 ucx;
         ';
+
+    # NVLSM communicates with the NVLink-management CX7 ports through UMAD.
+    # Loading ib_umad is harmless on systems without InfiniBand hardware and
+    # makes the generic image ready before Fabric Manager's boot-time probe.
+    install -d "$OUTPUTDIR/etc/modules-load.d";
+    printf '%s\n' 'ib_umad' > "$OUTPUTDIR/etc/modules-load.d/ib_umad.conf";
 }
 
 function create_containerd_symlink() {
