@@ -38,7 +38,7 @@ function merge_configs() {
     log_info "staring config merge";
 
     OUTPUT=$("$BUILDROOT/files/scripts/merge_config.sh" \
-        -r -n -y $CONFIGS_FRAGMENTS \
+        -r -n $CONFIGS_FRAGMENTS \
         | grep 'not in final' \
         | grep -v -f "$CONFIGS_CHECK_SKIPLIST" || true);
 
