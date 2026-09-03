@@ -26,5 +26,3 @@ slink /sbin/umount /sbin/busybox 0755 0 0
 slink /sbin/cat /sbin/busybox 0755 0 0
 slink /bin/sleep /sbin/busybox 0755 0 0
 slink /bin/grep /sbin/busybox 0755 0 0
-slink /bin/ls /sbin/busybox 0755 0 0
-slink /bin/tr /sbin/busybox 0755 0 0

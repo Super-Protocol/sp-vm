@@ -28,32 +28,18 @@ function copy_previous_arfifacts() {
 
 function build_kernel() {
     pushd "$KERNEL_SRC";
-    if ! grep -qx 'CONFIG_HYPERV=y' .config; then
-        log_fail "CONFIG_HYPERV must be builtin (=y) before compile, got: $(grep '^CONFIG_HYPERV' .config || echo unset)"
-    fi
-    if ! grep -qx 'CONFIG_HYPERV_STORAGE=y' .config; then
-        log_fail "CONFIG_HYPERV_STORAGE must be builtin (=y), got: $(grep '^CONFIG_HYPERV_STORAGE' .config || echo unset)"
-    fi
     log_info "staring building kernel";
     make \
         -j "$(nproc)" \
         "ARCH=$ARCH" \
         || log_fail "failed to build kernel";
-    if ! grep -qx 'CONFIG_HYPERV=y' .config; then
-        log_fail "CONFIG_HYPERV=y dropped from .config during compile"
-    fi
-    if ! grep -qx 'CONFIG_HYPERV_STORAGE=y' .config; then
-        log_fail "CONFIG_HYPERV_STORAGE=y dropped from .config during compile"
-    fi
-    # .config can still lie (invalid y rewritten only in auto.conf). Check bzImage.
     ikcfg="$(mktemp)"
     if ! scripts/extract-ikconfig arch/"$ARCH"/boot/bzImage >"$ikcfg"; then
         log_fail "extract-ikconfig failed (need CONFIG_IKCONFIG=y in bzImage)"
     fi
-    echo "==== bzImage IKCONFIG Hyper-V ===="
-    grep -E 'CONFIG_HYPERV|CONFIG_SCSI_FC_ATTRS' "$ikcfg" || true
     for sym in CONFIG_HYPERV CONFIG_HYPERV_STORAGE CONFIG_HYPERV_NET; do
         if ! grep -qx "${sym}=y" "$ikcfg"; then
+            grep -E 'HYPERV|SCSI_FC_ATTRS' "$ikcfg" || true
             rm -f "$ikcfg"
             log_fail "${sym}=y missing from bzImage IKCONFIG"
         fi
@@ -65,8 +51,6 @@ function build_kernel() {
     if ! grep -q 'hv_storvsc' System.map; then
         log_fail "hv_storvsc missing from System.map (CONFIG_HYPERV_STORAGE not linked)"
     fi
-    echo "==== System.map Hyper-V symbols ===="
-    grep -E 'hv_acpi_init|hv_storvsc|hv_netvsc|netvsc_probe' System.map || true
     popd;
 }
 

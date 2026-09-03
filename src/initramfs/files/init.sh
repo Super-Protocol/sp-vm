@@ -27,14 +27,10 @@ get_option() {
     [ "${value}" != "" ] && echo "${value}"
 }
 
-# GRUB uses root=LABEL=rootfs (filesystem label). GPT name is PARTLABEL=rootfs.
+# device can be specified by partition and fs labels, but we will use only partition label
 get_device() {
-    LABEL_NAME="${1#*=}";
-    dev="$(blkid -t PARTLABEL="$LABEL_NAME" --output device || true)"
-    if [ -z "$dev" ]; then
-        dev="$(blkid -L "$LABEL_NAME" --output device || true)"
-    fi
-    echo "$dev"
+    LABEL_NAME="${1#*=}"; # 'LABEL=rootfs' > 'rootfs
+    blkid -t PARTLABEL="$LABEL_NAME" --output device || echo;
 }
 
 path_basename() {
@@ -209,13 +205,6 @@ fi
 if [ ! -e "${root_device}" ]; then
     log_block_device_inventory
     log_partition_inventory
-    log_disk_by_id_inventory
-    if [ -r /proc/config.gz ]; then
-        "$BUSYBOX" gzip -dc /proc/config.gz 2>/dev/null | "$BUSYBOX" grep HYPERV | while IFS= read -r line; do
-            log_info "kconfig ${line}"
-        done
-    fi
-    log_info "vmbus devices: $("$BUSYBOX" ls /sys/bus/vmbus/devices 2>/dev/null | "$BUSYBOX" tr '\n' ' ')"
     log_fail "No root device ${root_device} found";
 fi
 

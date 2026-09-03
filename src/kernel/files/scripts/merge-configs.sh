@@ -46,38 +46,13 @@ function merge_configs() {
         log_fail "failed to merge kernel configs, reason: $OUTPUT"
     fi
 
-    # allnoconfig + CONFIG_MODULES=y often leaves Hyper-V as =m. Initramfs is
-    # packed before modules_install, so =m means Azure never sees disks/NIC.
-    # Linux 6.12: HYPERV_STORAGE cannot be builtin if SCSI_FC_ATTRS=m
-    # (depends on m || SCSI_FC_ATTRS != m). Disable unused FC attrs so
-    # olddefconfig is allowed to keep STORAGE=y.
-    ./scripts/config --file "$KCONFIG_CONFIG" \
-        --enable HYPERVISOR_GUEST \
-        --enable X86_LOCAL_APIC \
-        --enable ACPI \
-        --enable SCSI \
-        --enable SCSI_LOWLEVEL \
-        --enable NET \
-        --enable INET \
-        --enable IP_PNP \
-        --enable IP_PNP_DHCP \
-        --enable CONNECTOR \
-        --enable NLS \
-        --disable SCSI_FC_ATTRS \
-        --enable HYPERV \
-        --enable HYPERV_STORAGE \
-        --enable HYPERV_NET \
-        --enable PCI_HYPERV \
-        --enable NET_VENDOR_MICROSOFT \
-        --enable MICROSOFT_MANA
-    make "ARCH=$ARCH" olddefconfig
+    # Linux 6.12: HYPERV_STORAGE cannot be =y while SCSI_FC_ATTRS=m. Force
+    # builtin Hyper-V after merge; do not olddefconfig after the last --set-val.
     ./scripts/config --file "$KCONFIG_CONFIG" \
         --disable SCSI_FC_ATTRS \
         --set-val HYPERV y \
         --set-val HYPERV_STORAGE y \
         --set-val HYPERV_NET y \
-        --set-val PCI_HYPERV y \
-        --enable IP_PNP \
         --enable IP_PNP_DHCP
     make "ARCH=$ARCH" olddefconfig
     ./scripts/config --file "$KCONFIG_CONFIG" \
