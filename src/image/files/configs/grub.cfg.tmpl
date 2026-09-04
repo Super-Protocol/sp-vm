@@ -8,7 +8,7 @@ insmod part_gpt
 search --label bls_boot --set=root
 
 menuentry 'SP Linux Prod' --class ubuntu --class gnu-linux --class gnu --class os {
-    linux ${kernel_path} root=LABEL=rootfs ro ip=dhcp console=ttyS0,115200n8 earlyprintk=ttyS0,115200 clearcpuid=mtrr rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} build=${build}
+    linux ${kernel_path} root=LABEL=rootfs ro clearcpuid=mtrr rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} build=${build}
 }
 
 function boot_sp_debug {
@@ -20,7 +20,7 @@ function boot_sp_debug {
     if [ -z "$argo_sp_env" ]; then
         argo_sp_env="main"
     fi
-    linux ${kernel_path} root=LABEL=rootfs ro ip=dhcp console=ttyS0,115200n8 earlyprintk=ttyS0,115200 clearcpuid=mtrr systemd.log_level=trace systemd.log_target=log rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} argo_branch=${argo_branch} sp-debug=true argo_sp_env=${argo_sp_env} build=${build}
+    linux ${kernel_path} root=LABEL=rootfs ro console=ttyS0,115200n8 earlyprintk=ttyS0,115200 clearcpuid=mtrr systemd.log_level=trace systemd.log_target=log rootfs_verity.scheme=dm-verity rootfs_verity.hash=${root_hash} argo_branch=${argo_branch} sp-debug=true argo_sp_env=${argo_sp_env} build=${build}
 }
 
 menuentry 'SP Linux Debug (argo_branch=main, argo_sp_env=main)' --class ubuntu --class gnu-linux --class gnu --class os {
