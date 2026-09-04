@@ -1,0 +1,65 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly pci_devices_dir="${SP_SYSFS_PCI_DEVICES_DIR:-/sys/bus/pci/devices}"
+readonly infiniband_dir="${SP_SYSFS_INFINIBAND_DIR:-/sys/class/infiniband}"
+readonly timeout="${SP_NVIDIA_CX7_LINK_TIMEOUT:-600}"
+readonly max_delay="${SP_NVIDIA_CX7_LINK_MAX_DELAY:-15}"
+readonly sleep_cmd="${SP_SLEEP:-/bin/sleep}"
+
+management_bdfs=()
+for device_dir in "$pci_devices_dir"/*; do
+    [[ -d "$device_dir" ]] || continue
+    [[ -r "$device_dir/vendor" && -r "$device_dir/device" && -r "$device_dir/vpd" ]] || continue
+    [[ "$(<"$device_dir/vendor")" == "0x15b3" ]] || continue
+    [[ "$(<"$device_dir/device")" == "0x1021" ]] || continue
+    grep -aq 'SW_MNG' "$device_dir/vpd" || continue
+    management_bdfs+=("${device_dir##*/}")
+done
+
+# Legacy NVSwitch systems do not expose NVLink-management CX7 ports.  Their
+# FM precheck remains authoritative, so there is nothing to wait for here.
+if (( ${#management_bdfs[@]} == 0 )); then
+    exit 0
+fi
+
+any_management_port_up() {
+    local bdf ib_device port resolved_bdf cap_mask
+
+    for bdf in "${management_bdfs[@]}"; do
+        for ib_device in "$infiniband_dir"/*; do
+            [[ -e "$ib_device/device" ]] || continue
+            resolved_bdf="$(basename "$(readlink -f "$ib_device/device")")"
+            [[ "$resolved_bdf" == "$bdf" ]] || continue
+
+            for port in "$ib_device"/ports/*; do
+                [[ -r "$port/cap_mask" && -r "$port/phys_state" ]] || continue
+                cap_mask="$(<"$port/cap_mask")"
+                (( (cap_mask & 0x400) == 0 )) || continue
+                if grep -q 'LinkUp' "$port/phys_state"; then
+                    return 0
+                fi
+            done
+        done
+    done
+
+    return 1
+}
+
+deadline=$((SECONDS + timeout))
+delay=2
+while ! any_management_port_up; do
+    if (( SECONDS >= deadline )); then
+        echo "Timed out after ${timeout}s waiting for an NVLink-management CX7 port to reach LinkUp" >&2
+        exit 1
+    fi
+    echo "Waiting ${delay}s for NVLink-management CX7 ports to reach LinkUp" >&2
+    "$sleep_cmd" "$delay"
+    if (( delay < max_delay )); then
+        delay=$((delay * 2))
+        (( delay > max_delay )) && delay="$max_delay"
+    fi
+done
+
+echo "An NVLink-management CX7 port is LinkUp (${#management_bdfs[@]} SW_MNG functions detected)"

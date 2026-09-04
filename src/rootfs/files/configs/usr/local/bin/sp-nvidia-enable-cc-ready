@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly nvidia_smi="${SP_NVIDIA_SMI:-/usr/bin/nvidia-smi}"
+readonly ready_dir="${SP_NVIDIA_READY_DIR:-/run/sp-nvidia}"
+readonly ready_file="$ready_dir/cc-ready"
+readonly max_attempts="${SP_NVIDIA_CC_MAX_ATTEMPTS:-3}"
+readonly sleep_cmd="${SP_SLEEP:-/bin/sleep}"
+
+install -d -m 0755 "$ready_dir"
+rm -f "$ready_file" "$ready_file.tmp"
+
+delay=5
+for ((attempt = 1; attempt <= max_attempts; attempt++)); do
+    if "$nvidia_smi" conf-compute -srs 1; then
+        printf '%s\n' ready > "$ready_file.tmp"
+        mv -f "$ready_file.tmp" "$ready_file"
+        exit 0
+    fi
+
+    if (( attempt < max_attempts )); then
+        echo "Failed to set NVIDIA CC ready state (attempt $attempt/$max_attempts); retrying in ${delay}s" >&2
+        "$sleep_cmd" "$delay"
+        delay=$((delay * 2))
+    fi
+done
+
+echo "Failed to set NVIDIA CC ready state after $max_attempts attempts" >&2
+exit 1

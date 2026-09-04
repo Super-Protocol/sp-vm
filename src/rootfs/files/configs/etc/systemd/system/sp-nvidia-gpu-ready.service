@@ -1,0 +1,14 @@
+[Unit]
+Description=SP NVIDIA GPU readiness barrier
+Wants=nvidia-fabricmanager.service nvidia-persistenced.service
+After=nvidia-fabricmanager.service nvidia-persistenced.service
+Before=pki-cert-init.service pki-authority-sync.service pki-vm-measurements.service nvidia-cdi-refresh.service nvidia-imex.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=infinity
+ExecStart=/usr/local/bin/sp-nvidia-gpu-ready
+
+[Install]
+WantedBy=multi-user.target

@@ -1,13 +1,18 @@
 [Unit]
 Description=NVIDIA Persistence Daemon
-Wants=syslog.target
+Wants=syslog.target nvidia-fabricmanager.service
+After=nvidia-fabricmanager.service
 StopWhenUnneeded=true
 Before=systemd-backlight@backlight:nvidia_0.service
 
 [Service]
 Type=forking
-ExecStartPre=/usr/bin/nvidia-persistenced --uvm-persistence-mode --verbose
-ExecStart=/usr/bin/nvidia-smi conf-compute -srs 1
+PIDFile=/var/run/nvidia-persistenced/nvidia-persistenced.pid
+ExecCondition=/usr/local/bin/sp-nvidia-persistenced-condition
+ExecStartPre=/bin/rm -f /run/sp-nvidia/cc-ready
+ExecStart=/usr/bin/nvidia-persistenced --uvm-persistence-mode --verbose
+ExecStartPost=/usr/local/bin/sp-nvidia-enable-cc-ready
+ExecStopPost=/bin/rm -f /run/sp-nvidia/cc-ready
 ExecStopPost=/bin/rm -rf /var/run/nvidia-persistenced
 TimeoutStartSec=1000
 TimeoutStopSec=1000

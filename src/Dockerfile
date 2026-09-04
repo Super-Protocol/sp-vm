@@ -155,10 +155,30 @@ RUN if [ "$SP_VM_BUILD_TYPE" = "release" ]; then \
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
 ADD rootfs/files/configs/usr/local/bin/sp-nvidia-fabricmanager-condition \
     ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition
-RUN chmod 0755 ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition
-RUN mkdir -p ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-persistenced-condition \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-persistenced-condition
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-enable-cc-ready \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-enable-cc-ready
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-wait-cx7-linkup \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-wait-cx7-linkup
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-gpu-ready \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-gpu-ready
+RUN chmod 0755 ${OUTPUTDIR}/usr/local/bin/sp-nvidia-*
+RUN mkdir -p ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d \
+    ${OUTPUTDIR}/etc/systemd/system/nvidia-cdi-refresh.service.d \
+    ${OUTPUTDIR}/etc/systemd/system/nvidia-imex.service.d
 ADD rootfs/files/configs/etc/systemd/system/nvidia-fabricmanager.service.d/10-sp-nvlink-condition.conf \
     ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d/10-sp-nvlink-condition.conf
+ADD rootfs/files/configs/etc/systemd/system/nvidia-cdi-refresh.service.d/10-sp-gpu-ready.conf \
+    ${OUTPUTDIR}/etc/systemd/system/nvidia-cdi-refresh.service.d/10-sp-gpu-ready.conf
+ADD rootfs/files/configs/etc/systemd/system/nvidia-imex.service.d/10-sp-gpu-ready.conf \
+    ${OUTPUTDIR}/etc/systemd/system/nvidia-imex.service.d/10-sp-gpu-ready.conf
+ADD rootfs/files/configs/etc/systemd/system/sp-nvidia-gpu-ready.service \
+    ${OUTPUTDIR}/etc/systemd/system/sp-nvidia-gpu-ready.service
+RUN ln -sf /etc/systemd/system/sp-nvidia-gpu-ready.service \
+    ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-nvidia-gpu-ready.service
+ADD rootfs/tests/test_nvidia_service_ordering.sh /buildroot/tests/test_nvidia_service_ordering.sh
+RUN chmod 0755 /buildroot/tests/test_nvidia_service_ordering.sh
 RUN set -eu; \
     test -x ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition; \
     test "$(cat ${OUTPUTDIR}/etc/modules-load.d/ib_umad.conf)" = ib_umad; \
@@ -223,6 +243,7 @@ RUN ln -s /etc/systemd/system/pki-authority-sync.service "${OUTPUTDIR}/etc/syste
 RUN ln -s /etc/systemd/system/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-cert-init.service"
 RUN ln -s /etc/systemd/system/pki-vm-measurements.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-vm-measurements.service"
 RUN ln -s /etc/systemd/system/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-vm-measurements-healthcheck.timer"
+RUN SP_NVIDIA_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_nvidia_service_ordering.sh
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append

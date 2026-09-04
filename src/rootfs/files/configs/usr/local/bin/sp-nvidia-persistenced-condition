@@ -1,0 +1,19 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly fabric_condition="${SP_NVIDIA_FABRIC_CONDITION:-/usr/local/bin/sp-nvidia-fabricmanager-condition}"
+readonly systemctl_cmd="${SP_SYSTEMCTL:-/usr/bin/systemctl}"
+
+# A PCIe-only guest must not depend on Fabric Manager.  On an NVLink guest,
+# however, do not let persistence mode initialize RM/GSP before FM is ready.
+if ! "$fabric_condition" >/dev/null 2>&1; then
+    exit 0
+fi
+
+if "$systemctl_cmd" is-active --quiet nvidia-fabricmanager.service; then
+    exit 0
+fi
+
+echo "NVLink fabric detected, but nvidia-fabricmanager.service is not active" >&2
+exit 1

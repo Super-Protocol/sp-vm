@@ -1,0 +1,62 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly fabric_condition="${SP_NVIDIA_FABRIC_CONDITION:-/usr/local/bin/sp-nvidia-fabricmanager-condition}"
+readonly systemctl_cmd="${SP_SYSTEMCTL:-/usr/bin/systemctl}"
+readonly ready_file="${SP_NVIDIA_READY_FILE:-/run/sp-nvidia/cc-ready}"
+readonly wait_timeout="${SP_NVIDIA_READY_TIMEOUT:-1200}"
+readonly max_persistence_attempts="${SP_NVIDIA_PERSISTENCE_MAX_ATTEMPTS:-3}"
+readonly sleep_cmd="${SP_SLEEP:-/bin/sleep}"
+
+fabric_required=0
+if "$fabric_condition" >/dev/null 2>&1; then
+    fabric_required=1
+fi
+
+deadline=$((SECONDS + wait_timeout))
+persistence_attempts=0
+delay=2
+
+while true; do
+    if (( fabric_required == 1 )) \
+        && ! "$systemctl_cmd" is-active --quiet nvidia-fabricmanager.service; then
+        if (( SECONDS >= deadline )); then
+            echo "Fabric Manager did not become active within ${wait_timeout}s; NVIDIA GPU access remains blocked" >&2
+            exit 1
+        fi
+        "$sleep_cmd" "$delay"
+        (( delay < 30 )) && delay=$((delay * 2))
+        (( delay > 30 )) && delay=30
+        continue
+    fi
+
+    if "$systemctl_cmd" is-active --quiet nvidia-persistenced.service \
+        && [[ -f "$ready_file" ]]; then
+        # Close the small race in which FM stopped after the first check.
+        if (( fabric_required == 0 )) \
+            || "$systemctl_cmd" is-active --quiet nvidia-fabricmanager.service; then
+            exit 0
+        fi
+        continue
+    fi
+
+    if (( persistence_attempts >= max_persistence_attempts )); then
+        echo "nvidia-persistenced/CC ready state failed after ${max_persistence_attempts} attempts" >&2
+        exit 1
+    fi
+
+    persistence_attempts=$((persistence_attempts + 1))
+    "$systemctl_cmd" reset-failed nvidia-persistenced.service >/dev/null 2>&1 || true
+    if (( persistence_attempts == 1 )); then
+        "$systemctl_cmd" start nvidia-persistenced.service || true
+    else
+        "$systemctl_cmd" restart nvidia-persistenced.service || true
+    fi
+
+    if (( persistence_attempts < max_persistence_attempts )); then
+        "$sleep_cmd" "$delay"
+        (( delay < 30 )) && delay=$((delay * 2))
+        (( delay > 30 )) && delay=30
+    fi
+done
