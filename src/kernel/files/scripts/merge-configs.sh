@@ -45,6 +45,32 @@ function merge_configs() {
     if [[ -n "$OUTPUT" ]]; then
         log_fail "failed to merge kernel configs, reason: $OUTPUT"
     fi
+
+    # Linux 6.12: HYPERV_STORAGE cannot be =y while SCSI_FC_ATTRS=m. Force
+    # builtin Hyper-V after merge; do not olddefconfig after the last --set-val.
+    ./scripts/config --file "$KCONFIG_CONFIG" \
+        --disable SCSI_FC_ATTRS \
+        --set-val HYPERV y \
+        --set-val HYPERV_STORAGE y \
+        --set-val HYPERV_NET y \
+        --enable IP_PNP_DHCP
+    make "ARCH=$ARCH" olddefconfig
+    ./scripts/config --file "$KCONFIG_CONFIG" \
+        --disable SCSI_FC_ATTRS \
+        --set-val HYPERV y \
+        --set-val HYPERV_STORAGE y \
+        --set-val HYPERV_NET y \
+        --enable IP_PNP_DHCP
+
+    if ! grep -qx 'CONFIG_HYPERV=y' "$KCONFIG_CONFIG"; then
+        log_fail "CONFIG_HYPERV must be builtin (=y), got: $(grep '^CONFIG_HYPERV' "$KCONFIG_CONFIG" || echo unset)"
+    fi
+    if ! grep -qx 'CONFIG_HYPERV_STORAGE=y' "$KCONFIG_CONFIG"; then
+        log_fail "CONFIG_HYPERV_STORAGE must be builtin (=y), got: $(grep '^CONFIG_HYPERV_STORAGE' "$KCONFIG_CONFIG" || echo unset)"
+    fi
+    if ! grep -qx 'CONFIG_HYPERV_NET=y' "$KCONFIG_CONFIG"; then
+        log_fail "CONFIG_HYPERV_NET must be builtin (=y), got: $(grep '^CONFIG_HYPERV_NET' "$KCONFIG_CONFIG" || echo unset)"
+    fi
     popd;
 }
 

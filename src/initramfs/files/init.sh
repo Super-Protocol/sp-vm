@@ -176,7 +176,18 @@ rootfs_verifier="$(get_option rootfs_verity.scheme)";
 rootfs_hash="$(get_option rootfs_verity.hash)";
 root_device_name="$(get_option root)";
 
-root_device="$(get_device "$root_device_name")";
+root_device="";
+i=0
+while [ "$i" -lt 20 ]; do
+    mdev -s
+    root_device="$(get_device "$root_device_name")";
+    if [ -n "$root_device" ] && [ -e "$root_device" ]; then
+        break
+    fi
+    log_info "waiting for root device (PARTLABEL from ${root_device_name:-unset}) try=$((i+1))"
+    i=$((i + 1))
+    sleep 1
+done
 
 # hash device can only be found by partition label (not fs label)
 hash_device_path="$(blkid -t PARTLABEL="rootfs_hash" --output device || echo)";
@@ -192,6 +203,8 @@ fi
 # The root device should exist to be either verified then mounted or
 # just mounted when verification is disabled.
 if [ ! -e "${root_device}" ]; then
+    log_block_device_inventory
+    log_partition_inventory
     log_fail "No root device ${root_device} found";
 fi
 

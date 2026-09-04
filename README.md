@@ -66,9 +66,9 @@ The local directory must be flat and contain `vmlinuz`, `OVMF.fd`,
 `OVMF_AMD.fd`, `OVMF_TDX.fd`, and at least one `linux-image*.deb`. It normally
 also contains the other kernel DEBs. `SHA256SUMS` is optional in local mode and
 is not used to validate local files; the common stage still validates the
-required layout. The `build-sp-vm` workflow always uses the release and
-manifest checksum pinned in the main Dockerfile; overrides and local directories
-are supported only by local CLI builds.
+required layout. The `build-sp-vm` workflow builds `Dockerfile.low-level` first and injects that
+tree via `--build-context low_level_assets`. Local CLI builds can still pin a
+GitHub `sp-vm-low-level-v*` release or pass a directory as above.
 
 ## Logical rootfs reproducibility test
 

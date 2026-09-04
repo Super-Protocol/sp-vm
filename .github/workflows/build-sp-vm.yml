@@ -93,14 +93,26 @@ jobs:
               --name insecure-builder \
               --buildkitd-flags '--allow-insecure-entitlement security.insecure';
 
+      - name: Build kernel and firmware
+        run: |
+          docker buildx build \
+              --file src/Dockerfile.low-level \
+              --target low_level_export \
+              --no-cache-filter kernel_builder,initramfs_builder \
+              --build-arg "KERNEL_CACHEBUST=${{ github.run_id }}" \
+              --output type=local,dest=./low-level-out \
+              src
+          (cd low-level-out && sha256sum --check SHA256SUMS)
+
       - name: Build sp-vm image
         run: |
           docker buildx build \
               -t sp-vm \
               --allow security.insecure \
+              --build-context low_level_assets="$(pwd)/low-level-out" \
+              --build-context swarm_db_schema=./swarm-db-schema \
               src \
               --output type=local,dest=./out \
-              --build-context swarm_db_schema=./swarm-db-schema \
               --build-arg "SP_VM_IMAGE_VERSION=$SP_VM_IMAGE_VERSION" \
               --build-arg "SP_VM_BUILD_TYPE=${{ inputs.build-type }}" \
               --build-arg "S3_BUCKET=$S3_BUCKET";
@@ -220,10 +232,12 @@ jobs:
             --username "${CLIENT_ID}" \
             --password-stdin
 
-          echo "==> Building OCI image ${IMAGE} from local artifacts"
-          printf '%s\n' 'FROM scratch' 'COPY . /' > Dockerfile.acr
-          docker build -t "${IMAGE}" -f Dockerfile.acr .
-          rm -f Dockerfile.acr
+          echo "==> Building OCI image ${IMAGE} from disk image only"
+          mkdir -p acr-context
+          cp -f "sp-vm-${SP_VM_IMAGE_VERSION}.img" "acr-context/sp-vm-${SP_VM_IMAGE_VERSION}.img"
+          printf '%s\n' 'FROM scratch' "COPY sp-vm-${SP_VM_IMAGE_VERSION}.img /" > acr-context/Dockerfile
+          docker build -t "${IMAGE}" acr-context
+          rm -rf acr-context
 
           echo "==> Pushing ${IMAGE}"
           docker push "${IMAGE}"
