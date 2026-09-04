@@ -8,6 +8,12 @@ set -euo pipefail;
 
 # private
 BUILDROOT="/buildroot";
+readonly NVIDIA_DRIVER_VERSION="595.91.07";
+readonly NVIDIA_DRIVER_DEB_VERSION="${NVIDIA_DRIVER_VERSION}-1ubuntu1";
+readonly NVLINK5_DEB_VERSION="${NVIDIA_DRIVER_VERSION}-1";
+readonly COLLECTX_BRINGUP_DEB_VERSION="1.22.1-1";
+readonly MFT_DEB_VERSION="4.35.0.159-1";
+readonly NVLSM_DEB_VERSION="2025.10.14-1";
 
 # init loggggging;
 source "$BUILDROOT/files/scripts/log.sh";
@@ -45,9 +51,20 @@ function install_doca_repository() {
 }
 
 function install_nvidia_driver() {
-    log_info "installing NVIDIA R590 driver, NVLink 5 stack, RDMA userspace, and container toolkit for rke2";
+    local kernel_release;
+    kernel_release="$(<"$BUILDROOT/kernel-release")";
+
+    log_info "installing NVIDIA R595 driver, NVLink 5 stack, RDMA userspace, and container toolkit for rke2";
     chroot \
         "$OUTPUTDIR" \
+        /usr/bin/env \
+        NVIDIA_DRIVER_VERSION="$NVIDIA_DRIVER_VERSION" \
+        NVIDIA_DRIVER_DEB_VERSION="$NVIDIA_DRIVER_DEB_VERSION" \
+        NVLINK5_DEB_VERSION="$NVLINK5_DEB_VERSION" \
+        COLLECTX_BRINGUP_DEB_VERSION="$COLLECTX_BRINGUP_DEB_VERSION" \
+        MFT_DEB_VERSION="$MFT_DEB_VERSION" \
+        NVLSM_DEB_VERSION="$NVLSM_DEB_VERSION" \
+        KERNEL_RELEASE="$kernel_release" \
         /bin/bash \
         -c '
             set -eE;
@@ -66,11 +83,17 @@ function install_nvidia_driver() {
             trap dump_dkms_logs ERR;
 
             apt-get update;
-            apt-get install -y --no-install-recommends nvidia-driver-pinning-590.48.01;
+            apt-get install -y --no-install-recommends \
+                "nvidia-driver-pinning-${NVIDIA_DRIVER_VERSION}=${NVIDIA_DRIVER_DEB_VERSION}";
 
-            # Starting with R590, NVIDIA driver package names no longer carry
-            # the branch suffix. nvlink5 installs the matching Fabric Manager,
-            # NVLSM, NVSDM, NSCQ, IMEX, and MFT components required by B200.
+            # Starting with R590, NVIDIA driver package names no longer carry a
+            # branch suffix. The official version-lock package pins the driver,
+            # open modules, GSP firmware, NVML/userspace, Fabric Manager, NSCQ,
+            # NVSDM, IMEX, and nvlink5 to NVIDIA_DRIVER_VERSION.
+            #
+            # Pin the unbranched nvlink5 companion packages explicitly as well;
+            # their versions identify the set shipped with R595.91.07, rather
+            # than carrying the driver version in every package name.
             # The guest kernel provides its in-tree mlx5 and InfiniBand
             # modules. Do not install the doca-ofed meta-package here: it
             # replaces them with a complete MOFED DKMS stack and also pulls
@@ -80,12 +103,63 @@ function install_nvidia_driver() {
             apt-get install -y --no-install-recommends \
                 infiniband-diags \
                 libibumad3 \
-                nvidia-open \
-                nvlink5 \
+                "collectx-bringup=${COLLECTX_BRINGUP_DEB_VERSION}" \
+                "mft=${MFT_DEB_VERSION}" \
+                "mft-autocomplete=${MFT_DEB_VERSION}" \
+                "mft-oem=${MFT_DEB_VERSION}" \
+                "nvidia-open=${NVIDIA_DRIVER_DEB_VERSION}" \
+                "nvlink5=${NVLINK5_DEB_VERSION}" \
+                "nvlsm=${NVLSM_DEB_VERSION}" \
                 nvidia-container-toolkit \
                 pciutils \
                 rdma-core \
                 ucx;
+
+            driver_stack_packages=(
+                libnvidia-cfg1
+                libnvidia-compute
+                libnvidia-decode
+                libnvidia-encode
+                libnvidia-fbc1
+                libnvidia-gl
+                libnvidia-nscq
+                libnvsdm
+                nvidia-dkms-open
+                nvidia-driver-open
+                nvidia-fabricmanager
+                nvidia-firmware
+                nvidia-imex
+                nvidia-kernel-common
+                nvidia-kernel-source-open
+                nvidia-modprobe
+                nvidia-open
+                nvidia-persistenced
+                nvlink5
+                xserver-xorg-video-nvidia
+            );
+            for package in "${driver_stack_packages[@]}"; do
+                installed_version="$(dpkg-query -W -f="\${Version}" "$package")";
+                case "$installed_version" in
+                    "${NVIDIA_DRIVER_VERSION}"-*) ;;
+                    *)
+                        echo "Unexpected $package version: $installed_version" >&2;
+                        exit 1;
+                        ;;
+                esac;
+            done;
+
+            if dpkg-query -W -f="\${binary:Package}\t\${Version}\n" \
+                | grep -E "[[:space:]]590[.]"; then
+                echo "R590 package leftovers detected" >&2;
+                exit 1;
+            fi;
+
+            dkms status "nvidia/${NVIDIA_DRIVER_VERSION}" -k "$KERNEL_RELEASE" \
+                | grep -q "installed";
+            for module in nvidia nvidia_uvm nvidia_modeset; do
+                test "$(modinfo -k "$KERNEL_RELEASE" -F version "$module")" \
+                    = "$NVIDIA_DRIVER_VERSION";
+            done;
         ';
 
     # NVLSM communicates with the NVLink-management CX7 ports through UMAD.
