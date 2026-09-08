@@ -28,7 +28,7 @@ The root certificate is self-signed and contains:
 
 | Extension | Purpose |
 |---|---|
-| Challenge type | `tdx`, `tdx-google`, or `sev-snp`. |
+| Challenge type | `tdx`, `tdx-google`, `tdx-azure`, or `sev-snp`. |
 | Network type | `trusted`. |
 | TEE evidence | Serialized CPU quote/report of the first VM. |
 

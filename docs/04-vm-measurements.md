@@ -1,4 +1,4 @@
-# 4. Intel TDX and AMD SEV-SNP Measurements
+# 4. Intel TDX, Azure TDX, and AMD SEV-SNP Measurements
 
 ## Purpose of `mrEnclave`
 
@@ -143,6 +143,56 @@ through `reportData`; GPU evidence is not part of `mrEnclave`.
 - DCAP verification fails;
 - the transmitted event list does not reproduce quote `RTMR0`;
 - the calculated `mrEnclave` is absent from the trusted registry.
+
+## Azure TDX (`tdx-azure`)
+
+Azure Intel TDX confidential VMs do not expose `/dev/tdx_guest` or the GCP
+quote ABI. The TD report and TD quote are obtained from the Azure vTPM.
+Hardware authenticity is verified with Microsoft Azure Attestation (MAA),
+not Intel DCAP against the TDX guest driver.
+
+On current Azure TDX guests, Intel `RTMR0`–`RTMR3` are zero. Boot firmware
+and OS identity appear in vTPM PCRs (SHA-256 bank), not in RTMRs. The TDX
+`mrEnclave` formula from the previous section therefore must not be reused
+for `tdx-azure`: it would collapse to MRTD plus zeros and ignore the boot
+chain.
+
+### Input
+
+| Field | Source |
+|---|---|
+| `TDATTRIBUTES` | TD report / MAA claim `tdx_td_attributes` |
+| `MRTD` | TD report / MAA claim `tdx_mrtd` |
+| SHA-256 `PCR[0]`–`PCR[7]` | Azure vTPM |
+
+`reportData` remains the enrollment binding (public-key hash, and NVIDIA
+token hash when a GPU is present). It is not part of `mrEnclave`.
+
+### Final Formula
+
+```text
+mrEnclave = SHA-256(
+    TDATTRIBUTES ||
+    MRTD ||
+    PCR0 || PCR1 || PCR2 || PCR3 || PCR4 || PCR5 || PCR6 || PCR7
+)
+```
+
+Each `PCRn` is the 32-byte SHA-256 PCR value from the vTPM. Fields are
+concatenated as binary arrays without text encoding or delimiters.
+
+### Conditions That Reject Azure TDX Evidence
+
+- the guest is not an Azure Confidential VM or is not TDX;
+- vTPM is unavailable;
+- MAA attestation fails or reports an unacceptable TCB / debug state;
+- the calculated `mrEnclave` is absent from the trusted registry.
+
+Quote generation and MAA verification still live in `pki-cert-generator`,
+`pki-vm-measurements`, and PKI Authority. Those tools spawn
+`azure-guest-attest` (pinned musl binary on `PATH`) against the Azure vTPM.
+The VM image detector still only records `tdx-azure` in
+`/etc/swarm/swarm-cpu-type`.
 
 ## AMD SEV-SNP
 

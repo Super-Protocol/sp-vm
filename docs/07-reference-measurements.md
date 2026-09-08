@@ -30,5 +30,6 @@ unavailable.
 ![Reference measurement verification](assets/reference-measurement-flow.svg)
 <!-- Mermaid source: assets/mermaid/reference-measurement-flow.mmd -->
 
-The Intel TDX and AMD SEV-SNP `mrEnclave` calculation algorithms are described
-in the [VM measurements chapter](04-vm-measurements.md).
+The Intel TDX, Azure TDX (`tdx-azure`), and AMD SEV-SNP `mrEnclave`
+calculation algorithms are described in the
+[VM measurements chapter](04-vm-measurements.md).

@@ -329,6 +329,11 @@ ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
 RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh
 
+# Azure TDX quote CLI used by tdx-azure PKI (pki-cert-generator / pki-vm-measurements)
+ADD rootfs/files/scripts/install_azure_guest_attest.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/install_azure_guest_attest.sh
+RUN --security=insecure /buildroot/files/scripts/install_azure_guest_attest.sh
+
 # Python runtime dependencies used by Swarm services and provision plugins
 ADD rootfs/files/configs/python/requirements.lock /buildroot/files/configs/python/requirements.lock
 ADD rootfs/files/scripts/install_python_deps.sh /buildroot/files/scripts/
