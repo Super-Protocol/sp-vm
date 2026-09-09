@@ -151,11 +151,16 @@ quote ABI. The TD report and TD quote are obtained from the Azure vTPM.
 Hardware authenticity is verified with Microsoft Azure Attestation (MAA),
 not Intel DCAP against the TDX guest driver.
 
-On current Azure TDX guests, Intel `RTMR0`–`RTMR3` are zero. Boot firmware
-and OS identity appear in vTPM PCRs (SHA-256 bank), not in RTMRs. The TDX
-`mrEnclave` formula from the previous section therefore must not be reused
-for `tdx-azure`: it would collapse to MRTD plus zeros and ignore the boot
-chain.
+On current Azure TDX guests there is no CCEL table, and Intel `RTMR0`–`RTMR3`
+in the TD report are zero. Boot firmware and OS identity appear in vTPM PCRs
+(SHA-256 bank), not in RTMRs. The TDX `mrEnclave` formula from the previous
+section therefore must not be reused for `tdx-azure`: it would collapse to
+MRTD plus zeros and ignore the boot chain.
+
+PCR[6] must not be mixed in. Azure records a per-VM `vmUniqueId` there
+(`EV_COMPACT_HASH` `UUID: …`). Including it would require a distinct
+registry signature for every machine. Across SKUs of the same image, MRTD and
+SHA-256 PCR[0]–PCR[5] and PCR[7] stay stable; only PCR[6] changes.
 
 ### Input
 
@@ -163,7 +168,7 @@ chain.
 |---|---|
 | `TDATTRIBUTES` | TD report / MAA claim `tdx_td_attributes` |
 | `MRTD` | TD report / MAA claim `tdx_mrtd` |
-| SHA-256 `PCR[0]`–`PCR[7]` | Azure vTPM |
+| SHA-256 `PCR[0]`–`PCR[5]`, `PCR[7]` | Azure vTPM |
 
 `reportData` remains the enrollment binding (public-key hash, and NVIDIA
 token hash when a GPU is present). It is not part of `mrEnclave`.
@@ -174,12 +179,13 @@ token hash when a GPU is present). It is not part of `mrEnclave`.
 mrEnclave = SHA-256(
     TDATTRIBUTES ||
     MRTD ||
-    PCR0 || PCR1 || PCR2 || PCR3 || PCR4 || PCR5 || PCR6 || PCR7
+    PCR0 || PCR1 || PCR2 || PCR3 || PCR4 || PCR5 || PCR7
 )
 ```
 
 Each `PCRn` is the 32-byte SHA-256 PCR value from the vTPM. Fields are
-concatenated as binary arrays without text encoding or delimiters.
+concatenated as binary arrays without text encoding or delimiters. PCR[6] is
+read from the token when present and discarded.
 
 ### Conditions That Reject Azure TDX Evidence
 
