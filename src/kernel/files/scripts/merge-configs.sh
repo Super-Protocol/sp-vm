@@ -51,26 +51,38 @@ function merge_configs() {
     ./scripts/config --file "$KCONFIG_CONFIG" \
         --disable SCSI_FC_ATTRS \
         --set-val HYPERV y \
+        --set-val HYPERV_TIMER y \
         --set-val HYPERV_STORAGE y \
         --set-val HYPERV_NET y \
+        --set-val PCI_HYPERV y \
+        --set-val PCI_HYPERV_INTERFACE y \
+        --set-val MICROSOFT_MANA y \
         --enable IP_PNP_DHCP
     make "ARCH=$ARCH" olddefconfig
     ./scripts/config --file "$KCONFIG_CONFIG" \
         --disable SCSI_FC_ATTRS \
         --set-val HYPERV y \
+        --set-val HYPERV_TIMER y \
         --set-val HYPERV_STORAGE y \
         --set-val HYPERV_NET y \
+        --set-val PCI_HYPERV y \
+        --set-val PCI_HYPERV_INTERFACE y \
+        --set-val MICROSOFT_MANA y \
         --enable IP_PNP_DHCP
 
-    if ! grep -qx 'CONFIG_HYPERV=y' "$KCONFIG_CONFIG"; then
-        log_fail "CONFIG_HYPERV must be builtin (=y), got: $(grep '^CONFIG_HYPERV' "$KCONFIG_CONFIG" || echo unset)"
-    fi
-    if ! grep -qx 'CONFIG_HYPERV_STORAGE=y' "$KCONFIG_CONFIG"; then
-        log_fail "CONFIG_HYPERV_STORAGE must be builtin (=y), got: $(grep '^CONFIG_HYPERV_STORAGE' "$KCONFIG_CONFIG" || echo unset)"
-    fi
-    if ! grep -qx 'CONFIG_HYPERV_NET=y' "$KCONFIG_CONFIG"; then
-        log_fail "CONFIG_HYPERV_NET must be builtin (=y), got: $(grep '^CONFIG_HYPERV_NET' "$KCONFIG_CONFIG" || echo unset)"
-    fi
+    for sym in \
+        CONFIG_HYPERV \
+        CONFIG_HYPERV_TIMER \
+        CONFIG_HYPERV_STORAGE \
+        CONFIG_HYPERV_NET \
+        CONFIG_PCI_HYPERV \
+        CONFIG_PCI_HYPERV_INTERFACE \
+        CONFIG_MICROSOFT_MANA
+    do
+        if ! grep -qx "${sym}=y" "$KCONFIG_CONFIG"; then
+            log_fail "${sym} must be builtin (=y), got: $(grep "^${sym}" "$KCONFIG_CONFIG" || echo unset)"
+        fi
+    done
     popd;
 }
 
