@@ -2,12 +2,21 @@
 
 set -euo pipefail
 
+readonly gpu_present="${SP_NVIDIA_GPU_PRESENT:-/usr/local/bin/sp-nvidia-gpu-present}"
 readonly fabric_condition="${SP_NVIDIA_FABRIC_CONDITION:-/usr/local/bin/sp-nvidia-fabricmanager-condition}"
 readonly systemctl_cmd="${SP_SYSTEMCTL:-/usr/bin/systemctl}"
 readonly ready_file="${SP_NVIDIA_READY_FILE:-/run/sp-nvidia/cc-ready}"
 readonly wait_timeout="${SP_NVIDIA_READY_TIMEOUT:-1200}"
 readonly max_persistence_attempts="${SP_NVIDIA_PERSISTENCE_MAX_ATTEMPTS:-3}"
 readonly sleep_cmd="${SP_SLEEP:-/bin/sleep}"
+
+# A CPU-only VM satisfies the barrier vacuously, without touching any NVIDIA
+# unit. Keep this ahead of every systemctl call: the dependent PKI units must
+# start, and nothing may be pulled in that has no hardware to work with.
+if ! "$gpu_present"; then
+    echo "No NVIDIA GPU present; readiness barrier satisfied for a CPU-only VM"
+    exit 0
+fi
 
 fabric_required=0
 if "$fabric_condition" >/dev/null 2>&1; then

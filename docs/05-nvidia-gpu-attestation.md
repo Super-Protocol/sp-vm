@@ -10,6 +10,26 @@ consistent combination of CPU TEE, node key, and GPU.
 GPU verification is performed for TDX, cloud TDX, and SEV-SNP challenges. If no
 GPU is present, CPU-only attestation remains valid.
 
+## Boot-Time GPU Readiness
+
+A single image serves both GPU and CPU-only VMs, so the boot path decides at
+runtime whether NVIDIA bring-up applies at all. `sp-nvidia-gpu-present` answers
+that question from PCI topology alone, using the same criterion as the
+verification path below — vendor `0x10de` combined with a `0x03` class prefix.
+The vendor check is what separates a real GPU from the hypervisor's emulated
+VGA.
+
+On a VM without a GPU, `sp-nvidia-gpu-ready.service` — the barrier that the PKI
+units order themselves after — succeeds immediately, and the NVIDIA units
+(`nvidia-persistenced`, `nvidia-imex`, `nvidia-cdi-refresh`) are skipped through
+`ExecCondition`, so they end up inactive rather than failed. The absence of a
+GPU therefore never blocks certificate initialization or node join.
+
+Detection is deliberately independent of the driver. On a node where a GPU is
+physically present but the driver, the persistence daemon, or confidential-
+compute setup did not come up, the barrier still fails loudly instead of
+degrading the node to CPU-only attestation.
+
 ## Complete Flow
 
 ![CPU and NVIDIA GPU attestation sequence](assets/nvidia-gpu-attestation.svg)

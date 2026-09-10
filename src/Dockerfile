@@ -153,6 +153,8 @@ RUN if [ "$SP_VM_BUILD_TYPE" = "release" ]; then \
         sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"; \
     fi
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-gpu-present \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-gpu-present
 ADD rootfs/files/configs/usr/local/bin/sp-nvidia-fabricmanager-condition \
     ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition
 ADD rootfs/files/configs/usr/local/bin/sp-nvidia-persistenced-condition \
@@ -181,6 +183,7 @@ ADD rootfs/tests/test_nvidia_service_ordering.sh /buildroot/tests/test_nvidia_se
 RUN chmod 0755 /buildroot/tests/test_nvidia_service_ordering.sh
 RUN set -eu; \
     test -x ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition; \
+    test -x ${OUTPUTDIR}/usr/local/bin/sp-nvidia-gpu-present; \
     test "$(cat ${OUTPUTDIR}/etc/modules-load.d/ib_umad.conf)" = ib_umad; \
     test -x ${OUTPUTDIR}/usr/bin/lspci; \
     grep -qx 'ExecCondition=/usr/local/bin/sp-nvidia-fabricmanager-condition' \
