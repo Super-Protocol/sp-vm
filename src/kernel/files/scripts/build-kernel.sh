@@ -44,6 +44,7 @@ function build_kernel() {
         CONFIG_HYPERV_NET \
         CONFIG_PCI_HYPERV \
         CONFIG_PCI_HYPERV_INTERFACE \
+        CONFIG_NET_VENDOR_MICROSOFT \
         CONFIG_MICROSOFT_MANA
     do
         if ! grep -qx "${sym}=y" "$ikcfg"; then

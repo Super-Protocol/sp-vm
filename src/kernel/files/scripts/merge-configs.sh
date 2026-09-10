@@ -56,6 +56,7 @@ function merge_configs() {
         --set-val HYPERV_NET y \
         --set-val PCI_HYPERV y \
         --set-val PCI_HYPERV_INTERFACE y \
+        --enable NET_VENDOR_MICROSOFT \
         --set-val MICROSOFT_MANA y \
         --enable IP_PNP_DHCP
     make "ARCH=$ARCH" olddefconfig
@@ -67,6 +68,7 @@ function merge_configs() {
         --set-val HYPERV_NET y \
         --set-val PCI_HYPERV y \
         --set-val PCI_HYPERV_INTERFACE y \
+        --enable NET_VENDOR_MICROSOFT \
         --set-val MICROSOFT_MANA y \
         --enable IP_PNP_DHCP
 
@@ -77,6 +79,7 @@ function merge_configs() {
         CONFIG_HYPERV_NET \
         CONFIG_PCI_HYPERV \
         CONFIG_PCI_HYPERV_INTERFACE \
+        CONFIG_NET_VENDOR_MICROSOFT \
         CONFIG_MICROSOFT_MANA
     do
         if ! grep -qx "${sym}=y" "$KCONFIG_CONFIG"; then
