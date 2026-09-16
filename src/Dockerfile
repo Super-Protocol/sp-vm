@@ -38,8 +38,8 @@ RUN /buildroot/files/scripts/create_base_system.sh
 
 ### Start low-level release assets ###
 FROM rootfs_base AS low_level_release_download
-ARG LOW_LEVEL_RELEASE=sp-vm-low-level-v1
-ARG LOW_LEVEL_SHA256SUMS=71c28b3260dddfc1506521034c4fdd69686a88813e3861681a2089c448edbf8a
+ARG LOW_LEVEL_RELEASE=sp-vm-low-level-v3
+ARG LOW_LEVEL_SHA256SUMS=e7b9e5b49a768d45561cfd6f8de30b1db3bb30f27391b0dbdd01fdb60d60f93c
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN set -eu; \
     [[ "$LOW_LEVEL_RELEASE" =~ ^sp-vm-low-level-v[0-9]+$ ]] \
@@ -153,6 +153,54 @@ RUN if [ "$SP_VM_BUILD_TYPE" = "release" ]; then \
         sed -i '1 s|^.*$|account required pam_access.so|' "${OUTPUTDIR}/etc/pam.d/login"; \
     fi
 ADD rootfs/files/configs/nvidia-persistenced.service ${OUTPUTDIR}/usr/lib/systemd/system/
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-gpu-present \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-gpu-present
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-fabricmanager-condition \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-persistenced-condition \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-persistenced-condition
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-enable-cc-ready \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-enable-cc-ready
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-wait-cx7-linkup \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-wait-cx7-linkup
+ADD rootfs/files/configs/usr/local/bin/sp-nvidia-gpu-ready \
+    ${OUTPUTDIR}/usr/local/bin/sp-nvidia-gpu-ready
+RUN chmod 0755 ${OUTPUTDIR}/usr/local/bin/sp-nvidia-*
+RUN mkdir -p ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d \
+    ${OUTPUTDIR}/etc/systemd/system/nvidia-cdi-refresh.service.d \
+    ${OUTPUTDIR}/etc/systemd/system/nvidia-imex.service.d
+ADD rootfs/files/configs/etc/systemd/system/nvidia-fabricmanager.service.d/10-sp-nvlink-condition.conf \
+    ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d/10-sp-nvlink-condition.conf
+ADD rootfs/files/configs/etc/systemd/system/nvidia-cdi-refresh.service.d/10-sp-gpu-ready.conf \
+    ${OUTPUTDIR}/etc/systemd/system/nvidia-cdi-refresh.service.d/10-sp-gpu-ready.conf
+ADD rootfs/files/configs/etc/systemd/system/nvidia-imex.service.d/10-sp-gpu-ready.conf \
+    ${OUTPUTDIR}/etc/systemd/system/nvidia-imex.service.d/10-sp-gpu-ready.conf
+ADD rootfs/files/configs/etc/systemd/system/sp-nvidia-gpu-ready.service \
+    ${OUTPUTDIR}/etc/systemd/system/sp-nvidia-gpu-ready.service
+RUN ln -sf /etc/systemd/system/sp-nvidia-gpu-ready.service \
+    ${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/sp-nvidia-gpu-ready.service
+ADD rootfs/tests/test_nvidia_service_ordering.sh /buildroot/tests/test_nvidia_service_ordering.sh
+RUN chmod 0755 /buildroot/tests/test_nvidia_service_ordering.sh
+RUN set -eu; \
+    test -x ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition; \
+    test -x ${OUTPUTDIR}/usr/local/bin/sp-nvidia-gpu-present; \
+    test "$(cat ${OUTPUTDIR}/etc/modules-load.d/ib_umad.conf)" = ib_umad; \
+    test -x ${OUTPUTDIR}/usr/bin/lspci; \
+    grep -qx 'ExecCondition=/usr/local/bin/sp-nvidia-fabricmanager-condition' \
+        ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d/10-sp-nvlink-condition.conf; \
+    condition_test_root=/tmp/sp-fabricmanager-condition-test; \
+    mkdir -p "$condition_test_root/pci/0000:ab:00.0" "$condition_test_root/dev"; \
+    printf '%s\n' 0x15b3 > "$condition_test_root/pci/0000:ab:00.0/vendor"; \
+    printf '%s\n' 0x1021 > "$condition_test_root/pci/0000:ab:00.0/device"; \
+    : > "$condition_test_root/pci/0000:ab:00.0/vpd"; \
+    ! SP_SYSFS_PCI_DEVICES_DIR="$condition_test_root/pci" \
+        SP_DEVICE_ROOT="$condition_test_root/dev" \
+        ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition; \
+    printf '%s\n' SW_MNG > "$condition_test_root/pci/0000:ab:00.0/vpd"; \
+    SP_SYSFS_PCI_DEVICES_DIR="$condition_test_root/pci" \
+        SP_DEVICE_ROOT="$condition_test_root/dev" \
+        ${OUTPUTDIR}/usr/local/bin/sp-nvidia-fabricmanager-condition; \
+    rm -rf "$condition_test_root"
 
 RUN printf 'sp-vm\n' > "${OUTPUTDIR}/etc/hostname"
 RUN mkdir -p "${OUTPUTDIR}/etc/rancher/rke2"
@@ -198,6 +246,7 @@ RUN ln -s /etc/systemd/system/pki-authority-sync.service "${OUTPUTDIR}/etc/syste
 RUN ln -s /etc/systemd/system/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-cert-init.service"
 RUN ln -s /etc/systemd/system/pki-vm-measurements.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-vm-measurements.service"
 RUN ln -s /etc/systemd/system/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-vm-measurements-healthcheck.timer"
+RUN SP_NVIDIA_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_nvidia_service_ordering.sh
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append

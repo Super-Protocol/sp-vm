@@ -1,8 +1,8 @@
 [Unit]
 Description=PKI certificate initialization service
-After=nvidia-persistenced.service pccs.service pki-vm-mode.service
-Wants=nvidia-persistenced.service pki-vm-mode.service
-Requires=pccs.service pki-vm-mode.service
+After=sp-nvidia-gpu-ready.service pccs.service pki-vm-mode.service
+Wants=pki-vm-mode.service
+Requires=sp-nvidia-gpu-ready.service pccs.service pki-vm-mode.service
 
 [Service]
 Type=oneshot

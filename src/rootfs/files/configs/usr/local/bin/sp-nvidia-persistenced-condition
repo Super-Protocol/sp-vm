@@ -1,0 +1,27 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly gpu_present="${SP_NVIDIA_GPU_PRESENT:-/usr/local/bin/sp-nvidia-gpu-present}"
+readonly fabric_condition="${SP_NVIDIA_FABRIC_CONDITION:-/usr/local/bin/sp-nvidia-fabricmanager-condition}"
+readonly systemctl_cmd="${SP_SYSTEMCTL:-/usr/bin/systemctl}"
+
+# sp-nvidia-gpu-ready.service pulls this unit in through Wants=, so a CPU-only
+# VM would start the daemon with no GPU to serve. Skip cleanly instead.
+if ! "$gpu_present" >/dev/null 2>&1; then
+    echo "No NVIDIA GPU present; skipping the persistence daemon" >&2
+    exit 1
+fi
+
+# A PCIe-only guest must not depend on Fabric Manager.  On an NVLink guest,
+# however, do not let persistence mode initialize RM/GSP before FM is ready.
+if ! "$fabric_condition" >/dev/null 2>&1; then
+    exit 0
+fi
+
+if "$systemctl_cmd" is-active --quiet nvidia-fabricmanager.service; then
+    exit 0
+fi
+
+echo "NVLink fabric detected, but nvidia-fabricmanager.service is not active" >&2
+exit 1
