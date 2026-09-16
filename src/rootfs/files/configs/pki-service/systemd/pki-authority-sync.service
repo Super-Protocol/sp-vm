@@ -1,8 +1,8 @@
 [Unit]
 Description=PKI authority sync client service
-After=network-online.target nvidia-persistenced.service pki-vm-mode.service
-Wants=network-online.target nvidia-persistenced.service pki-vm-mode.service
-Requires=pki-vm-mode.service
+After=network-online.target sp-nvidia-gpu-ready.service pki-vm-mode.service
+Wants=network-online.target pki-vm-mode.service
+Requires=sp-nvidia-gpu-ready.service pki-vm-mode.service
 
 [Service]
 Type=oneshot

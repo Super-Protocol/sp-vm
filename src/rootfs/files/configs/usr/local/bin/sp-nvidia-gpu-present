@@ -1,0 +1,27 @@
+#!/bin/bash
+
+set -euo pipefail
+
+readonly pci_devices_dir="${SP_SYSFS_PCI_DEVICES_DIR:-/sys/bus/pci/devices}"
+
+# Presence is decided from PCI topology alone, exactly as the attestation layer
+# does it. A driver-dependent probe (nvidia-smi, /dev/nvidia*) cannot tell "no
+# GPU in this VM" apart from "GPU present, driver broken", and would silently
+# degrade a broken GPU node to CPU-only. The vendor check is required: without
+# it the hypervisor's emulated VGA would look like a GPU. NVSwitch (0x10de with
+# the bridge class 0x0680) is excluded by the class check.
+for device_dir in "$pci_devices_dir"/*; do
+    [[ -d "$device_dir" ]] || continue
+    [[ -r "$device_dir/vendor" && -r "$device_dir/class" ]] || continue
+    [[ "$(<"$device_dir/vendor")" == "0x10de" ]] || continue
+
+    case "$(<"$device_dir/class")" in
+        0x03*)
+            echo "NVIDIA GPU detected at ${device_dir##*/}";
+            exit 0
+            ;;
+    esac
+done
+
+echo "No NVIDIA GPU present; skipping NVIDIA GPU bring-up";
+exit 1

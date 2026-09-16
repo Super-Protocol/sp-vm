@@ -1,7 +1,8 @@
 [Unit]
 Description=PKI VM measurements service
-After=network-online.target
+After=network-online.target sp-nvidia-gpu-ready.service
 Wants=network-online.target
+Requires=sp-nvidia-gpu-ready.service
 
 [Service]
 Type=simple
