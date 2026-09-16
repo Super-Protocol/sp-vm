@@ -38,8 +38,8 @@ RUN /buildroot/files/scripts/create_base_system.sh
 
 ### Start low-level release assets ###
 FROM rootfs_base AS low_level_release_download
-ARG LOW_LEVEL_RELEASE=sp-vm-low-level-v3
-ARG LOW_LEVEL_SHA256SUMS=e7b9e5b49a768d45561cfd6f8de30b1db3bb30f27391b0dbdd01fdb60d60f93c
+ARG LOW_LEVEL_RELEASE=sp-vm-low-level-v4
+ARG LOW_LEVEL_SHA256SUMS=826a1b3043e9be8b402059485a7ada19c693f19a22572f1e0f9fe4df7b521036
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN set -eu; \
     [[ "$LOW_LEVEL_RELEASE" =~ ^sp-vm-low-level-v[0-9]+$ ]] \

@@ -142,6 +142,11 @@ src/rootfs/files/configs/cert/superprotocol-ca.crt
 *.img
 *.raw
 *.qcow2
+*.vhd
+
+# Local credentials and provider configs used by scripts/<cloud>/
+scripts/**/.s3_credentials
+scripts/**/provider_config/
 
 #.DS_Store
 .DS_Store
