@@ -38,7 +38,7 @@ The client then checks that:
 
 1. the network-type extension equals `trusted`;
 2. the root contains CPU TEE evidence of a supported hardware type: `tdx`,
-   `tdx-google`, or `sev-snp`;
+   `tdx-google`, `tdx-azure`, or `sev-snp`;
 3. the quote/report signature and manufacturer verification data confirm
    platform authenticity and an acceptable security state;
 4. a normalized `mrEnclave` can be calculated from the evidence;

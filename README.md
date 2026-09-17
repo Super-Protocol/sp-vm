@@ -68,7 +68,9 @@ also contains the other kernel DEBs. `SHA256SUMS` is optional in local mode and
 is not used to validate local files; the common stage still validates the
 required layout. The `build-sp-vm` workflow always uses the release and
 manifest checksum pinned in the main Dockerfile; overrides and local directories
-are supported only by local CLI builds.
+are supported only by local CLI builds. After changing kernel fragments or other
+low-level inputs, run the `Build low-level components` workflow and pin the new
+release in the main Dockerfile.
 
 ## Logical rootfs reproducibility test
 
@@ -177,6 +179,58 @@ losetup -d "$DEVICE";
     -drive file=sp_build-228.img,if=virtio,format=raw \
     -drive file=state.qcow2,if=virtio,format=qcow2 \
     -drive file=provider.img,if=virtio,format=raw;
+```
+
+## Cloud Scripts
+Cloud-specific helpers live in `scripts/<cloud>/`:
+
+- `scripts/gcp/upload_custom_conf_image.sh`, `scripts/gcp/run_custom_conf_vm.sh`:
+  upload an image to GCE and run a VM. `run_custom_conf_vm.sh` looks for
+  `provider_config/` and `.s3_credentials` next to itself, so keep them in
+  `scripts/gcp/` (both are git-ignored).
+- `scripts/azure/upload_gallery_image.sh`: upload an image to Azure Compute
+  Gallery.
+
+### Azure Compute Gallery Upload
+The script converts the raw image to a fixed VHD, uploads it as a page blob to
+a staging storage account, and creates image version `<N>.0.0` of image
+definition `sp-vm-<debug|release>` in gallery `sp-vm-images/sp_vm_images`
+(`westus3`). Missing resources are created. The image definition is
+Specialized, Gen2, and supports both Confidential (TDX / SEV-SNP) and regular
+VMs. The `build-sp-vm` workflow runs the same script when
+`upload-to-azure-gallery` is enabled.
+
+Requirements: Contributor on the `sp-vm-images` resource group, and either
+Azure CLI with `qemu-img` or Docker (`azcopy` is used when available).
+`scripts/azure/upload_gallery_image_docker.sh` runs the same script in a
+container built from `scripts/azure/Dockerfile` (Azure CLI, azcopy, qemu-img),
+so the host needs only Docker. It logs in with the `AZURE_CREDENTIALS` service
+principal JSON (`clientId`, `clientSecret`, `tenantId`, `subscriptionId`) when
+set, otherwise it reuses the host `az login` session from `~/.azure`. CI uses
+this wrapper.
+
+```bash
+# From a local build, host Azure CLI
+scripts/azure/upload_gallery_image.sh --raw out/sp-vm-build-435-debug.img
+
+# The same, only Docker required
+scripts/azure/upload_gallery_image_docker.sh --raw out/sp-vm-build-435-debug.img
+
+# See --help for gallery, region, and overwrite options
+scripts/azure/upload_gallery_image.sh --help
+```
+
+Create a TDX Confidential VM from the image. The GRUB image is not signed, so
+Secure Boot must be disabled. The largest extra disk becomes the encrypted
+state disk.
+
+```bash
+az vm create -g <rg> -n <vm> -l westus3 --zone 3 --size Standard_DC2es_v6 \
+    --image /subscriptions/<sub>/resourceGroups/sp-vm-images/providers/Microsoft.Compute/galleries/sp_vm_images/images/sp-vm-debug/versions/435.0.0 \
+    --specialized \
+    --security-type ConfidentialVM --os-disk-security-encryption-type VMGuestStateOnly \
+    --enable-vtpm true --enable-secure-boot false \
+    --data-disk-sizes-gb 100
 ```
 
 ## References

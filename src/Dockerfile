@@ -38,8 +38,8 @@ RUN /buildroot/files/scripts/create_base_system.sh
 
 ### Start low-level release assets ###
 FROM rootfs_base AS low_level_release_download
-ARG LOW_LEVEL_RELEASE=sp-vm-low-level-v3
-ARG LOW_LEVEL_SHA256SUMS=e7b9e5b49a768d45561cfd6f8de30b1db3bb30f27391b0dbdd01fdb60d60f93c
+ARG LOW_LEVEL_RELEASE=sp-vm-low-level-v4
+ARG LOW_LEVEL_SHA256SUMS=826a1b3043e9be8b402059485a7ada19c693f19a22572f1e0f9fe4df7b521036
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN set -eu; \
     [[ "$LOW_LEVEL_RELEASE" =~ ^sp-vm-low-level-v[0-9]+$ ]] \
@@ -378,6 +378,11 @@ ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
 RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh
 
+# Azure TDX quote CLI used by tdx-azure PKI (pki-cert-generator / pki-vm-measurements)
+ADD rootfs/files/scripts/install_azure_guest_attest.sh /buildroot/files/scripts/
+RUN chmod +x /buildroot/files/scripts/install_azure_guest_attest.sh
+RUN --security=insecure /buildroot/files/scripts/install_azure_guest_attest.sh
+
 # Python runtime dependencies used by Swarm services and provision plugins
 ADD rootfs/files/configs/python/requirements.lock /buildroot/files/configs/python/requirements.lock
 ADD rootfs/files/scripts/install_python_deps.sh /buildroot/files/scripts/
@@ -448,6 +453,8 @@ ARG OUTPUTDIR=${OUTPUTROOT}/rootfs
 
 # is required by passing build arg, value example: SP_VM_IMAGE_VERSION=build-1
 ARG SP_VM_IMAGE_VERSION
+# selects build-specific kernel parameters embedded into GRUB
+ARG SP_VM_BUILD_TYPE=debug
 
 WORKDIR /output
 ADD general/files/scripts/log.sh /buildroot/files/scripts/
@@ -455,6 +462,7 @@ ADD general/files/scripts/log.sh /buildroot/files/scripts/
 ADD image/files/scripts/create_image.sh /buildroot/files/scripts/
 ADD image/files/scripts/create_rootfs_verity.sh /buildroot/files/scripts/
 ADD image/files/configs/grub.cfg.tmpl /buildroot/files/configs/
+ADD image/files/configs/grub-bios.cfg.tmpl /buildroot/files/configs/
 RUN --mount=type=bind,target=/output/rootfs,readonly,from=rootfs_builder,source=/output/rootfs --security=insecure \
     /buildroot/files/scripts/create_image.sh
 ### End image ###

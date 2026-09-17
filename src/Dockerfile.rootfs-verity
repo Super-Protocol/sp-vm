@@ -30,6 +30,7 @@ COPY image/files/scripts/create_rootfs_verity.sh /buildroot/files/scripts/create
 COPY image/files/scripts/create_image.sh /buildroot/files/scripts/create_image.sh
 COPY general/files/scripts/log.sh /buildroot/files/scripts/log.sh
 COPY image/files/configs/grub.cfg.tmpl /buildroot/files/configs/grub.cfg.tmpl
+COPY image/files/configs/grub-bios.cfg.tmpl /buildroot/files/configs/grub-bios.cfg.tmpl
 
 # A named BuildKit context with this name must contain rootfs.tar.
 FROM scratch AS rootfs_input
@@ -65,6 +66,7 @@ FROM rootfs_verity_tools AS disk_image_builder
 
 ARG SOURCE_DATE_EPOCH=1783987200
 ARG SP_VM_IMAGE_VERSION=repro-test
+ARG SP_VM_BUILD_TYPE=debug
 ARG OUTPUTROOT=/output
 ARG OUTPUTDIR=/output/rootfs
 ARG ROOTFS_UUID=9d8ae77c-0f99-4b4c-a919-0de57b426ced

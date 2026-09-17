@@ -34,6 +34,22 @@ source "${BUILDROOT}/files/scripts/log.sh";
 # chroot functions
 source "${BUILDROOT}/files/scripts/chroot.sh";
 
+function wget_retry() {
+    local url="$1"
+    local dest="$2"
+    local attempt
+    for attempt in $(seq 1 12); do
+        if wget --https-only --timeout=30 --tries=2 --waitretry=3 \
+            -O "$dest" "$url"; then
+            return 0
+        fi
+        log_info "download failed (attempt ${attempt}/12), retrying ${url}";
+        rm -f "$dest"
+        sleep $((attempt * 3))
+    done
+    log_fail "failed to download ${url}"
+}
+
 function download_intel_sgx_packages() {
     local package_spec action package version architecture repository_path sha256;
     local filename chroot_path host_path;
@@ -46,8 +62,7 @@ function download_intel_sgx_packages() {
         host_path="${OUTPUTDIR}${chroot_path}";
 
         log_info "downloading ${package}=${version} (${architecture}, ${action})";
-        wget "${INTEL_SGX_REPOSITORY}/${repository_path}" \
-            -O "$host_path";
+        wget_retry "${INTEL_SGX_REPOSITORY}/${repository_path}" "$host_path";
         printf '%s  %s\n' "$sha256" "$host_path" \
             | sha256sum --check --strict -;
 

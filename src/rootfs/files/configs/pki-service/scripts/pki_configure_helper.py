@@ -2,11 +2,14 @@
 
 import argparse
 import ipaddress
+import json
 import secrets
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 import yaml
 
@@ -15,6 +18,11 @@ SWARM_CPU_TYPE_FILE = "/etc/swarm/swarm-cpu-type"
 SWARM_NETWORK_TYPE_FILE = "/etc/swarm/swarm-network-type"
 SERVICE_NAME = "pki-configure-helper"
 SYNC_CLIENT_PORT = 9443
+IMDS_TIMEOUT_SEC = 0.5
+AZURE_IMDS_COMPUTE_URL = (
+    "http://169.254.169.254/metadata/instance/compute?api-version=2023-07-01"
+)
+TDX_AZURE_TYPE = "tdx-azure"
 
 
 class LiteralBlockDumper(yaml.SafeDumper):
@@ -54,12 +62,93 @@ def read_first_line(path: Path) -> str | None:
     return lines[0].strip() or None
 
 
-def detect_network_type() -> str:
-    cpu_type_path = Path(SWARM_CPU_TYPE_FILE)
-    network_type_path = Path(SWARM_NETWORK_TYPE_FILE)
+def _imds_get(url: str, headers: dict[str, str]) -> str | None:
+    request = Request(url, headers=headers, method="GET")
+    try:
+        with urlopen(request, timeout=IMDS_TIMEOUT_SEC) as response:
+            body = response.read()
+    except (URLError, TimeoutError, OSError):
+        return None
+    if not body:
+        return None
+    return body.decode("utf-8", errors="replace")
 
-    def read_cpu_type() -> str | None:
-        return read_first_line(cpu_type_path)
+
+def _cpuinfo_flag_tokens() -> set[str]:
+    path = Path("/proc/cpuinfo")
+    if not path.exists():
+        return set()
+    tokens: set[str] = set()
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        key, _, value = line.partition(":")
+        if key.strip() in ("flags", "Features"):
+            tokens.update(value.split())
+    return tokens
+
+
+def _cpuinfo_has_intel_tdx() -> bool:
+    path = Path("/proc/cpuinfo")
+    if not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return "Intel TDX" in text
+
+
+def is_tdx_guest() -> bool:
+    if Path("/dev/sev-guest").exists():
+        return False
+    flags = _cpuinfo_flag_tokens()
+    if "tdx_guest" in flags:
+        return True
+    if Path("/sys/module/tdx_guest").exists():
+        return True
+    return _cpuinfo_has_intel_tdx()
+
+
+def is_azure_confidential_vm() -> bool:
+    body = _imds_get(AZURE_IMDS_COMPUTE_URL, {"Metadata": "true"})
+    if body is None:
+        return False
+    try:
+        compute = json.loads(body)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(compute, dict):
+        return False
+    security = compute.get("securityProfile")
+    if not isinstance(security, dict):
+        return False
+    security_type = str(security.get("securityType") or "").strip().lower()
+    return security_type == "confidentialvm"
+
+
+def try_detect_tdx_azure() -> bool:
+    return is_azure_confidential_vm() and is_tdx_guest()
+
+
+def ensure_cpu_type(cpu_type_path: Path = Path(SWARM_CPU_TYPE_FILE)) -> str:
+    cpu_type = read_first_line(cpu_type_path)
+    if cpu_type is not None:
+        return cpu_type
+
+    if try_detect_tdx_azure():
+        cpu_type_path.parent.mkdir(parents=True, exist_ok=True)
+        cpu_type_path.write_text(f"{TDX_AZURE_TYPE}\n", encoding="utf-8")
+        log("INFO", f"Detected CPU type '{TDX_AZURE_TYPE}' and saved to {cpu_type_path}")
+        return TDX_AZURE_TYPE
+
+    subprocess.run(
+        ["/usr/bin/pki-cert-generator", "get-attestation-type", "--output", str(cpu_type_path)],
+        check=True,
+    )
+    cpu_type = read_first_line(cpu_type_path)
+    if cpu_type is None:
+        raise ValueError(f"CPU type file is missing or empty: {cpu_type_path}")
+    return cpu_type
+
+
+def detect_network_type() -> str:
+    network_type_path = Path(SWARM_NETWORK_TYPE_FILE)
 
     network_type = read_first_line(network_type_path)
     if network_type is None:
@@ -67,16 +156,7 @@ def detect_network_type() -> str:
     if network_type not in ("trusted", "untrusted"):
         raise ValueError(f"Invalid network type '{network_type}' in {network_type_path}")
 
-    cpu_type = read_cpu_type()
-    if cpu_type is None:
-        subprocess.run(
-            ["/usr/bin/pki-cert-generator", "get-attestation-type", "--output", SWARM_CPU_TYPE_FILE],
-            check=True
-        )
-        cpu_type = read_cpu_type()
-    if cpu_type is None:
-        raise ValueError(f"CPU type file is missing or empty: {cpu_type_path}")
-
+    cpu_type = ensure_cpu_type()
     if network_type == "trusted" and cpu_type == "untrusted":
         raise ValueError("Network type 'trusted' is incompatible with CPU type 'untrusted'")
 
@@ -275,6 +355,14 @@ def run_get_vm_mode(config_path: Path, output_path: Path) -> int:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(f"{vm_mode}\n", encoding="utf-8")
         log("INFO", f"Detected vm-mode '{vm_mode}' and saved to {output_path}")
+        try:
+            cpu_type_path = Path(SWARM_CPU_TYPE_FILE)
+            if read_first_line(cpu_type_path) is None and try_detect_tdx_azure():
+                cpu_type_path.parent.mkdir(parents=True, exist_ok=True)
+                cpu_type_path.write_text(f"{TDX_AZURE_TYPE}\n", encoding="utf-8")
+                log("INFO", f"Detected CPU type '{TDX_AZURE_TYPE}' and saved to {cpu_type_path}")
+        except Exception as error:
+            log("WARN", f"Azure TDX detection skipped: {error}")
         return 0
     except Exception as error:
         log("ERROR", f"Failed to detect vm-mode from /sp/swarm/config.yaml: {error}")

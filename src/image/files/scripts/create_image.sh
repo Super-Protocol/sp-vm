@@ -3,7 +3,12 @@
 set -euo pipefail
 
 SP_VM_IMAGE_VERSION="${SP_VM_IMAGE_VERSION:-build-local}"
+SP_VM_BUILD_TYPE="${SP_VM_BUILD_TYPE:-debug}"
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1783987200}"
+
+# Random salt and digest with no known password: locks the GRUB console and
+# entry editing while keeping the image reproducible.
+GRUB_PASSWORD_PBKDF2="grub.pbkdf2.sha512.10000.C35A498514AD16DE86773222D075575A72988122FA2ADE4DCA28E0A4D56178414C9F2E6949D207F2195B75AE15DDC001E61F5D1DAB2AB486807AE60C4D197EC1.B7254B6BA22B11F167E1B528252949219E3E1B0143A702F360E18FFD9AAFB28CA0D4B1076240601716B28F8F0761FFDD3CC014ABBAD789D027909A541440F646"
 
 BUILDROOT="/buildroot"
 OUTPUT_FILENAME="sp-vm-${SP_VM_IMAGE_VERSION}.img"
@@ -38,7 +43,8 @@ BOOT_STAGE="$WORK_DIR/boot-stage"
 ESP_STAGE="$WORK_DIR/esp-stage"
 BOOT_IMAGE="$WORK_DIR/boot.ext4"
 ESP_IMAGE="$WORK_DIR/esp.fat"
-EARLY_GRUB_CONFIG="$WORK_DIR/early-grub.cfg"
+EFI_GRUB_CONFIG="$WORK_DIR/grub-efi.cfg"
+BIOS_GRUB_CONFIG="$WORK_DIR/grub-bios.cfg"
 BIOS_CORE_IMAGE="$WORK_DIR/core.img"
 EFI_GRUB_IMAGE="$WORK_DIR/BOOTX64.EFI"
 LOOP_DEV=""
@@ -70,6 +76,8 @@ function validate_inputs() {
     [[ -d "$OUTPUTDIR" ]] || fail "rootfs directory does not exist: $OUTPUTDIR"
     [[ "$SOURCE_DATE_EPOCH" =~ ^[0-9]+$ ]] || fail "invalid SOURCE_DATE_EPOCH"
     [[ "$ESP_VOLUME_ID" =~ ^[0-9A-Fa-f]{8}$ ]] || fail "invalid ESP_VOLUME_ID"
+    [[ "$SP_VM_IMAGE_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || fail "invalid SP_VM_IMAGE_VERSION"
+    kernel_extra_args >/dev/null
 
     local uuid_pattern='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
     local value
@@ -145,39 +153,48 @@ function copy_tree() {
             --file=-
 }
 
-function create_grub_config() {
-    mkdir -p "$BOOT_STAGE/grub"
-    ROOTFS_HASH="$(cat "$ROOTFS_ARTIFACT_DIR/rootfs_hash.txt")"
-    [[ "$ROOTFS_HASH" =~ ^[0-9a-f]{64}$ ]] || fail "invalid rootfs hash"
+# Kernel parameters added on top of the common command line. They are part of
+# the embedded GRUB configuration and therefore of the boot measurements.
+function kernel_extra_args() {
+    case "$SP_VM_BUILD_TYPE" in
+        release) printf '' ;;
+        debug) printf ' console=ttyS0,115200n8' ;;
+        *) fail "unsupported SP_VM_BUILD_TYPE: $SP_VM_BUILD_TYPE" ;;
+    esac
+}
+
+function render_grub_config() {
+    local template="$1"
+    local output="$2"
 
     # shellcheck disable=SC2016
-    ROOTFS_HASH="$ROOTFS_HASH" \
-        SP_VM_IMAGE_VERSION="$SP_VM_IMAGE_VERSION" \
+    GRUB_PASSWORD_PBKDF2="$GRUB_PASSWORD_PBKDF2" \
         KERNEL_FILENAME="$KERNEL_FILENAME" \
+        KERNEL_CMDLINE="$KERNEL_CMDLINE" \
         envsubst \
-        '$ROOTFS_HASH,$SP_VM_IMAGE_VERSION,$KERNEL_FILENAME' \
-        < "$BUILDROOT/files/configs/grub.cfg.tmpl" \
-        > "$BOOT_STAGE/grub/grub.cfg"
+        '$GRUB_PASSWORD_PBKDF2,$KERNEL_FILENAME,$KERNEL_CMDLINE' \
+        < "$template" \
+        > "$output"
+    grub-script-check "$output"
+}
 
-    cat > "$EARLY_GRUB_CONFIG" <<'EOF'
-set boot=
-search --no-floppy --label bls_boot --set=boot
-if [ -z "$boot" ]; then
-    echo "GRUB: filesystem bls_boot not found"
-    halt
-fi
-set root=$boot
-set prefix=($boot)/grub
-configfile $prefix/grub.cfg
-EOF
-    grub-script-check "$EARLY_GRUB_CONFIG"
-    grub-script-check "$BOOT_STAGE/grub/grub.cfg"
+function create_grub_config() {
+    local rootfs_hash
+    rootfs_hash="$(cat "$ROOTFS_ARTIFACT_DIR/rootfs_hash.txt")"
+    [[ "$rootfs_hash" =~ ^[0-9a-f]{64}$ ]] || fail "invalid rootfs hash"
+
+    KERNEL_CMDLINE="root=LABEL=rootfs ro clearcpuid=mtrr rootfs_verity.scheme=dm-verity rootfs_verity.hash=${rootfs_hash} build=${SP_VM_IMAGE_VERSION}$(kernel_extra_args)"
+    log_info "kernel command line: $KERNEL_CMDLINE"
+
+    render_grub_config "$BUILDROOT/files/configs/grub.cfg.tmpl" "$EFI_GRUB_CONFIG"
+    render_grub_config "$BUILDROOT/files/configs/grub-bios.cfg.tmpl" "$BIOS_GRUB_CONFIG"
 }
 
 function create_grub_images() {
     log_info "creating deterministic standalone BIOS and UEFI GRUB images"
-    local bios_modules='biosdisk part_gpt ext2 normal configfile search search_label test echo halt linux'
-    local efi_modules='part_gpt fat ext2 normal configfile search search_label test echo halt linux'
+    local bios_modules='biosdisk part_gpt ext2 normal search search_label linux password_pbkdf2'
+    # UEFI GRUB boots the kernel from its memdisk and needs no disk drivers.
+    local efi_modules='normal linux password_pbkdf2'
 
     SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" grub-mkstandalone \
         --format=i386-pc \
@@ -187,7 +204,7 @@ function create_grub_images() {
         --locales='' \
         --themes='' \
         --output="$BIOS_CORE_IMAGE" \
-        "boot/grub/grub.cfg=$EARLY_GRUB_CONFIG"
+        "boot/grub/grub.cfg=$BIOS_GRUB_CONFIG"
 
     SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" grub-mkstandalone \
         --format=x86_64-efi \
@@ -197,7 +214,13 @@ function create_grub_images() {
         --locales='' \
         --themes='' \
         --output="$EFI_GRUB_IMAGE" \
-        "boot/grub/grub.cfg=$EARLY_GRUB_CONFIG"
+        "boot/grub/grub.cfg=$EFI_GRUB_CONFIG" \
+        "boot/$KERNEL_FILENAME=$BOOT_STAGE/$KERNEL_FILENAME"
+
+    local efi_bytes
+    efi_bytes="$(stat --format='%s' "$EFI_GRUB_IMAGE")"
+    (( efi_bytes < (ESP_SIZE_MIB - 4) * MIB )) \
+        || fail "BOOTX64.EFI (${efi_bytes} bytes) does not fit into the ESP"
 
     mkdir -p "$BOOT_STAGE/grub/bios" "$ESP_STAGE/EFI/BOOT"
     install -m 0644 /usr/lib/grub/i386-pc/boot.img "$BOOT_STAGE/grub/bios/boot.img"

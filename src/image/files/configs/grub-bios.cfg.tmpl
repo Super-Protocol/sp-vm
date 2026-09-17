@@ -1,0 +1,15 @@
+# BIOS GRUB configuration embedded into core.img. The bios_grub partition is
+# too small for the kernel, so it is read from bls_boot; BIOS boot is not
+# measured and is not used for confidential VMs. No configuration is read from
+# disk.
+set timeout=0
+set timeout_style=hidden
+
+set superusers="sp-vm"
+password_pbkdf2 sp-vm $GRUB_PASSWORD_PBKDF2
+
+search --no-floppy --label bls_boot --set=root
+
+menuentry 'SP Linux' --unrestricted {
+    linux /$KERNEL_FILENAME $KERNEL_CMDLINE
+}
