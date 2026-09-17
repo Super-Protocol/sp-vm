@@ -256,7 +256,7 @@ if command -v azcopy >/dev/null 2>&1; then
       --account-name "$STORAGE_ACCOUNT" \
       --account-key "$STORAGE_KEY" \
       --name "$CONTAINER" \
-      --permissions cw \
+      --permissions rcw \
       --expiry "$(date -u -d '+4 hours' '+%Y-%m-%dT%H:%MZ')" \
       -o tsv)"
   fi
