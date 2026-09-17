@@ -188,51 +188,12 @@ jobs:
           echo "==> Cleaning up temporary GCS object"
           gsutil rm "${SOURCE_URI}"
 
-      - name: Set up Azure CLI and azcopy
-        if: ${{ inputs.upload-to-azure-gallery }}
-        env:
-          AZURE_CLI_VERSION: 2.90.0
-        run: |
-          set -eu
-          tools_dir="${RUNNER_TOOL_CACHE:-$HOME/.cache}/sp-vm-azure"
-          mkdir -p "$tools_dir"
-
-          # Self-hosted runners may lack az; install it without root and
-          # keep it in the tool cache so later runs reuse it.
-          if ! command -v az >/dev/null 2>&1; then
-            az_dir="${tools_dir}/azure-cli-${AZURE_CLI_VERSION}"
-            if [[ ! -x "${az_dir}/bin/az" ]]; then
-              rm -rf "$az_dir"
-              python3 -m venv "$az_dir" \
-                || { echo "python3-venv is required to install Azure CLI" >&2; exit 1; }
-              "${az_dir}/bin/pip" install --quiet --disable-pip-version-check \
-                "azure-cli==${AZURE_CLI_VERSION}"
-            fi
-            echo "${az_dir}/bin" >> "$GITHUB_PATH"
-          fi
-
-          # azcopy uploads the VHD page blob much faster than az and skips
-          # zero pages; the upload script uses it when present.
-          if ! command -v azcopy >/dev/null 2>&1; then
-            azcopy_dir="${tools_dir}/azcopy"
-            if [[ ! -x "${azcopy_dir}/azcopy" ]]; then
-              mkdir -p "$azcopy_dir"
-              curl -sfL https://aka.ms/downloadazcopy-v10-linux \
-                | tar -xz -C "$azcopy_dir" --strip-components=1
-            fi
-            echo "$azcopy_dir" >> "$GITHUB_PATH"
-          fi
-
-      - name: Log in to Azure
-        if: ${{ inputs.upload-to-azure-gallery }}
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
       - name: Upload image to Azure Compute Gallery
         if: ${{ inputs.upload-to-azure-gallery }}
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
         run: |
-          scripts/azure/upload_gallery_image.sh \
+          scripts/azure/upload_gallery_image_docker.sh \
               --raw "out/sp-vm-${SP_VM_IMAGE_VERSION}.img" \
               --build-tag "${SP_VM_IMAGE_VERSION}" \
               --work-dir out

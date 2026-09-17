@@ -200,13 +200,21 @@ Specialized, Gen2, and supports both Confidential (TDX / SEV-SNP) and regular
 VMs. The `build-sp-vm` workflow runs the same script when
 `upload-to-azure-gallery` is enabled.
 
-Requirements: `az login` with Contributor on the `sp-vm-images` resource group
-(for CI, the `AZURE_CREDENTIALS` service principal), and either `qemu-img` or
-Docker. `azcopy` is used for the upload when available.
+Requirements: Contributor on the `sp-vm-images` resource group, and either
+Azure CLI with `qemu-img` or Docker (`azcopy` is used when available).
+`scripts/azure/upload_gallery_image_docker.sh` runs the same script in a
+container built from `scripts/azure/Dockerfile` (Azure CLI, azcopy, qemu-img),
+so the host needs only Docker. It logs in with the `AZURE_CREDENTIALS` service
+principal JSON (`clientId`, `clientSecret`, `tenantId`, `subscriptionId`) when
+set, otherwise it reuses the host `az login` session from `~/.azure`. CI uses
+this wrapper.
 
 ```bash
-# From a local build
+# From a local build, host Azure CLI
 scripts/azure/upload_gallery_image.sh --raw out/sp-vm-build-435-debug.img
+
+# The same, only Docker required
+scripts/azure/upload_gallery_image_docker.sh --raw out/sp-vm-build-435-debug.img
 
 # See --help for gallery, region, and overwrite options
 scripts/azure/upload_gallery_image.sh --help
