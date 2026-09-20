@@ -445,6 +445,7 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
     && apt-get install -y --no-install-recommends \
         cryptsetup-bin dosfstools e2fsprogs faketime gdisk gettext-base \
         grub-pc-bin grub-efi-amd64-bin grub2-common kpartx mtools util-linux \
+        zstd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -465,6 +466,14 @@ ADD image/files/configs/grub.cfg.tmpl /buildroot/files/configs/
 ADD image/files/configs/grub-bios.cfg.tmpl /buildroot/files/configs/
 RUN --mount=type=bind,target=/output/rootfs,readonly,from=rootfs_builder,source=/output/rootfs --security=insecure \
     /buildroot/files/scripts/create_image.sh
+
+# The compressed image is what gets published; a single thread keeps the
+# archive byte-identical for the same image and zstd version.
+ARG IMAGE_ARCHIVE_LEVEL=10
+RUN zstd --quiet --force --threads=1 "-${IMAGE_ARCHIVE_LEVEL}" \
+        "${OUTPUTROOT}/sp-vm-${SP_VM_IMAGE_VERSION}.img" \
+        -o "${OUTPUTROOT}/sp-vm-${SP_VM_IMAGE_VERSION}.img.zst" \
+    && zstd --test "${OUTPUTROOT}/sp-vm-${SP_VM_IMAGE_VERSION}.img.zst"
 ### End image ###
 
 ### Start vm_json_builder ###

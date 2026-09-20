@@ -188,36 +188,50 @@ Cloud-specific helpers live in `scripts/<cloud>/`:
   upload an image to GCE and run a VM. `run_custom_conf_vm.sh` looks for
   `provider_config/` and `.s3_credentials` next to itself, so keep them in
   `scripts/gcp/` (both are git-ignored).
-- `scripts/azure/upload_gallery_image.sh`: upload an image to Azure Compute
-  Gallery.
+- `scripts/azure/ensure_gallery_image.sh`: make a build available as an Azure
+  Compute Gallery image version.
 
-### Azure Compute Gallery Upload
-The script converts the raw image to a fixed VHD, uploads it as a page blob to
-a staging storage account, and creates image version `<N>.0.0` of image
-definition `sp-vm-<debug|release>` in gallery `sp-vm-images/sp_vm_images`
-(`westus3`). Missing resources are created. The image definition is
-Specialized, Gen2, and supports both Confidential (TDX / SEV-SNP) and regular
-VMs. The `build-sp-vm` workflow runs the same script when
-`upload-to-azure-gallery` is enabled.
+### Azure Compute Gallery
+An Azure VM can only be created from an image version in a gallery, and a
+Confidential VM image can only be imported from a VHD. The script does that in
+your own subscription: it fetches the build from Storj, verifies it against
+both hashes in `vm.json`, turns it into a fixed VHD, uploads it as a staging
+page blob and creates image version `<N>.0.0` of image definition
+`sp-vm-<debug|release>` in gallery `sp-vm-images/sp_vm_images` (`westus3`).
+Missing resources are created; the staging blob is deleted afterwards. The
+image definition is Specialized, Gen2, and supports both Confidential
+(TDX / SEV-SNP) and regular VMs.
 
-Requirements: Contributor on the `sp-vm-images` resource group, and either
-Azure CLI with `qemu-img` or Docker (`azcopy` is used when available).
-`scripts/azure/upload_gallery_image_docker.sh` runs the same script in a
-container built from `scripts/azure/Dockerfile` (Azure CLI, azcopy, qemu-img),
-so the host needs only Docker. It logs in with the `AZURE_CREDENTIALS` service
+Nothing is transferred when the image is already there:
+
+- the version is found by build tag and its contents confirmed by the
+  `image_sha256` tag (the hash of the raw image), so a repeat run costs one API
+  call;
+- a missing region is replicated from the existing version inside Azure;
+- the same image in another gallery of the subscription is used as the source;
+- a version left in `Failed` state is recreated, and a version with other
+  contents is never overwritten without `--force-overwrite-image`.
+
+The first run takes around 15 minutes, most of it spent waiting for Azure to
+create the version.
+
+Requirements: Contributor on the target resource group, plus Azure CLI,
+`uplink`, `zstd` and (optionally, for faster uploads) `azcopy`. Alternatively
+`scripts/azure/ensure_gallery_image_docker.sh` runs the same script in a
+container built from `scripts/azure/Dockerfile` that has all of them, so the
+host needs only Docker. It logs in with the `AZURE_CREDENTIALS` service
 principal JSON (`clientId`, `clientSecret`, `tenantId`, `subscriptionId`) when
-set, otherwise it reuses the host `az login` session from `~/.azure`. CI uses
-this wrapper.
+set, otherwise it reuses the host `az login` session from `~/.azure`.
 
 ```bash
+# From a published build, only Docker required
+scripts/azure/ensure_gallery_image_docker.sh --release build-441-release
+
 # From a local build, host Azure CLI
-scripts/azure/upload_gallery_image.sh --raw out/sp-vm-build-435-debug.img
+scripts/azure/ensure_gallery_image.sh --raw out/sp-vm-build-441-debug.img
 
-# The same, only Docker required
-scripts/azure/upload_gallery_image_docker.sh --raw out/sp-vm-build-435-debug.img
-
-# See --help for gallery, region, and overwrite options
-scripts/azure/upload_gallery_image.sh --help
+# See --help for gallery, region, verification and overwrite options
+scripts/azure/ensure_gallery_image.sh --help
 ```
 
 Create a TDX Confidential VM from the image. The GRUB image is not signed, so
@@ -226,7 +240,7 @@ state disk.
 
 ```bash
 az vm create -g <rg> -n <vm> -l westus3 --zone 3 --size Standard_DC2es_v6 \
-    --image /subscriptions/<sub>/resourceGroups/sp-vm-images/providers/Microsoft.Compute/galleries/sp_vm_images/images/sp-vm-debug/versions/435.0.0 \
+    --image /subscriptions/<sub>/resourceGroups/sp-vm-images/providers/Microsoft.Compute/galleries/sp_vm_images/images/sp-vm-debug/versions/441.0.0 \
     --specialized \
     --security-type ConfidentialVM --os-disk-security-encryption-type VMGuestStateOnly \
     --enable-vtpm true --enable-secure-boot false \

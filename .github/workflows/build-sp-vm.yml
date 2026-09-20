@@ -27,11 +27,6 @@ on:
         type: boolean
         default: false
         description: Upload image to GCP bucket and create compute image
-      upload-to-azure-gallery:
-        required: false
-        type: boolean
-        default: false
-        description: Upload image to Azure Compute Gallery (CVM capable)
 jobs:
   build-asset:
     runs-on: ${{ inputs.runs-on }}
@@ -125,7 +120,7 @@ jobs:
                   "$FILE" \
                   ":s3:${S3_BUCKET}/${SP_VM_IMAGE_VERSION}/";
           }
-          upload_file "sp-vm-${SP_VM_IMAGE_VERSION}.img";
+          upload_file "sp-vm-${SP_VM_IMAGE_VERSION}.img.zst";
           upload_file "OVMF.fd";
           upload_file "OVMF_AMD.fd";
           upload_file "OVMF_TDX.fd";
@@ -187,16 +182,6 @@ jobs:
 
           echo "==> Cleaning up temporary GCS object"
           gsutil rm "${SOURCE_URI}"
-
-      - name: Upload image to Azure Compute Gallery
-        if: ${{ inputs.upload-to-azure-gallery }}
-        env:
-          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
-        run: |
-          scripts/azure/upload_gallery_image_docker.sh \
-              --raw "out/sp-vm-${SP_VM_IMAGE_VERSION}.img" \
-              --build-tag "${SP_VM_IMAGE_VERSION}" \
-              --work-dir out
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

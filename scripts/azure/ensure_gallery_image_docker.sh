@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Runs upload_gallery_image.sh inside a container with Azure CLI, azcopy and
-# qemu-img, so the host only needs Docker. All arguments are passed through.
+# Runs ensure_gallery_image.sh inside a container with Azure CLI, azcopy,
+# uplink and zstd, so the host only needs Docker. All arguments are passed
+# through.
 #
 # Authentication:
 #   - AZURE_CREDENTIALS set (service principal JSON with clientId,
@@ -19,11 +20,12 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 IMAGE="${AZURE_TOOLS_IMAGE:-sp-vm-azure-tools:local}"
 
 RAW=""
+WORK_DIR=""
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   case "${args[i]}" in
     --raw) RAW="${args[i + 1]:-}" ;;
-    --acr-image) die "--acr-image is not supported in Docker mode; use upload_gallery_image.sh directly" ;;
+    --work-dir) WORK_DIR="${args[i + 1]:-}" ;;
   esac
 done
 
@@ -36,6 +38,9 @@ mounts=(-v "${REPO_ROOT}:${REPO_ROOT}" -v "${PWD}:${PWD}")
 if [[ -n "$RAW" ]]; then
   raw_dir="$(cd "$(dirname "$RAW")" && pwd)"
   mounts+=(-v "${raw_dir}:${raw_dir}")
+fi
+if [[ -n "$WORK_DIR" ]]; then
+  mounts+=(-v "$(cd "$WORK_DIR" && pwd):$(cd "$WORK_DIR" && pwd)")
 fi
 
 env_args=(-e HOME=/tmp -e GITHUB_SHA)
@@ -63,4 +68,4 @@ exec docker run --rm \
   --workdir "$PWD" \
   "$IMAGE" \
   bash -c "set -euo pipefail; ${login}; exec \"\$0\" \"\$@\"" \
-  "${SCRIPT_DIR}/upload_gallery_image.sh" "$@"
+  "${SCRIPT_DIR}/ensure_gallery_image.sh" "$@"
