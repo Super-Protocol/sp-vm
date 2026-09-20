@@ -4,6 +4,7 @@ import argparse
 import ipaddress
 import json
 import secrets
+import struct
 import subprocess
 import sys
 from datetime import datetime
@@ -23,6 +24,19 @@ AZURE_IMDS_COMPUTE_URL = (
     "http://169.254.169.254/metadata/instance/compute?api-version=2023-07-01"
 )
 TDX_AZURE_TYPE = "tdx-azure"
+
+# Hyper-V reports the TEE backing an isolated guest through its own CPUID
+# leaves. This is what the kernel reads (hv_get_isolation_type()), and on Azure
+# it is the only precise source: see hv_isolation_type() below.
+CPUID_DEVICE = "/dev/cpu/0/cpuid"
+HV_CPUID_INTERFACE = 0x40000000
+HV_CPUID_ISOLATION_CONFIG = 0x4000000C
+HV_SIGNATURE = b"Microsoft Hv"
+HV_ISOLATION_TYPE_MASK = 0xF
+HV_ISOLATION_TYPE_NONE = 0
+HV_ISOLATION_TYPE_VBS = 1
+HV_ISOLATION_TYPE_SNP = 2
+HV_ISOLATION_TYPE_TDX = 3
 
 
 class LiteralBlockDumper(yaml.SafeDumper):
@@ -94,7 +108,50 @@ def _cpuinfo_has_intel_tdx() -> bool:
     return "Intel TDX" in text
 
 
+def _cpuid(leaf: int, subleaf: int = 0) -> tuple[int, int, int, int] | None:
+    """Read one CPUID leaf through /dev/cpu/0/cpuid (needs CONFIG_X86_CPUID)."""
+    try:
+        with open(CPUID_DEVICE, "rb") as handle:
+            handle.seek((subleaf << 32) | leaf)
+            data = handle.read(16)
+    except OSError:
+        return None
+    if len(data) != 16:
+        return None
+    return struct.unpack("<4I", data)
+
+
+def hv_isolation_type() -> int | None:
+    """Return the Hyper-V isolation type, or None when not a Hyper-V guest.
+
+    Azure confidential VMs run behind a paravisor, so the guest is given none
+    of the usual TEE interfaces: no /dev/tdx_guest, no TSM provider, no
+    tdx_guest CPUID flag, no TDEL ACPI table, and CPUID leaf 0x21 reads back as
+    zeroes. IMDS is no help either -- securityProfile only says
+    "ConfidentialVM" and never names the TEE. What the hypervisor does report
+    is its isolation type, which is exactly what the kernel itself uses to
+    decide it is running under TDX.
+    """
+    regs = _cpuid(HV_CPUID_INTERFACE)
+    if regs is None:
+        return None
+    max_leaf, ebx, ecx, edx = regs
+    if struct.pack("<III", ebx, ecx, edx) != HV_SIGNATURE:
+        return None
+    if max_leaf < HV_CPUID_ISOLATION_CONFIG:
+        return None
+    regs = _cpuid(HV_CPUID_ISOLATION_CONFIG)
+    if regs is None:
+        return None
+    return regs[1] & HV_ISOLATION_TYPE_MASK
+
+
 def is_tdx_guest() -> bool:
+    # When the hypervisor states the isolation type, it is authoritative: it
+    # both confirms TDX and rules it out on an SEV-SNP guest.
+    isolation = hv_isolation_type()
+    if isolation is not None:
+        return isolation == HV_ISOLATION_TYPE_TDX
     if Path("/dev/sev-guest").exists():
         return False
     flags = _cpuinfo_flag_tokens()
@@ -103,6 +160,19 @@ def is_tdx_guest() -> bool:
     if Path("/sys/module/tdx_guest").exists():
         return True
     return _cpuinfo_has_intel_tdx()
+
+
+def is_sev_snp_guest() -> bool:
+    """Counterpart of is_tdx_guest() for AMD SEV-SNP.
+
+    NOT verified on a live SEV-SNP guest: the isolation type is read exactly
+    like the TDX one, but only the TDX value has been confirmed against real
+    hardware so far.
+    """
+    isolation = hv_isolation_type()
+    if isolation is not None:
+        return isolation == HV_ISOLATION_TYPE_SNP
+    return Path("/dev/sev-guest").exists()
 
 
 def is_azure_confidential_vm() -> bool:

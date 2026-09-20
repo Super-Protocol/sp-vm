@@ -11,6 +11,7 @@ RUN apt-get update \
         ca-certificates \
         curl \
         jq \
+        openssh-client \
         openssl \
         python3 \
         python3-venv \

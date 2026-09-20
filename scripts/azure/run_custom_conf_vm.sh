@@ -342,7 +342,21 @@ else
   echo "WARNING: launching without a provider_config; the guest will wait for /sp forever" >&2
 fi
 
+# `az vm create` insists on an SSH key for a Linux VM even though --specialized
+# makes it drop the whole osProfile, so the key never reaches Azure. Without
+# this it would silently pick up ~/.ssh/id_rsa.pub, which is absent in the
+# container. Real VM access comes from /sp/authorized_keys in the provider
+# config, which is what sshd reads.
 echo "==> creating ${VM_NAME}"
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  THROWAWAY_KEY="${TMPDIR}/unused_vm_key.pub"
+else
+  need_cmd ssh-keygen
+  ssh-keygen -t ed25519 -N '' -C 'unused-specialized-image-placeholder' \
+    -f "${TMPDIR}/unused_vm_key" -q
+  THROWAWAY_KEY="${TMPDIR}/unused_vm_key.pub"
+fi
+
 create_args=(
   az vm create
   -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" -l "$LOCATION"
@@ -353,6 +367,7 @@ create_args=(
   --enable-vtpm true --enable-secure-boot false
   --os-disk-delete-option Delete
   --nic-delete-option Delete
+  --ssh-key-values "$THROWAWAY_KEY"
 )
 if [[ "$STATE_DISK_SIZE" != "0" ]]; then
   create_args+=(--data-disk-sizes-gb "$STATE_DISK_SIZE" --data-disk-delete-option Delete)
