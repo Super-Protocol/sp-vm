@@ -1,9 +1,9 @@
 [Unit]
-Description=Mount provider_config from GCS S3 bucket via s3fs
+Description=Populate /sp with the provider_config (on-premise disk / GCP s3fs / Azure blob)
 After=network-online.target
 Wants=network-online.target
 # Must be ready before any service that reads /sp
-Before=swarm-db.service swarm-node.service download-sp-swarm-services.service
+Before=swarm-db.service swarm-node.service swarm-services.service pki-vm-mode.service
 
 [Service]
 Type=oneshot
@@ -11,8 +11,8 @@ RemainAfterExit=yes
 Restart=on-failure
 RestartSec=60
 StartLimitInterval=0
-ExecStart=/usr/local/bin/mount-provider-config.sh
-ExecStop=fusermount -uz /sp
+ExecStart=/usr/local/bin/provider-config.sh start
+ExecStop=-/usr/local/bin/provider-config.sh stop
 StandardOutput=journal
 StandardError=journal
 

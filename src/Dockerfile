@@ -256,13 +256,14 @@ ADD rootfs/files/configs/etc/systemd/system/hardening-vm.service ${OUTPUTDIR}/et
 ADD rootfs/files/configs/usr/local/bin/hardening-vm.sh ${OUTPUTDIR}/usr/local/bin/hardening-vm.sh
 RUN ln -sf /etc/systemd/system/hardening-vm.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/hardening-vm.service"
 
-# provider-config s3fs mount service (replaces physical provider_config disk)
-ADD rootfs/files/configs/etc/systemd/system/provider-config-s3fs.service ${OUTPUTDIR}/etc/systemd/system/provider-config-s3fs.service
-ADD rootfs/files/configs/usr/local/bin/mount-provider-config.sh ${OUTPUTDIR}/usr/local/bin/mount-provider-config.sh
+# provider-config service: populates /sp when there is no physical
+# provider_config disk (GCP s3fs mount / Azure blob download)
+ADD rootfs/files/configs/etc/systemd/system/provider-config.service ${OUTPUTDIR}/etc/systemd/system/provider-config.service
+ADD rootfs/files/configs/usr/local/bin/provider-config.sh ${OUTPUTDIR}/usr/local/bin/provider-config.sh
 ADD rootfs/files/configs/etc/systemd/system/sp-tap-network.service ${OUTPUTDIR}/etc/systemd/system/sp-tap-network.service
-RUN chmod +x ${OUTPUTDIR}/usr/local/bin/mount-provider-config.sh
-RUN ln -sf /etc/systemd/system/provider-config-s3fs.service \
-    "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/provider-config-s3fs.service"
+RUN chmod +x ${OUTPUTDIR}/usr/local/bin/provider-config.sh
+RUN ln -sf /etc/systemd/system/provider-config.service \
+    "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/provider-config.service"
 RUN ln -sf /etc/systemd/system/sp-tap-network.service \
     "${OUTPUTDIR}/etc/systemd/system/sysinit.target.wants/sp-tap-network.service"
 ADD rootfs/files/configs/usr/local/bin/sp-tap-network.sh ${OUTPUTDIR}/usr/local/bin/sp-tap-network.sh

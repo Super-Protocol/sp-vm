@@ -190,6 +190,9 @@ Cloud-specific helpers live in `scripts/<cloud>/`:
   `scripts/gcp/` (both are git-ignored).
 - `scripts/azure/ensure_gallery_image.sh`: make a build available as an Azure
   Compute Gallery image version.
+- `scripts/azure/run_custom_conf_vm.sh`: launch a TDX Confidential VM from such
+  an image and hand it a `provider_config`. Looks for `provider_config/` next to
+  itself by default, like the GCP script (git-ignored).
 
 ### Azure Compute Gallery
 An Azure VM can only be created from an image version in a gallery, and a
@@ -234,9 +237,56 @@ scripts/azure/ensure_gallery_image.sh --raw out/sp-vm-build-441-debug.img
 scripts/azure/ensure_gallery_image.sh --help
 ```
 
-Create a TDX Confidential VM from the image. The GRUB image is not signed, so
-Secure Boot must be disabled. The largest extra disk becomes the encrypted
-state disk.
+### Running a VM
+
+`run_custom_conf_vm.sh` does the whole launch: it makes sure the image version
+exists (calling `ensure_gallery_image.sh`), ships the `provider_config` and
+creates the VM.
+
+Put the operator's files in `scripts/azure/provider_config/`, in the same
+layout the guest expects under `/sp`:
+
+```
+scripts/azure/provider_config/
+├── swarm/
+│   ├── config.yaml
+│   └── openresty.yaml
+└── authorized_keys        # debug images only
+```
+
+```bash
+# Everything: image into the gallery, config to the VM, VM up
+scripts/azure/run_custom_conf_vm.sh --release build-441-debug --vm my-vm
+
+# Delete the VM, its disks, NIC, public IP and the config storage
+scripts/azure/run_custom_conf_vm.sh --vm my-vm --delete
+
+# See --help for size, zone, state disk and TTL options
+scripts/azure/run_custom_conf_vm.sh --help
+```
+
+`scripts/azure/run_custom_conf_vm_docker.sh` runs the same thing in the
+container, so the host needs only Docker.
+
+**How the config gets in.** The directory is packed into a `tar.gz` and uploaded
+to a storage account created in the VM's own resource group. The VM's userData
+carries a read-only SAS URL and the archive's SHA-256. On boot the guest reads
+userData from Azure IMDS, downloads the archive, verifies the hash and unpacks
+it into `/sp`, which lives on the encrypted state disk. A lifecycle rule on that
+storage account deletes the archive a day later.
+
+Everything belonging to one launch lives in one resource group
+(`sp-vm-<vm name>` by default) — VM, OS disk, state disk, NIC, public IP and the
+config storage account — so `--delete` removes all of it at once.
+
+**The VM does not survive a reboot.** The state disk is wiped and re-encrypted
+with a fresh key on every boot, so `/sp` comes up empty, and by then the archive
+may already be gone. Launch a new VM instead, or use
+`--refresh-provider-config` to re-upload and restart.
+
+Under the hood the VM is created like this. The GRUB image is not signed, so
+Secure Boot must be disabled; the largest extra disk becomes the encrypted state
+disk.
 
 ```bash
 az vm create -g <rg> -n <vm> -l westus3 --zone 3 --size Standard_DC2es_v6 \
@@ -244,7 +294,8 @@ az vm create -g <rg> -n <vm> -l westus3 --zone 3 --size Standard_DC2es_v6 \
     --specialized \
     --security-type ConfidentialVM --os-disk-security-encryption-type VMGuestStateOnly \
     --enable-vtpm true --enable-secure-boot false \
-    --data-disk-sizes-gb 100
+    --data-disk-sizes-gb 100 \
+    --user-data userdata.json
 ```
 
 ## References

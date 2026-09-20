@@ -1,5 +1,6 @@
-# Tooling for scripts/azure/ensure_gallery_image.sh: Azure CLI, azcopy, the
-# Storj uplink client and zstd.
+# Tooling for scripts/azure/ensure_gallery_image.sh and
+# scripts/azure/run_custom_conf_vm.sh: Azure CLI, azcopy, the Storj uplink
+# client and zstd.
 FROM ubuntu:24.04
 
 ARG AZURE_CLI_VERSION=2.90.0
@@ -10,6 +11,7 @@ RUN apt-get update \
         ca-certificates \
         curl \
         jq \
+        openssl \
         python3 \
         python3-venv \
         unzip \

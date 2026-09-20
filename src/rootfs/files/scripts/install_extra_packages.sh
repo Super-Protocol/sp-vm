@@ -61,7 +61,7 @@ function install_s3fs() {
     log_info "installing s3fs"
     chroot "$OUTPUTDIR" apt-get install -y s3fs
 
-    # Required by provider-config-s3fs.service, which mounts /sp for
+    # Required by the GCP path of provider-config.service, which mounts /sp for
     # processes running as non-root users.
     if ! grep -qxF 'user_allow_other' "${OUTPUTDIR}/etc/fuse.conf"; then
         printf 'user_allow_other\n' >> "${OUTPUTDIR}/etc/fuse.conf"

@@ -41,6 +41,7 @@ Parameters:
   --verify-upload         Read the staging blob back and compare its hash before creating the version
   --no-cross-gallery-search Do not look for the same image in other galleries
   --force-overwrite-image Recreate the version even if one with other contents exists
+  --print-id-only         Print only the image version id on stdout (progress goes to stderr)
   --dry-run               Print commands without executing them
 
 The image version is <N>.0.0 of image definition sp-vm-<debug|release>.
@@ -56,6 +57,7 @@ need_cmd() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DRY_RUN=0
+PRINT_ID_ONLY=0
 RAW=""
 VM_JSON=""
 RELEASE=""
@@ -95,11 +97,20 @@ while [[ $# -gt 0 ]]; do
     --verify-upload) VERIFY_UPLOAD=1; shift 1 ;;
     --no-cross-gallery-search) CROSS_GALLERY_SEARCH=0; shift 1 ;;
     --force-overwrite-image) FORCE_OVERWRITE_IMAGE=1; shift 1 ;;
+    --print-id-only) PRINT_ID_ONLY=1; shift 1 ;;
     --dry-run) DRY_RUN=1; shift 1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $1 (see --help)" ;;
   esac
 done
+
+# fd 3 is the real stdout. In --print-id-only mode everything the script would
+# normally print is pushed to stderr, so stdout carries only the version id.
+if [[ "$PRINT_ID_ONLY" -eq 1 ]]; then
+  exec 3>&1 1>&2
+else
+  exec 3>&1
+fi
 
 run() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -288,6 +299,12 @@ ensure_regions() {
 }
 
 finish() {
+  # With --print-id-only stdout carries nothing but the id, so callers such as
+  # run_custom_conf_vm.sh can capture it instead of scraping the log.
+  if [[ "$PRINT_ID_ONLY" -eq 1 ]]; then
+    printf '%s\n' "$VERSION_ID" >&3
+    exit 0
+  fi
   echo
   echo "==> image version ready"
   echo "  ${VERSION_ID}"
@@ -539,7 +556,7 @@ else
     fi
     run azcopy copy "$VHD" \
       "https://${STORAGE_ACCOUNT}.blob.core.windows.net/${CONTAINER}/${BLOB_NAME}?${sas}" \
-      --blob-type PageBlob
+      --blob-type PageBlob --output-level essential
   else
     run az storage blob upload \
       --account-name "$STORAGE_ACCOUNT" \
@@ -550,6 +567,7 @@ else
       --type page \
       --overwrite \
       --max-connections 16 \
+      --no-progress \
       --only-show-errors \
       -o none
   fi
@@ -560,7 +578,8 @@ if [[ "$VERIFY_UPLOAD" -eq 1 ]] && [[ "$DRY_RUN" -eq 0 ]]; then
   az storage blob download \
     --account-name "$STORAGE_ACCOUNT" --account-key "$STORAGE_KEY" \
     --container-name "$CONTAINER" --name "$BLOB_NAME" \
-    --file "${TMPDIR}/verify.vhd" --max-connections 16 --only-show-errors -o none
+    --file "${TMPDIR}/verify.vhd" --max-connections 16 \
+    --no-progress --only-show-errors -o none
   cmp "$VHD" "${TMPDIR}/verify.vhd" || die "Staging blob differs from the local VHD"
   rm -f "${TMPDIR}/verify.vhd"
 fi
