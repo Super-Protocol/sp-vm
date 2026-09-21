@@ -386,8 +386,14 @@ run "${create_args[@]}"
 
 PUBLIC_IP=""
 if [[ "$DRY_RUN" -eq 0 ]] && [[ "$NO_PUBLIC_IP" -eq 0 ]]; then
-  PUBLIC_IP="$(az vm show -d -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" \
-    --query publicIps -o tsv 2>/dev/null || true)"
+  # The address is not always attached to the VM view the moment create
+  # returns, so give it a few seconds rather than printing nothing.
+  for _ in 1 2 3 4 5; do
+    PUBLIC_IP="$(az vm show -d -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" \
+      --query publicIps -o tsv 2>/dev/null || true)"
+    [[ -z "$PUBLIC_IP" ]] || break
+    sleep 3
+  done
 fi
 
 echo
