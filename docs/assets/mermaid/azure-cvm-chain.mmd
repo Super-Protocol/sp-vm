@@ -1,0 +1,54 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "fontFamily": "Inter, Segoe UI, Arial, sans-serif",
+    "primaryColor": "#ffffff",
+    "primaryTextColor": "#0f172a",
+    "primaryBorderColor": "#cbd5e1",
+    "lineColor": "#64748b"
+  },
+  "themeCSS": ".nodeLabel, .edgeLabel, .label div { white-space: nowrap !important; max-width: none !important; }",
+  "flowchart": {
+    "curve": "stepAfter",
+    "htmlLabels": true,
+    "nodeSpacing": 45,
+    "rankSpacing": 70
+  }
+}}%%
+flowchart TB
+    UD["userData<br/><small>hash of the node public key · 64 bytes</small>"]
+    VEND["Intel / AMD<br/><small>vendor signature<br/>and certificate chain</small>"]
+    MSAK["Microsoft AK certificate<br/><small>Azure Virtual TPM<br/>Root CA 2023</small>"]
+
+    subgraph VM["Azure confidential VM · vTPM of the Microsoft paravisor"]
+        direction TB
+        HW["Hardware report<br/><small>TDX: TDREPORT + TD quote<br/>SEV-SNP: VCEK-signed report</small>"]
+        RT["HCL runtime data<br/><small>HCLAkPub · vm-configuration<br/>user-data</small>"]
+        TQ["TPM quote<br/><small>AK signature over<br/>SHA-256(PCR4 || PCR9) and SHA-256(userData)</small>"]
+        EL["Event log<br/><small>PCR4 and PCR9 events</small>"]
+    end
+
+    MAA["Microsoft Azure Attestation<br/><small>azure-compliant-cvm<br/>echoes measurement and HCLAkPub</small>"]
+    MR["mrEnclave · 32 bytes<br/><small>SHA-256(vmConfigFlags || PCR4′ || PCR9′)</small>"]
+
+    UD -->|"user-data via NV 0x01400002"| RT
+    UD -->|"qualifyingData"| TQ
+    VEND -->|"signs"| HW
+    HW -->|"report_data = SHA-256(runtime data)"| RT
+    MSAK -->|"certifies HCLAkPub"| RT
+    RT -->|"HCLAkPub = signing key"| TQ
+    EL -->|"replay = pcrDigest"| TQ
+    HW -->|"quote / report"| MAA
+    RT -->|"runtime data"| MAA
+    EL -->|"PCR4′, PCR9′"| MR
+    RT -->|"vmConfigFlags"| MR
+
+    classDef input fill:#ffffff,stroke:#cbd5e1,color:#0f172a,stroke-width:1.5px;
+    classDef verify fill:#eff6ff,stroke:#60a5fa,color:#0f172a,stroke-width:1.5px;
+    classDef anchor fill:#fff7ed,stroke:#f97316,color:#0f172a,stroke-width:1.5px;
+    classDef result fill:#ecfdf5,stroke:#34d399,color:#0f172a,stroke-width:2px;
+    class UD,EL input;
+    class HW,RT,TQ verify;
+    class VEND,MSAK,MAA anchor;
+    class MR result;
+    linkStyle default stroke:#64748b,stroke-width:2px;

@@ -200,6 +200,10 @@ Quote generation and MAA verification still live in `pki-cert-generator`,
 The VM image detector still only records `tdx-azure` in
 `/etc/swarm/swarm-cpu-type`.
 
+The evidence-based mechanism for Azure TDX and SEV-SNP, which is verified
+outside Azure and uses a PCR4/PCR9 `mrEnclave`, is described in
+[chapter 8](08-azure-attestation.md).
+
 ## AMD SEV-SNP
 
 ### Evidence Contents

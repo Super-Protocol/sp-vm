@@ -44,12 +44,14 @@ pandoc \
   "$docs_dir/05-nvidia-gpu-attestation.md" \
   "$docs_dir/06-pki.md" \
   "$docs_dir/07-reference-measurements.md" \
+  "$docs_dir/08-azure-attestation.md" \
   --output "$html"
 
 # WeasyPrint calculates text metrics inside this SVG differently from browsers.
 # Use the pre-rendered copy in the PDF while keeping the SVG in Markdown.
 sed -i \
-  's#assets/architecture-overview\.svg#assets/pdf/architecture-overview.png#g' \
+  -e 's#assets/architecture-overview\.svg#assets/pdf/architecture-overview.png#g' \
+  -e 's#assets/azure-cvm-chain\.svg#assets/pdf/azure-cvm-chain.png#g' \
   "$html"
 
 weasyprint "$html" "$output"
