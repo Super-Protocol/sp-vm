@@ -9,9 +9,8 @@ is calculated from it.
 
 The mechanism is implemented in `sp-nodejs-addons`
 (`attestation-common`, `attestation-wasm`, `tee-addon`). The PKI tools of this
-image still use the `azure-guest-attest` flow described in the
-[Azure TDX section of chapter 4](04-vm-measurements.md#azure-tdx-tdx-azure)
-until they are switched to the evidence described here.
+image still use an earlier `azure-guest-attest` flow until they are switched
+to the evidence described here.
 
 The design goals are:
 

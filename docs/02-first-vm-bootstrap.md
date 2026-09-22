@@ -35,27 +35,34 @@ All three fields must be empty simultaneously. The mode detector then writes
 
 ## 1. Detecting the Hardware Environment
 
-The CPU TEE type is detected automatically, in this order:
+The CPU TEE type is detected by `pki-cert-generator get-attestation-type`, in
+this order:
 
-1. Azure confidential TDX selects `tdx-azure`. The detector calls Azure IMDS
-   (`/metadata/instance/compute`, header `Metadata: true`, 500 ms timeout) and
-   requires `securityProfile.securityType=ConfidentialVM` together with a TDX
-   guest (CPU flag `tdx_guest`, module `tdx_guest`, or `Intel TDX` in
-   `/proc/cpuinfo`). `/dev/tdx_guest` is typically absent on Azure; evidence
-   is produced through the Azure vTPM, not the Intel TDX guest driver. AMD
-   SEV-SNP guests (`/dev/sev-guest`) are not classified as `tdx-azure`.
-2. Character device `/dev/tdx_guest` identifies Intel TDX. A Google IMDS
+1. Character device `/dev/tdx_guest` identifies Intel TDX. A Google IMDS
    request to `http://169.254.169.254/computeMetadata/v1/instance/id` with
    header `Metadata-Flavor: Google` and a 500 ms timeout selects
    `tdx-google` when it returns a non-empty instance ID; otherwise the type
    is `tdx`.
-3. Character device `/dev/sev-guest` identifies AMD SEV-SNP (`sev-snp`).
+2. Character device `/dev/sev-guest` identifies AMD SEV-SNP (`sev-snp`).
+3. An Azure confidential VM is identified without any network request.
+   Azure CVMs run behind a Microsoft paravisor, so neither `/dev/tdx_guest`
+   nor `/dev/sev-guest` exists and `/proc/cpuinfo` carries no TEE flags.
+   Instead:
+   - the DMI chassis asset tag
+     (`/sys/class/dmi/id/chassis_asset_tag`) equals
+     `7783-7084-3265-9085-8269-3286-77`, which marks an Azure VM;
+   - the Hyper-V isolation type (CPUID leaf `0x4000000C`, `EBX & 0xF`, read
+     through `/dev/cpu/0/cpuid` after checking the `Microsoft Hv` signature
+     at leaf `0x40000000`) names the TEE: `3` is TDX, `2` is SEV-SNP. This is
+     the value the Linux kernel itself uses.
+
+   An Azure VM with isolation type TDX selects `tdx-azure`. Azure SEV-SNP has
+   no attestation type yet and is treated as an unsupported environment.
 4. The absence of a supported environment stops attestation.
 
-`tdx-azure` is not an alias of `tdx-google`. Azure TDX quotes are retrieved
-from the vTPM by `azure-guest-attest` and verified with Microsoft Azure
-Attestation (MAA). They do not use the GCP `go-tdx-guest` / `/dev/tdx_guest`
-ABI.
+`tdx-azure` is not an alias of `tdx-google`. Azure evidence is produced
+through the vTPM rather than a TEE guest driver; its format and verification
+are described in [chapter 8](08-azure-attestation.md).
 
 The detected CPU type is written to `/etc/swarm/swarm-cpu-type`.
 
@@ -79,8 +86,8 @@ evidence:
 
 - for TDX (`tdx`, `tdx-google`), it verifies the DCAP quote and event-log
   integrity;
-- for Azure TDX (`tdx-azure`), it verifies the vTPM TD report / TD quote and
-  the MAA attestation result;
+- for Azure TDX (`tdx-azure`), it verifies the vTPM evidence as described in
+  [chapter 8](08-azure-attestation.md);
 - for SEV-SNP, it verifies report authenticity and the required platform
   security properties, and reproduces the launch measurement;
 - when a GPU is present, it verifies token binding, the NVIDIA verification

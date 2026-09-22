@@ -29,7 +29,7 @@ of untrusted networks is outside the scope of this documentation.
 1. [Architecture and trust model](01-architecture.md)
 2. [First VM bootstrap](02-first-vm-bootstrap.md)
 3. [Joining a subsequent VM](03-node-join.md)
-4. [Intel TDX, Azure TDX, and AMD SEV-SNP measurements](04-vm-measurements.md)
+4. [Intel TDX and AMD SEV-SNP measurements](04-vm-measurements.md)
 5. [NVIDIA GPU attestation](05-nvidia-gpu-attestation.md)
 6. [PKI architecture](06-pki.md)
 7. [Reference measurements](07-reference-measurements.md)
