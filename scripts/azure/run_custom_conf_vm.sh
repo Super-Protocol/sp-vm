@@ -53,6 +53,7 @@ provider_config:
   --refresh-provider-config  Re-upload the archive and update an existing VM's userData
 
 Other:
+  --update-network  Apply the inbound firewall rules to an existing VM and exit
   --delete     Delete the VM's whole resource group and exit
   --dry-run    Print commands without executing them
 EOF
@@ -87,7 +88,16 @@ CONFIG_TTL_DAYS="1"
 SAS_EXPIRY_DAYS="30"
 REFRESH_PROVIDER_CONFIG=0
 DELETE=0
+UPDATE_NETWORK=0
 CONTAINER="provider-config"
+
+# Inbound ports the guest firewall accepts from anywhere
+# (src/rootfs/files/configs/usr/local/bin/hardening-vm.sh). Azure's network
+# security group drops everything else before it reaches the guest, so it has to
+# allow the same set; keep the two lists in sync. SSH (22) gets its own rule from
+# az vm create, and the guest opens it only on debug images.
+INBOUND_TCP_PORTS=(80 443 7946 9180 9443)
+INBOUND_UDP_PORTS=(53 7946 51820)
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -111,6 +121,7 @@ while [[ $# -gt 0 ]]; do
     --sas-expiry-days) SAS_EXPIRY_DAYS="${2:-}"; shift 2 ;;
     --refresh-provider-config) REFRESH_PROVIDER_CONFIG=1; shift 1 ;;
     --delete) DELETE=1; shift 1 ;;
+    --update-network) UPDATE_NETWORK=1; shift 1 ;;
     --dry-run) DRY_RUN=1; shift 1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $1 (see --help)" ;;
@@ -154,6 +165,43 @@ if [[ "$DELETE" -eq 1 ]]; then
   echo "==> deleting resource group ${VM_RESOURCE_GROUP} (VM, disks, NIC, IP and the provider_config storage account)"
   run az group delete -n "$VM_RESOURCE_GROUP" --yes -o none
   echo "==> deleted"
+  exit 0
+fi
+
+### Network ###################################################################
+
+# Allow the guest's service ports through the NSG attached to the VM's NIC.
+# `az network nsg rule create` overwrites a rule of the same name, so this is
+# safe to run again on an existing VM; rules take effect without a restart.
+ensure_inbound_rules() {
+  local nsg="${VM_NAME}NSG" nic_id
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    nic_id="$(az vm show -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" \
+      --query 'networkProfile.networkInterfaces[0].id' -o tsv)"
+    nsg="$(az network nic show --ids "$nic_id" --query 'networkSecurityGroup.id' -o tsv)"
+    [[ -n "$nsg" ]] || die "No network security group is attached to the NIC of ${VM_NAME}"
+    nsg="${nsg##*/}"
+  fi
+  echo "==> allowing inbound TCP ${INBOUND_TCP_PORTS[*]} and UDP ${INBOUND_UDP_PORTS[*]} in ${nsg}"
+  run az network nsg rule create -g "$VM_RESOURCE_GROUP" --nsg-name "$nsg" \
+    -n sp-vm-inbound-tcp --priority 1010 --direction Inbound --access Allow \
+    --protocol Tcp --source-address-prefixes '*' --source-port-ranges '*' \
+    --destination-address-prefixes '*' --destination-port-ranges "${INBOUND_TCP_PORTS[@]}" \
+    -o none
+  run az network nsg rule create -g "$VM_RESOURCE_GROUP" --nsg-name "$nsg" \
+    -n sp-vm-inbound-udp --priority 1020 --direction Inbound --access Allow \
+    --protocol Udp --source-address-prefixes '*' --source-port-ranges '*' \
+    --destination-address-prefixes '*' --destination-port-ranges "${INBOUND_UDP_PORTS[@]}" \
+    -o none
+}
+
+if [[ "$UPDATE_NETWORK" -eq 1 ]]; then
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    az vm show -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" >/dev/null 2>&1 \
+      || die "VM ${VM_NAME} not found in ${VM_RESOURCE_GROUP}"
+  fi
+  ensure_inbound_rules
+  echo "==> network updated"
   exit 0
 fi
 
@@ -383,6 +431,7 @@ fi
 create_args+=(-o none)
 
 run "${create_args[@]}"
+ensure_inbound_rules
 
 PUBLIC_IP=""
 if [[ "$DRY_RUN" -eq 0 ]] && [[ "$NO_PUBLIC_IP" -eq 0 ]]; then
