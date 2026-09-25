@@ -35,21 +35,38 @@ All three fields must be empty simultaneously. The mode detector then writes
 
 ## 1. Detecting the Hardware Environment
 
-The CPU TEE type is detected automatically:
+The CPU TEE type is detected by `pki-cert-generator get-attestation-type`, in
+this order:
 
-- character device `/dev/tdx_guest` identifies Intel TDX;
-- character device `/dev/sev-guest` identifies AMD SEV-SNP;
-- the absence of a supported device stops attestation.
+1. An Azure confidential VM is identified first, without any network
+   request. Azure CVMs run behind a Microsoft paravisor, so the guest has no
+   usable TEE device and `/proc/cpuinfo` carries no TEE flags. Instead:
+   - the DMI chassis asset tag
+     (`/sys/class/dmi/id/chassis_asset_tag`) equals
+     `7783-7084-3265-9085-8269-3286-77`, which marks an Azure VM;
+   - the Hyper-V isolation type (CPUID leaf `0x4000000C`, `EBX & 0xF`, read
+     through `/dev/cpu/0/cpuid` after checking the `Microsoft Hv` signature
+     at leaf `0x40000000`) names the TEE: `3` is TDX, `2` is SEV-SNP. This is
+     the value the Linux kernel itself uses.
 
-For a TDX VM, the detector also requests:
+   Isolation type TDX selects `tdx-azure`, SEV-SNP selects `sev-snp-azure`.
+   This check runs before the device checks because on Azure the isolation
+   type takes precedence over any `/dev/sev-guest`.
+2. Character device `/dev/tdx_guest` identifies Intel TDX. A Google IMDS
+   request to `http://169.254.169.254/computeMetadata/v1/instance/id` with
+   header `Metadata-Flavor: Google` and a 500 ms timeout selects
+   `tdx-google` when it returns a non-empty instance ID; otherwise the type
+   is `tdx`.
+3. Character device `/dev/sev-guest` identifies AMD SEV-SNP (`sev-snp`). On
+   GCP, detected by the same IMDS request, SEV-SNP is not supported and the
+   type is `untrusted`.
+4. Otherwise the type is `untrusted`, and no certificate for a trusted network
+   can be issued.
 
-```text
-http://169.254.169.254/computeMetadata/v1/instance/id
-```
-
-The request includes the `Metadata-Flavor: Google` header and has a 500 ms
-timeout. A successful response containing a non-empty instance ID selects the
-`tdx-google` evidence type. Otherwise, the regular `tdx` type is used.
+`tdx-azure` and `sev-snp-azure` are not aliases of `tdx-google` or `sev-snp`.
+Azure evidence is produced through the vTPM rather than a TEE guest driver;
+its format and verification are described in
+[chapter 8](08-azure-attestation.md).
 
 The detected CPU type is written to `/etc/swarm/swarm-cpu-type`.
 
@@ -71,7 +88,11 @@ and the specific GPU token together.
 Before creating the certificates, the generator verifies the hardware
 evidence:
 
-- for TDX, it verifies the DCAP quote and event-log integrity;
+- for TDX (`tdx`, `tdx-google`), it verifies the DCAP quote and event-log
+  integrity;
+- for Azure (`tdx-azure`, `sev-snp-azure`), it verifies the vTPM evidence and
+  the Microsoft Azure Attestation verdict as described in
+  [chapter 8](08-azure-attestation.md);
 - for SEV-SNP, it verifies report authenticity and the required platform
   security properties, and reproduces the launch measurement;
 - when a GPU is present, it verifies token binding, the NVIDIA verification
@@ -134,7 +155,8 @@ When PKI Authority starts, it obtains the PKI material and `swarmKey` from
 
 - `networkType: trusted`;
 - `networkID` from `pki_authority.networkID`;
-- allowed attested device types: `tdx`, `tdx-google`, and `sev-snp`.
+- allowed attested device types: `tdx`, `tdx-google`, `tdx-azure`, `sev-snp`,
+  and `sev-snp-azure`.
 
 `networkID` is not a secret. It identifies the Swarm in the PKI enrollment
 protocol and prevents two clusters from being mixed accidentally. The value is

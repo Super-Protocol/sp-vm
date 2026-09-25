@@ -25,9 +25,10 @@ The diagram contains three parts:
   attestation challenge for the certificate request. After verifying the
   challenge, the PKI Authority issues a VM certificate that provides access to
   the `swarm key`.
-- **Trust sources:** Intel PCS, AMD KDS, and NVIDIA NRAS provide manufacturer data
-  for hardware evidence verification. The trusted `mrEnclave` registry provides
-  the measurements allowed for joining a trusted network.
+- **Trust sources:** Intel PCS, AMD KDS, Microsoft Azure Attestation (MAA) for
+  `tdx-azure` and `sev-snp-azure`, and NVIDIA NRAS provide manufacturer data
+  for hardware evidence verification. The trusted `mrEnclave` registry
+  provides the measurements allowed for joining a trusted network.
 
 The complete bootstrap and joining sequences are described in
 [First VM Bootstrap](02-first-vm-bootstrap.md) and
@@ -39,7 +40,8 @@ The normal trusted flow relies on several independent trust sources:
 
 | Source | What it proves |
 |---|---|
-| Intel PCS | Authenticity of the TDX quote and the platform TCB state. |
+| Intel PCS | Authenticity of the TDX quote and the platform TCB state (`tdx`, `tdx-google`). |
+| Microsoft Azure Attestation | That Azure evidence produced via the vTPM comes from a genuine Azure paravisor (`tdx-azure`, `sev-snp-azure`). |
 | AMD KDS | Authenticity of the VCEK and SEV-SNP certificate chain, and certificate revocation lists. |
 | NVIDIA NRAS | Authenticity of the NVIDIA token, firmware, driver, and VBIOS evidence. |
 | Trusted measurement registry | The calculated `mrEnclave` is allowed for the trusted network. |

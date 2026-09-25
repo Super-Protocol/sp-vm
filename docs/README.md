@@ -6,7 +6,8 @@ This documentation explains how nodes in a trusted network prove the
 authenticity of their execution environment before receiving network secrets
 and being admitted to the Swarm. It covers:
 
-- Intel TDX and AMD SEV-SNP hardware attestation;
+- Intel TDX (including GCP `tdx-google` and Azure `tdx-azure`) and AMD
+  SEV-SNP (including Azure `sev-snp-azure`) hardware attestation;
 - NVIDIA Confidential Computing GPU attestation;
 - calculation and verification of the normalized `mrEnclave` measurement;
 - bootstrap of the first virtual machine;
@@ -31,6 +32,7 @@ of untrusted networks is outside the scope of this documentation.
 5. [NVIDIA GPU attestation](05-nvidia-gpu-attestation.md)
 6. [PKI architecture](06-pki.md)
 7. [Reference measurements](07-reference-measurements.md)
+8. [Azure confidential VM attestation](08-azure-attestation.md)
 
 PDF generation instructions and host dependencies are documented in
 [Building the PDF Documentation](PDF-BUILD.md).

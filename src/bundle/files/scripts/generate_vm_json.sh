@@ -17,10 +17,24 @@ if [[ ! -d "$BUILD_DIR" ]]; then
     exit 1;
 fi
 
+RAW_IMAGE="sp-vm-${SP_VM_IMAGE_VERSION}.img";
+IMAGE_ARCHIVE="${RAW_IMAGE}.zst";
+
+if [[ ! -f "$BUILD_DIR/$IMAGE_ARCHIVE" ]]; then
+    echo "image archive not found: $BUILD_DIR/$IMAGE_ARCHIVE";
+    exit 1;
+fi
+
+# Only the archive is published; the raw image hash and size are recorded with
+# it so the decompressed image can be verified as well.
+RAW_SHA256="$(sha256sum "$BUILD_DIR/$RAW_IMAGE" | awk '{print $1}')";
+RAW_SIZE="$(stat --format='%s' "$BUILD_DIR/$RAW_IMAGE")";
+
 # Stable ordering keeps vm.json reproducible across filesystems and builders.
 while IFS= read -r FILE; do
     case "$FILE" in
-        "sp-vm-${SP_VM_IMAGE_VERSION}.img") KEY="image" ;;
+        "$RAW_IMAGE") continue ;;
+        "$IMAGE_ARCHIVE") KEY="image" ;;
         OVMF.fd) KEY="bios" ;;
         OVMF_AMD.fd) KEY="bios_amd" ;;
         OVMF_TDX.fd) KEY="bios_tdx" ;;
@@ -37,7 +51,16 @@ while IFS= read -r FILE; do
     JSON+="    \"bucket\": \"$S3_BUCKET\",\n";
     JSON+="    \"prefix\": \"$SP_VM_IMAGE_VERSION\",\n";
     JSON+="    \"filename\": \"$FILE\",\n";
-    JSON+="    \"sha256\": \"$SHA256\"\n";
+    JSON+="    \"sha256\": \"$SHA256\"";
+    if [[ "$KEY" == "image" ]]; then
+        JSON+=",\n";
+        JSON+="    \"compression\": \"zstd\",\n";
+        JSON+="    \"uncompressed_filename\": \"$RAW_IMAGE\",\n";
+        JSON+="    \"uncompressed_sha256\": \"$RAW_SHA256\",\n";
+        JSON+="    \"uncompressed_size\": $RAW_SIZE\n";
+    else
+        JSON+="\n";
+    fi
     JSON+="  },\n";
 done < <(find "$BUILD_DIR" -maxdepth 1 -type f ! -name vm.json -printf '%f\n' | LC_ALL=C sort)
 
