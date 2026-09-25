@@ -7,8 +7,7 @@ authenticity of their execution environment before receiving network secrets
 and being admitted to the Swarm. It covers:
 
 - Intel TDX (including GCP `tdx-google` and Azure `tdx-azure`) and AMD
-  SEV-SNP hardware attestation, including Azure confidential VMs on TDX and
-  SEV-SNP;
+  SEV-SNP (including Azure `sev-snp-azure`) hardware attestation;
 - NVIDIA Confidential Computing GPU attestation;
 - calculation and verification of the normalized `mrEnclave` measurement;
 - bootstrap of the first virtual machine;

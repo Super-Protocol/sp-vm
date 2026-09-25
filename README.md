@@ -279,6 +279,35 @@ Everything belonging to one launch lives in one resource group
 (`sp-vm-<vm name>` by default) — VM, OS disk, state disk, NIC, public IP and the
 config storage account — so `--delete` removes all of it at once.
 
+**Using the VM's built-in disk as the state disk.** Some sizes ship with a large
+local disk of their own — `Standard_NCC40ads_H100_v5`, for instance, comes with
+about 800 GB. Paying for a managed data disk next to it makes no sense, so pass
+`--state-disk-size 0`: the script then omits `--data-disk-sizes-gb` entirely and
+the guest picks the built-in disk on its own, because the initramfs takes the
+largest block device that is neither the root disk nor the provider_config disk.
+
+```bash
+scripts/azure/run_custom_conf_vm.sh --release build-444-debug --vm gpu-vm \
+    --size Standard_NCC40ads_H100_v5 --location centralus --zone 3 \
+    --state-disk-size 0 --provider-config ./provider_config
+```
+
+The built-in disk is wiped on deallocation, but that costs nothing here: the
+state disk is wiped and re-encrypted on every boot anyway. Check that the size
+actually has such a disk before relying on this — `MaxResourceVolumeMB` in
+`az vm list-skus --size <size> --location <region>` is 0 when it does not, and
+the VM then fails to boot with `no eligible extra block devices found`.
+
+**Network.** Azure's network security group blocks everything by default, so
+the script opens the ports the guest firewall (`hardening-vm.sh`) accepts:
+TCP 80, 443, 7946, 9180, 9443 and UDP 53, 7946, 51820; `az vm create` adds SSH.
+For a VM created before this, or after changing the list, apply the rules
+without restarting it:
+
+```bash
+scripts/azure/run_custom_conf_vm.sh --vm my-vm --update-network
+```
+
 **The VM does not survive a reboot.** The state disk is wiped and re-encrypted
 with a fresh key on every boot, so `/sp` comes up empty, and by then the archive
 may already be gone. Launch a new VM instead, or use

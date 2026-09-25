@@ -8,9 +8,10 @@ produced inside the VM, how it is verified outside Azure, and how `mrEnclave`
 is calculated from it.
 
 The mechanism is implemented in `sp-nodejs-addons`
-(`attestation-common`, `attestation-wasm`, `tee-addon`). The PKI tools of this
-image still use an earlier `azure-guest-attest` flow until they are switched
-to the evidence described here.
+(`attestation-common`, `attestation-wasm`, `tee-addon`). The PKI components of
+this image (`pki-cert-generator`, `pki-sync-client`, PKI Authority) use it for
+the challenge types `tdx-azure` and `sev-snp-azure`, and the Measurement API
+(`pki-vm-measurements`) returns the same evidence and `mrEnclave`.
 
 The design goals are:
 
@@ -114,7 +115,11 @@ is bound twice:
    qualifying data, so the 64 bytes themselves cannot be used.
 
 The verifier returns the 64-byte HCL `user-data` as `reportData`, with the
-same meaning as for the other TEE types.
+same meaning as for the other TEE types. In a PKI challenge it is the SHA-256
+of the certificate's DER-encoded public key (`SubjectPublicKeyInfo`) followed,
+on a VM with NVIDIA Confidential Computing GPUs such as
+`Standard_NCC40ads_H100_v5`, by the SHA-256 of the NVIDIA token, exactly as in
+[chapter 5](05-nvidia-gpu-attestation.md#creating-reportdata).
 
 Evidence is public. It cannot be reused by another party because only the
 holder of the private key matching `reportData` can complete the protocol that
@@ -239,9 +244,16 @@ and no authentication is required:
 | TDX | `POST https://<instance>.attest.azure.net/attest/TdxVm?api-version=2023-04-01-preview` with the TD quote and the runtime data |
 | SEV-SNP | `POST https://<instance>.attest.azure.net/attest/SevSnpVm?api-version=2022-08-01` with the report, the PEM VCEK chain and the runtime data |
 
-The default instance is `https://sharedeus.eus.attest.azure.net`. MAA itself
-verifies the vendor signature and the runtime data binding (it rejects altered
-runtime data). The verifier accepts the answer only if:
+Any shared MAA instance gives an equivalent verdict, because the token checks
+below are tied to the instance that was asked. The library default is
+`https://sharedeus.eus.attest.azure.net`. The image picks the nearest one
+instead: while detecting the VM mode, `pki_configure_helper.py` measures the
+latency to the shared instances published by Microsoft, keeps the fastest, and
+writes it to `/etc/swarm/swarm-maa-endpoint`; the PKI Authority service passes
+it on as `azure.maaEndpoint` and falls back to `sharedeus` without the file.
+
+MAA itself verifies the vendor signature and the runtime data binding (it
+rejects altered runtime data). The verifier accepts the answer only if:
 
 - the token is RS256-signed by a key published by the same instance (`jku` =
   `<instance>/certs`), was issued by it (`iss`) and is within its validity
@@ -318,19 +330,31 @@ unmeasured partition could extend PCR4 / PCR9 with arbitrary values.
 
 ### Reference Values
 
-Measured on `build-442-debug`:
+`mrEnclave` changes with every build, and a debug build differs from the
+release build of the same number. Measured on `build-445-release` through the
+Measurement API:
 
-| Platform | VM sizes | `mrEnclave` |
+| Platform | VM size | `mrEnclave` |
 |---|---|---|
-| Azure TDX | Standard_DC2es_v6, Standard_DC4es_v6 | `67709280b96bb58032be48b127ec7b44e539deddb74ed1eb9b7255d7c10b3b25` |
-| Azure SEV-SNP (Milan) | Standard_DC2as_v5 | `e10f7dcb80890a8ef03289be17874737c1ee5d8441d15e296035c48428edbdf5` |
+| Azure TDX | Standard_DC8es_v6 | `3b87e54d9c1759585e0bed03646374f52b39433e8389ff945cd6ed31071dfeb5` |
+| Azure SEV-SNP (Milan) | Standard_DC8as_v5 | `1cccb72fb97be3a057f65eccdc4f92e6d2c2b0b17caaa81ed95400927c678ea7` |
 
-Both platforms produce the same PCR4 and PCR9 for this image; the values
-differ only because of the flag sets.
+One image produces the same PCR4 and PCR9 on both platforms; the two values
+differ only because of the flag sets. The VM size does not enter `mrEnclave`:
+on `build-442-debug`, `Standard_DC2es_v6` and `Standard_DC4es_v6` gave the
+same value.
 
 ## Values Left to Policy
 
-The verifier reports these values without enforcing them:
+The verifier reports these values without enforcing them. The PKI Authority
+enforces three of them for `tdx-azure` and `sev-snp-azure` challenges:
+
+- `maa.azureCompliant` must be `true` on every network; the MAA check is always
+  on and cannot be disabled, and evidence is rejected when MAA is unreachable;
+- a debug VM (`tdDebug` on TDX, `debugAllowed` on SEV-SNP) is accepted only
+  when the network type is `untrusted`;
+- the calculated `mrEnclave` must be signed in the trusted registry
+  ([chapter 7](07-reference-measurements.md)).
 
 | TDX | SEV-SNP | Meaning |
 |---|---|---|

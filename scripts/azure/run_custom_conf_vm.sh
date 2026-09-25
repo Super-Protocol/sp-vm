@@ -22,6 +22,8 @@ already be gone. Re-run this script to launch a fresh VM.
 Examples:
   ./run_custom_conf_vm.sh --release build-441-debug --provider-config ./provider_config
   ./run_custom_conf_vm.sh --image <version-id> --vm my-vm --state-disk-size 200
+  ./run_custom_conf_vm.sh --vm gpu-vm --size Standard_NCC40ads_H100_v5 \
+      --location centralus --state-disk-size 0   # use the built-in 800 GB disk
   ./run_custom_conf_vm.sh --vm my-vm --delete
 
 Image source (one of; passed through to ensure_gallery_image.sh):
@@ -36,7 +38,8 @@ VM:
   --location <region>         Default: westus3 (or $AZURE_LOCATION)
   --zone <n>                  Default: 3
   --size <vm-size>            Default: Standard_DC2es_v6
-  --state-disk-size <GB>      Default: 100
+  --state-disk-size <GB>      Default: 100. 0 creates no managed data disk, so the
+                              VM's own built-in disk becomes the state disk
   --no-public-ip
   --force-overwrite-vm        Delete an existing VM of that name first
 
@@ -361,8 +364,10 @@ if [[ "$REFRESH_PROVIDER_CONFIG" -eq 1 ]]; then
     || die "VM ${VM_NAME} not found in ${VM_RESOURCE_GROUP}"
   prepare_provider_config
   echo "==> updating userData"
+  # Unlike `az vm create`, `az vm update` does not read a file path given to
+  # --user-data: it stores the path itself as userData. Pass the contents.
   run az vm update -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" \
-    --user-data "$USER_DATA_FILE" -o none
+    --user-data "$(cat "$USER_DATA_FILE")" -o none
   echo "==> restarting ${VM_NAME} so it picks the new provider_config up"
   run az vm restart -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" -o none
   echo
