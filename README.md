@@ -193,6 +193,11 @@ Cloud-specific helpers live in `scripts/<cloud>/`:
 - `scripts/azure/run_custom_conf_vm.sh`: launch a TDX Confidential VM from such
   an image and hand it a `provider_config`. Looks for `provider_config/` next to
   itself by default, like the GCP script (git-ignored).
+- `scripts/azure/cluster.sh`: start a whole Swarm cluster — bootstrap and join
+  nodes, TDX and SEV-SNP mixed — add nodes to it and delete it.
+
+Every Azure script has a `*_docker.sh` twin that runs it in a container with
+all the tools, so the host needs only Docker and an `az login` session.
 
 ### Azure Compute Gallery
 An Azure VM can only be created from an image version in a gallery, and a
@@ -326,6 +331,123 @@ az vm create -g <rg> -n <vm> -l westus3 --zone 3 --size Standard_DC2es_v6 \
     --data-disk-sizes-gb 100 \
     --user-data userdata.json
 ```
+
+### Running a cluster
+
+`cluster.sh` starts a Swarm cluster from a specification and a
+`provider_config` template. It creates every VM with `run_custom_conf_vm.sh`,
+starts the nodes one at a time and waits for the cluster to accept each one
+before the next.
+
+```bash
+cp scripts/azure/cluster.example.yaml cluster.yaml     # edit it
+
+scripts/azure/cluster_docker.sh up --spec cluster.yaml --wait-ui
+scripts/azure/cluster_docker.sh status --cluster azure-test
+scripts/azure/cluster_docker.sh add --cluster azure-test \
+    --node 'size=Standard_DC8as_v5,location=eastus,zone=1'
+scripts/azure/cluster_docker.sh delete --cluster azure-test
+```
+
+**Specification.** See `scripts/azure/cluster.example.yaml`:
+
+| Key | Meaning |
+|---|---|
+| `name` | cluster name, `^[a-z][a-z0-9-]{1,30}$` |
+| `release` | sp-vm release tag; `--release` overrides it |
+| `provider_config` | template directory, relative to the specification; `--provider-config` overrides it |
+| `swarm_domain`, `pki_domain` | optional, override the template's domains |
+| `defaults` | `size`, `location`, `zone`, `state_disk_size` for nodes that do not set them |
+| `nodes` | at least 3; the first one is the bootstrap |
+
+A node sets any of `size`, `location`, `zone`, `state_disk_size`. The size picks
+the TEE: `Standard_DC*es_v6` is Intel TDX, `Standard_DC*as_v5` is AMD SEV-SNP,
+and one cluster can mix them. `state_disk_size: 0` uses the VM's built-in disk
+(see [Using the VM's built-in disk](#running-a-vm)).
+
+The template is a normal `provider_config`: `swarm/config.yaml` with
+`pki_authority.networkID`, the domains and the service tags, plus
+`swarm/openresty.yaml`. The script fills in the node-specific fields for each
+node: `swarm_db.node_name`, and on join nodes `join_addresses`,
+`pki_authority.servers` and `pki_authority.caBundle`. `advertise_addr` is
+removed; every VM detects its own public address.
+
+**Node names** are generated, never set by hand:
+`<cluster>-node-<N>-<4 random characters>`, e.g. `azure-test-node-2-k7q2`. `N`
+is the largest index among the cluster's current nodes plus one; the random
+part keeps names unique even when an index is reused after a node was deleted.
+The same name is the Azure VM name and the node's name inside the Swarm; the VM
+lives in resource group `sp-vm-<name>`.
+
+**How `up` proceeds.**
+
+1. The bootstrap is created. The script waits for the Measurement API
+   (`:9180/api/v1/getMeasure`) and reads the node's TEE type and `mrEnclave`.
+2. On a release build, the `mrEnclave` must be in the trusted registry (below)
+   before anything else happens.
+3. The script waits until the bootstrap serves its CA on `:9443` and gossip is
+   open on `:7946`, then saves the CA.
+4. Each join node is created with the CA and the addresses of the nodes already
+   in the cluster, goes through the same Measurement API and registry steps,
+   and counts as joined once its own `:9443` serves the same CA — the cluster
+   accepted its attestation. Only then the next node starts.
+5. With `--wait-ui`, the script waits until `https://<swarm_domain>/` and its
+   `/graphql` API both answer 200 (`--ui-timeout`, default 30 minutes). The
+   page alone answers 200 before the API routes exist. If the UI does not come
+   up in time, the script still prints the status table and exits with an
+   error; the nodes stay as they are.
+
+Each node may take `--node-timeout` seconds (default 1800) to boot and join. On
+failure the script stops, prints what the node answered and keeps everything
+for inspection. Running the same `up` again continues where it stopped: nodes
+that already serve the cluster CA are skipped.
+
+**Trusted registry.** On a `build-<N>-release` build, the PKI accepts a node
+only if its `mrEnclave` is in
+[`signatures/`](https://github.com/Super-Protocol/sp-vm/tree/main/signatures)
+of this repository. For every node the script looks for the file where the PKI
+looks: `signatures/<type>/{latest,pre-release}/mrenclave-<hex>.json`, then the
+base folder of the platform (`tdx` for `tdx-azure`, `sev-snp` for
+`sev-snp-azure`), then `mrenclave-<hex>.sign`. If it is missing, the script
+prints the type, the value and the expected path, and waits without a timeout
+until it appears; raw.githubusercontent.com caches for a few minutes. Nodes of
+the same platform and release share one `mrEnclave`, so usually only the
+bootstrap and the first node of another platform stop here. Debug builds skip
+the registry; `--skip-registry` skips it explicitly.
+
+**Domains.** Two running clusters with the same `swarm_domain` overwrite each
+other's DNS records. Before creating the bootstrap, `up` requests
+`https://<swarm_domain>/`; if something answers, it says so and asks whether to
+continue. A record left over from a deleted cluster answers nothing and does
+not stop the start. To run a second cluster from the same template, set
+`swarm_domain` and `pki_domain` in its specification.
+
+**Adding nodes.** `add` needs the cluster name and, optionally, one `--node`
+per new node (fields not given come from `defaults`; no `--node` adds one node
+of defaults). It finds the cluster by the `sp-cluster` tag, checks that every
+node which answers serves the cluster CA, renders the new node's config with
+the addresses of all live nodes — the bootstrap does not have to be alive — and
+then follows step 4 above. `--release` adds a node of another release, for
+example to replace nodes one by one. If `add` is interrupted, the next `add`
+for that cluster continues it — the node that was being added and the ones
+not started yet — and ignores its own `--node` arguments, so running the same
+command again adds nothing twice. To remove a single node, delete its
+resource group: `run_custom_conf_vm.sh --vm <node name> --delete`.
+
+**Status and deletion.** `status` lists every node with its size, location,
+IP, TEE type, `mrEnclave`, registry presence and whether it serves the cluster
+CA, and checks the UI. `delete` removes all resource groups of the cluster in
+parallel after a confirmation (`--yes` skips it) and then the local state.
+
+**Where things are kept.** Azure is the source of truth for which nodes exist:
+every resource group carries the tags `sp-cluster`, `sp-node`, `sp-index`,
+`sp-role` and `sp-release`, and `status`, `add` and `delete` work from them.
+The local state in `$SP_VM_CLUSTER_STATE/<cluster>` (default
+`~/.sp-vm/azure-clusters/<cluster>`, mode 0700) holds the normalized
+specification, the cluster CA, the rendered configs — they contain the
+template's secrets — and a log of every `mrEnclave` seen. Without it, `add`
+takes the defaults and template from `--spec`, or `--provider-config` and
+`--release`.
 
 ## References
 Some parts of the code, including [kernel configs](src/kernel/files/configs/fragments), were taken from or inspired by [Kata Containers](https://github.com/kata-containers/kata-containers), which is distributed under the [Apache-2.0 license](https://github.com/kata-containers/kata-containers/blob/main/LICENSE).

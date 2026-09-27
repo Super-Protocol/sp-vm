@@ -1,0 +1,34 @@
+# Cluster specification for cluster.sh (see README.md, "Running a cluster").
+
+# Cluster name: the prefix of every node name and the value of the sp-cluster
+# tag on its resource groups. ^[a-z][a-z0-9-]{1,30}$
+name: azure-test
+
+# sp-vm release; --release overrides it. build-<N>-release enforces the trusted
+# mrEnclave registry, build-<N>-debug does not.
+release: build-445-release
+
+# provider_config template: the directory that becomes /sp on each node, with
+# swarm/config.yaml (networkID and domains set, no node-specific fields needed)
+# and swarm/openresty.yaml. Relative to this file; --provider-config overrides it.
+provider_config: ./provider_config
+
+# Optional: override swarm_domain / pki_domain of the template, e.g. to run a
+# second cluster from the same template.
+# swarm_domain: azure2.swarm.superprotocol.dev
+# pki_domain: azure2-ca.swarm.superprotocol.dev
+
+# Node fields, used where a node does not set its own.
+defaults:
+  size: Standard_DC8es_v6        # Intel TDX, 8 vCPU / 32 GB
+  location: westus3
+  zone: "3"
+  state_disk_size: 300           # GB; 0 = the VM's built-in disk (e.g. NCC H100)
+
+# At least 3 nodes; the first one is the bootstrap. Names are generated.
+nodes:
+  - {}                           # bootstrap, all defaults
+  - {}
+  - size: Standard_DC8as_v5      # AMD SEV-SNP, 8 vCPU / 32 GB
+    location: eastus
+    zone: "1"

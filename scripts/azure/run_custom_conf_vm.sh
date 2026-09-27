@@ -42,6 +42,7 @@ VM:
                               VM's own built-in disk becomes the state disk
   --no-public-ip
   --force-overwrite-vm        Delete an existing VM of that name first
+  --tag <key=value>           Tag for the resource group; repeatable
 
 Gallery (only used when the image has to be ensured):
   --gallery <name>                 Default: sp_vm_images (or $AZURE_GALLERY)
@@ -59,6 +60,7 @@ Other:
   --update-network  Apply the inbound firewall rules to an existing VM and exit
   --delete     Delete the VM's whole resource group and exit
   --dry-run    Print commands without executing them
+  --print-ip-only  Print only the VM's public IP on stdout; progress goes to stderr
 EOF
 }
 
@@ -92,6 +94,8 @@ SAS_EXPIRY_DAYS="30"
 REFRESH_PROVIDER_CONFIG=0
 DELETE=0
 UPDATE_NETWORK=0
+PRINT_IP_ONLY=0
+GROUP_TAGS=()
 CONTAINER="provider-config"
 
 # Inbound ports the guest firewall accepts from anywhere
@@ -116,6 +120,9 @@ while [[ $# -gt 0 ]]; do
     --state-disk-size) STATE_DISK_SIZE="${2:-}"; shift 2 ;;
     --no-public-ip) NO_PUBLIC_IP=1; shift 1 ;;
     --force-overwrite-vm) FORCE_OVERWRITE_VM=1; shift 1 ;;
+    --tag)
+      [[ "${2:-}" == *=* ]] || die "--tag expects key=value, got '${2:-}'"
+      GROUP_TAGS+=("$2"); shift 2 ;;
     --gallery) GALLERY="${2:-}"; shift 2 ;;
     --gallery-resource-group) GALLERY_RESOURCE_GROUP="${2:-}"; shift 2 ;;
     --provider-config) PROVIDER_CONFIG_DIR="${2:-}"; shift 2 ;;
@@ -126,10 +133,19 @@ while [[ $# -gt 0 ]]; do
     --delete) DELETE=1; shift 1 ;;
     --update-network) UPDATE_NETWORK=1; shift 1 ;;
     --dry-run) DRY_RUN=1; shift 1 ;;
+    --print-ip-only) PRINT_IP_ONLY=1; shift 1 ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown argument: $1 (see --help)" ;;
   esac
 done
+
+# fd 3 is the real stdout. In --print-ip-only mode everything the script would
+# normally print is pushed to stderr, so stdout carries only the public IP.
+if [[ "$PRINT_IP_ONLY" -eq 1 ]]; then
+  exec 3>&1 1>&2
+else
+  exec 3>&1
+fi
 
 run() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
@@ -378,7 +394,9 @@ fi
 ### Create ####################################################################
 
 echo "==> ensuring resource group ${VM_RESOURCE_GROUP}"
-run az group create -n "$VM_RESOURCE_GROUP" -l "$LOCATION" -o none
+group_args=(az group create -n "$VM_RESOURCE_GROUP" -l "$LOCATION" -o none)
+[[ ${#GROUP_TAGS[@]} -eq 0 ]] || group_args+=(--tags "${GROUP_TAGS[@]}")
+run "${group_args[@]}"
 
 if az vm show -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" >/dev/null 2>&1; then
   if [[ "$FORCE_OVERWRITE_VM" -eq 1 ]]; then
@@ -465,3 +483,8 @@ echo "Delete everything (VM, disks, NIC, IP, config storage):"
 echo "  ${BASH_SOURCE[0]} --vm ${VM_NAME} --vm-resource-group ${VM_RESOURCE_GROUP} --delete"
 echo
 echo "The VM does not survive a reboot: its state disk is wiped on every boot."
+
+if [[ "$PRINT_IP_ONLY" -eq 1 ]]; then
+  [[ -n "$PUBLIC_IP" || "$DRY_RUN" -eq 1 ]] || die "${VM_NAME} has no public IP"
+  printf '%s\n' "${PUBLIC_IP:-<public-ip>}" >&3
+fi
