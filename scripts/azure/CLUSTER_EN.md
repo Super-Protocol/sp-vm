@@ -61,9 +61,19 @@ and it decides what to start and when. What `up` does:
 | ~10 GB free in the current directory | only the first time a build is used: the image is downloaded from Storj and turned into a VHD (~4.5 GB) in the current directory |
 | a clone of `sp-vm` | the scripts are in `scripts/azure/` |
 
-The scripts also run natively, without Docker, if `az`, `azcopy`, `uplink`,
-`jq`, `curl`, `openssl` and `python3` with `PyYAML` are installed. Then call
-`cluster.sh` instead of `cluster_docker.sh`.
+**Without Docker.** Nothing is detected automatically: you choose by which
+script you call. `cluster_docker.sh` runs `cluster.sh` in the container;
+calling `cluster.sh` directly runs it on the host, with the same arguments.
+The host then needs:
+
+| Tool | Needed |
+|---|---|
+| `az`, `jq`, `curl`, `python3` with `PyYAML`, `openssl`, `sha256sum`, `tar`, `ssh-keygen`, `timeout` | always |
+| `uplink`, `zstd` | only when the build is not in the gallery yet and has to be imported from Storj |
+| `azcopy` | optional: speeds up the VHD upload of a new build; without it `az storage blob upload` is used |
+
+`up` and `add` check all of this before creating the first VM and list what is
+missing, so a native run fails at once rather than halfway through a cluster.
 
 **In Azure:**
 

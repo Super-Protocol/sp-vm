@@ -511,6 +511,36 @@ load_settings() {
   PKI_DOMAIN_OVERRIDE="$(jq -r .pki_domain "${STATE_DIR}/spec.json")"
 }
 
+# Everything the launch path needs, checked before the first VM is created
+# rather than halfway through a cluster. Inside cluster_docker.sh all of it is
+# there; a native run finds out here what to install.
+check_launch_tools() {
+  local missing=() tool definition
+  for tool in az jq curl python3 openssl sha256sum tar ssh-keygen timeout; do
+    command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+  done
+  python3 -c 'import yaml' 2>/dev/null || missing+=("python3-yaml (PyYAML)")
+
+  # uplink and zstd are needed only to import a build the gallery does not
+  # have yet (ensure_gallery_image.sh downloads it from Storj then).
+  definition="sp-vm-${RELEASE##*-}"
+  if ! az sig image-version show \
+      --resource-group "${AZURE_RESOURCE_GROUP:-sp-vm-images}" \
+      --gallery-name "${AZURE_GALLERY:-sp_vm_images}" \
+      --gallery-image-definition "$definition" \
+      --gallery-image-version "$(sed -E 's/^build-([0-9]+)-.*/\1/' <<<"$RELEASE").0.0" \
+      >/dev/null 2>&1; then
+    for tool in uplink zstd; do
+      command -v "$tool" >/dev/null 2>&1 || missing+=("$tool (${RELEASE} is not in the gallery yet and has to be imported)")
+    done
+  fi
+
+  [[ ${#missing[@]} -eq 0 ]] && return 0
+  printf '[%s] ERROR: missing on this host:\n' "$(date +%H:%M:%S)" >&2
+  printf '  - %s\n' "${missing[@]}" >&2
+  die "Install them, or run cluster_docker.sh instead, which has everything"
+}
+
 set_release_mode() {
   [[ "$RELEASE" =~ ^build-[0-9]+-(debug|release)$ ]] \
     || die "Release tag must be build-<N>-debug or build-<N>-release, got '${RELEASE}'"
@@ -564,6 +594,7 @@ cmd_up() {
   load_settings
   set_release_mode
   [[ -d "$TEMPLATE" ]] || die "provider_config template not found: ${TEMPLATE}"
+  check_launch_tools
 
   count="$(jq '.nodes | length' <<<"$spec_json")"
   log "Cluster ${CLUSTER}: ${count} nodes, ${RELEASE} ($([[ $RELEASE_MODE -eq 1 ]] && echo "release, trusted registry enforced" || echo debug))"
@@ -631,6 +662,7 @@ cmd_add() {
   [[ -z "$template" ]] || TEMPLATE="$(cd "$template" && pwd)"
   [[ -d "$TEMPLATE" ]] || die "provider_config template not found: ${TEMPLATE}"
   set_release_mode
+  check_launch_tools
   [[ "$RELEASE" == "$cluster_release" ]] \
     || log "WARNING: the cluster runs ${cluster_release}, the new node gets ${RELEASE}"
 

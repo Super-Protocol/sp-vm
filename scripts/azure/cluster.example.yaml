@@ -15,8 +15,8 @@ provider_config: ./provider_config
 
 # Optional: override swarm_domain / pki_domain of the template, e.g. to run a
 # second cluster from the same template.
-# swarm_domain: azure2.swarm.superprotocol.dev
-# pki_domain: azure2-ca.swarm.superprotocol.dev
+# swarm_domain: swarm2.example.com
+# pki_domain: ca.swarm2.example.com
 
 # Node fields, used where a node does not set its own.
 defaults:
