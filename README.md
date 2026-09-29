@@ -334,6 +334,9 @@ az vm create -g <rg> -n <vm> -l westus3 --zone 3 --size Standard_DC2es_v6 \
 
 ### Running a cluster
 
+A step-by-step operator guide with templates, prerequisites and pitfalls is
+in [`scripts/azure/CLUSTER_EN.md`](scripts/azure/CLUSTER_EN.md).
+
 `cluster.sh` starts a Swarm cluster from a specification and a
 `provider_config` template. It creates every VM with `run_custom_conf_vm.sh`,
 starts the nodes one at a time and waits for the cluster to accept each one

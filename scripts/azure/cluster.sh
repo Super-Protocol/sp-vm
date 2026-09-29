@@ -544,6 +544,12 @@ cmd_up() {
   use_cluster "$(jq -r .name <<<"$spec_json")"
 
   groups="$(cluster_groups)"
+  if [[ -f "${STATE_DIR}/spec.json" && -z "$groups" ]]; then
+    # An earlier start stopped before creating anything in Azure: nothing to
+    # continue, start afresh with this specification.
+    log "Earlier state of ${CLUSTER} has no resources in Azure; starting afresh"
+    rm -rf "$STATE_DIR"
+  fi
   if [[ -f "${STATE_DIR}/spec.json" ]]; then
     if [[ "$(jq -S 'del(.added)' "${STATE_DIR}/spec.json")" != "$(jq -S . <<<"$spec_json")" ]]; then
       die "Cluster ${CLUSTER} was started from a different specification (${STATE_DIR}/spec.json). Use add to grow it, or delete it first."

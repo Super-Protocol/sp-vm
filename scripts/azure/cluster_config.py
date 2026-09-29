@@ -94,6 +94,10 @@ def cmd_spec(args):
     if not os.path.isabs(template) and not args.provider_config:
         template = os.path.join(spec_dir, template)
     template = os.path.abspath(template)
+    if not os.path.isfile(os.path.join(template, "swarm", "config.yaml")):
+        origin = "--provider-config" if args.provider_config else \
+            f"provider_config in {args.spec} (a relative path is resolved against the specification's directory)"
+        fail(f"{template}/swarm/config.yaml not found; check {origin}")
 
     defaults = spec.get("defaults") or {}
     if not isinstance(defaults, dict):
