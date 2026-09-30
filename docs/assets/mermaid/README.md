@@ -25,4 +25,8 @@ Use the same command with:
 - `reference-measurement-flow.mmd` for reference measurement verification;
 - `first-vm-bootstrap.mmd` for bootstrap of the first VM;
 - `node-join.mmd` for joining a subsequent VM;
-- `nvidia-gpu-attestation.mmd` for CPU and NVIDIA GPU attestation.
+- `nvidia-gpu-attestation.mmd` for CPU and NVIDIA GPU attestation;
+- `azure-cvm-chain.mmd` for the Azure confidential VM chain of trust. Its
+  published SVG is rendered by Mermaid CLI as is; the PDF build uses
+  `assets/pdf/azure-cvm-chain.png`, since WeasyPrint does not render its HTML
+  labels.

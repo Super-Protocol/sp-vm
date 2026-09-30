@@ -105,14 +105,17 @@ tokenHash = SHA-256(serialized NVIDIA token)
 ### Creating `reportData`
 
 ```text
-baseUserData = SHA-256(publicKeyPem)              // 32 bytes
+baseUserData = SHA-256(DER SubjectPublicKeyInfo)  // 32 bytes
 tokenHash    = SHA-256(serialized NVIDIA token)   // 32 bytes
 
 reportData = baseUserData || tokenHash            // 64 bytes
 ```
 
-The value is passed to the TDX quote generator or SEV-SNP report generator. If
-the final value exceeds 64 bytes, the challenge is not created.
+`baseUserData` hashes the DER encoding of the certificate's public key, not its
+PEM text. The value is passed to the TDX quote generator or SEV-SNP report
+generator; on an Azure confidential VM it becomes the HCL `user-data` of the
+vTPM evidence ([chapter 8](08-azure-attestation.md#binding-userdata)). If the
+final value exceeds 64 bytes, the challenge is not created.
 
 ### Verifying the Binding
 

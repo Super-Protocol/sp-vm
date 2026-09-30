@@ -13,6 +13,10 @@ TDX and SEV-SNP use different hardware formats. The system converts them to a
 `mrEnclave` is an application-protocol term. It must not be equated with only
 TDX `MRTD`, SEV-SNP `MEASUREMENT`, or SGX `MRENCLAVE`.
 
+Azure confidential VMs (TDX and SEV-SNP) run behind a Microsoft paravisor and
+use a different evidence format and `mrEnclave` formula, described in
+[chapter 8](08-azure-attestation.md).
+
 This independence applies to the final `mrEnclave` calculated by the system. A
 single reference value can therefore cover VMs started from the same trusted
 build with different vCPU counts, RAM sizes, and with or without GPUs. The

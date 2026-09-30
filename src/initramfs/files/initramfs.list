@@ -24,3 +24,5 @@ slink /sbin/mdev /sbin/busybox 0755 0 0
 slink /sbin/switch_root /sbin/busybox 0755 0 0
 slink /sbin/umount /sbin/busybox 0755 0 0
 slink /sbin/cat /sbin/busybox 0755 0 0
+slink /bin/sleep /sbin/busybox 0755 0 0
+slink /bin/grep /sbin/busybox 0755 0 0
