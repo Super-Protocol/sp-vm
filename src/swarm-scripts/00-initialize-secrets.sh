@@ -36,6 +36,18 @@ AUTH_SERVICE_YAML=""
 AUTH_SERVICE_YAML_PATH="/sp/swarm/auth-service.yaml"
 [ -f "$AUTH_SERVICE_YAML_PATH" ] && AUTH_SERVICE_YAML=$(cat "$AUTH_SERVICE_YAML_PATH")
 
+AUTH_SERVICE_OIDC_YAML=""
+AUTH_SERVICE_OIDC_YAML_PATH="/sp/swarm/auth-service-oidc.yaml"
+[ -f "$AUTH_SERVICE_OIDC_YAML_PATH" ] && AUTH_SERVICE_OIDC_YAML=$(cat "$AUTH_SERVICE_OIDC_YAML_PATH")
+
+API_INTROSPECTION_CLIENT_ID=""
+API_INTROSPECTION_CLIENT_ID_PATH="/sp/swarm/api-introspection-client-id"
+[ -f "$API_INTROSPECTION_CLIENT_ID_PATH" ] && API_INTROSPECTION_CLIENT_ID=$(tr -d '[:space:]' < "$API_INTROSPECTION_CLIENT_ID_PATH")
+
+API_INTROSPECTION_CLIENT_SECRET=""
+API_INTROSPECTION_CLIENT_SECRET_PATH="/sp/swarm/api-introspection-client-secret"
+[ -f "$API_INTROSPECTION_CLIENT_SECRET_PATH" ] && API_INTROSPECTION_CLIENT_SECRET=$(tr -d '[:space:]' < "$API_INTROSPECTION_CLIENT_SECRET_PATH")
+
 SWARM_INIT_CERTS_DIR=${SWARM_INIT_CERTS_DIR:-/etc/super/certs/swarm-init}
 EVIDENCE_SIGN_KEY=""
 
@@ -136,5 +148,8 @@ ensure_secret "pki_domain" "$PKI_DOMAIN"
 ensure_secret "gateway_hostname" "$GATEWAY_HOSTNAME"
 ensure_global_id_pointer "$GLOBAL_ID"
 ensure_secret "auth_service_yaml" "$AUTH_SERVICE_YAML"
+ensure_secret "auth_service_oidc_yaml" "$AUTH_SERVICE_OIDC_YAML"
+ensure_secret "api_introspection_client_id" "$API_INTROSPECTION_CLIENT_ID"
+ensure_secret "api_introspection_client_secret" "$API_INTROSPECTION_CLIENT_SECRET"
 ensure_swarm_init_cert_secrets
 ensure_secret "evidence_sign_key" "$EVIDENCE_SIGN_KEY"
