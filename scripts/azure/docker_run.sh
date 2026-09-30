@@ -117,11 +117,21 @@ fi
 tty_args=(-i)
 [[ -t 0 && -t 1 ]] && tty_args+=(-t)
 
+# macOS host uids are not in the image's /etc/passwd. Azure CLI refuses to
+# start for a uid with no passwd entry ("No user exists for uid N"). Enter as
+# root, add the entry, then drop to the host uid so files on the mounts stay
+# owned by the operator.
+host_uid="$(id -u)"
+host_gid="$(id -g)"
 exec docker run --rm --init "${tty_args[@]}" \
-  --user "$(id -u):$(id -g)" \
   "${env_args[@]}" \
   "${mounts[@]}" \
-  --workdir "$PWD" \
+  --workdir /tmp/sp-vm-work \
   "$IMAGE" \
-  bash -c "set -euo pipefail; ${login}; exec \"\$0\" \"\$@\"" \
+  bash -c "set -euo pipefail
+    grep -q ':${host_gid}:' /etc/group || echo 'spvm:x:${host_gid}:' >> /etc/group
+    grep -q '^[^:]*:[^:]*:${host_uid}:' /etc/passwd || echo 'spvm:x:${host_uid}:${host_gid}:spvm:/tmp:/bin/bash' >> /etc/passwd
+    mkdir -p /tmp/sp-vm-work && chown ${host_uid}:${host_gid} /tmp/sp-vm-work
+    ${login}
+    exec setpriv --reuid=${host_uid} --regid=${host_gid} --init-groups -- \"\$0\" \"\$@\"" \
   "${SCRIPT_DIR}/${TARGET}" "$@"
