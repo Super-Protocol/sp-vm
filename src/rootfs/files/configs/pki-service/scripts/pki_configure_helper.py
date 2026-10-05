@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
 import argparse
+import concurrent.futures
 import ipaddress
+import os
 import secrets
+import statistics
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -13,8 +17,67 @@ import yaml
 SWARM_KEY_FILE = "/etc/swarm/swarm.key"
 SWARM_CPU_TYPE_FILE = "/etc/swarm/swarm-cpu-type"
 SWARM_NETWORK_TYPE_FILE = "/etc/swarm/swarm-network-type"
+SWARM_MAA_ENDPOINT_FILE = "/etc/swarm/swarm-maa-endpoint"
 SERVICE_NAME = "pki-configure-helper"
 SYNC_CLIENT_PORT = 9443
+
+MAA_CONNECT_TIMEOUT_SECONDS = 2
+MAA_TOTAL_TIMEOUT_SECONDS = 3
+MAA_MAX_WORKERS = 16
+MAA_FINALIST_COUNT = 5
+MAA_PROBE_ROUNDS = 3
+
+# Shared Microsoft Azure Attestation endpoints documented by Azure Samples.
+# Source: Get-SharedMaaEndpoint in Azure-Samples/confidential-computing.
+MAA_ENDPOINTS = (
+    "https://sharedeus.eus.attest.azure.net",
+    "https://sharedeus2.eus2.attest.azure.net",
+    "https://sharedwus.wus.attest.azure.net",
+    "https://sharedwus2.wus2.attest.azure.net",
+    "https://sharedwus3.wus3.attest.azure.net",
+    "https://sharedcus.cus.attest.azure.net",
+    "https://sharedncus.ncus.attest.azure.net",
+    "https://sharedscus.scus.attest.azure.net",
+    "https://sharedwcus.wcus.attest.azure.net",
+    "https://sharedcac.cac.attest.azure.net",
+    "https://sharedcae.cae.attest.azure.net",
+    "https://sharedneu.neu.attest.azure.net",
+    "https://sharedweu.weu.attest.azure.net",
+    "https://shareduks.uks.attest.azure.net",
+    "https://sharedukw.ukw.attest.azure.net",
+    "https://sharedfrc.frc.attest.azure.net",
+    "https://sharedfrs.frs.attest.azure.net",
+    "https://shareddewc.dewc.attest.azure.net",
+    "https://sharedden.den.attest.azure.net",
+    "https://sharedswn.swn.attest.azure.net",
+    "https://sharedsww.sww.attest.azure.net",
+    "https://sharedsec.sec.attest.azure.net",
+    "https://sharedses.ses.attest.azure.net",
+    "https://sharednoe.noe.attest.azure.net",
+    "https://sharednow.now.attest.azure.net",
+    "https://sharedplc.plc.attest.azure.net",
+    "https://shareditn.itn.attest.azure.net",
+    "https://sharedesc.esc.attest.azure.net",
+    "https://sharedeasia.easia.attest.azure.net",
+    "https://sharedsasia.sasia.attest.azure.net",
+    "https://sharedjpe.jpe.attest.azure.net",
+    "https://sharedjpw.jpw.attest.azure.net",
+    "https://sharedkrc.krc.attest.azure.net",
+    "https://sharedkrs.krs.attest.azure.net",
+    "https://sharedeau.eau.attest.azure.net",
+    "https://sharedsau.sau.attest.azure.net",
+    "https://sharedcau.cau.attest.azure.net",
+    "https://sharedcin.cin.attest.azure.net",
+    "https://sharedsin.sin.attest.azure.net",
+    "https://sharedwin.win.attest.azure.net",
+    "https://shareduaen.uaen.attest.azure.net",
+    "https://shareduaec.uaec.attest.azure.net",
+    "https://sharedilc.ilc.attest.azure.net",
+    "https://sharedsan.san.attest.azure.net",
+    "https://sharedsaw.saw.attest.azure.net",
+    "https://sharedsbr.sbr.attest.azure.net",
+    "https://sharedsebr.sebr.attest.azure.net",
+)
 
 
 class LiteralBlockDumper(yaml.SafeDumper):
@@ -32,6 +95,140 @@ LiteralBlockDumper.add_representer(str, _represent_multiline_str)
 def log(level: str, message: str):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] [{SERVICE_NAME}] [{level}] {message}", file=sys.stderr)
+
+
+def probe_maa_endpoint(endpoint: str) -> float | None:
+    """Return HTTPS /certs response time in milliseconds, or None on failure."""
+    result = subprocess.run(
+        [
+            "/usr/bin/curl",
+            "--silent",
+            "--show-error",
+            "--output", "/dev/null",
+            "--connect-timeout", str(MAA_CONNECT_TIMEOUT_SECONDS),
+            "--max-time", str(MAA_TOTAL_TIMEOUT_SECONDS),
+            "--write-out", "%{http_code} %{time_total}",
+            f"{endpoint}/certs",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"curl exit code {result.returncode}"
+        log("WARN", f"MAA probe failed for {endpoint}: {detail}")
+        return None
+
+    try:
+        status_text, elapsed_text = result.stdout.strip().split()
+        status = int(status_text)
+        elapsed_ms = float(elapsed_text) * 1000
+    except (TypeError, ValueError):
+        log("WARN", f"MAA probe returned invalid metrics for {endpoint}: {result.stdout!r}")
+        return None
+
+    if status != 200:
+        log("WARN", f"MAA probe returned HTTP {status} for {endpoint}")
+        return None
+
+    log("INFO", f"MAA probe {endpoint}: {elapsed_ms:.1f} ms")
+    return elapsed_ms
+
+
+def probe_maa_endpoints(endpoints: list[str] | tuple[str, ...]) -> dict[str, float]:
+    """Probe endpoints concurrently, with a bounded number of workers."""
+    if not endpoints:
+        return {}
+
+    results: dict[str, float] = {}
+    worker_count = min(MAA_MAX_WORKERS, len(endpoints))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = {
+            executor.submit(probe_maa_endpoint, endpoint): endpoint
+            for endpoint in endpoints
+        }
+        for future in concurrent.futures.as_completed(futures):
+            endpoint = futures[future]
+            try:
+                latency = future.result()
+            except Exception as error:
+                log("WARN", f"MAA probe raised for {endpoint}: {error}")
+                continue
+            if latency is not None:
+                results[endpoint] = latency
+    return results
+
+
+def select_nearest_maa_endpoint(
+    endpoints: tuple[str, ...] = MAA_ENDPOINTS,
+) -> str | None:
+    """Select the endpoint with the lowest median latency across probe rounds."""
+    first_round = probe_maa_endpoints(endpoints)
+    if not first_round:
+        return None
+
+    finalists = [
+        endpoint
+        for endpoint, _ in sorted(first_round.items(), key=lambda item: item[1])[:MAA_FINALIST_COUNT]
+    ]
+    samples = {endpoint: [first_round[endpoint]] for endpoint in finalists}
+
+    for _ in range(MAA_PROBE_ROUNDS - 1):
+        for endpoint, latency in probe_maa_endpoints(finalists).items():
+            samples[endpoint].append(latency)
+
+    eligible = {
+        endpoint: statistics.median(latencies)
+        for endpoint, latencies in samples.items()
+        if len(latencies) >= 2
+    }
+    if not eligible:
+        log("WARN", "No MAA endpoint completed at least two probe rounds")
+        return None
+
+    selected, median_ms = min(eligible.items(), key=lambda item: item[1])
+    log("INFO", f"Selected MAA endpoint {selected} with median latency {median_ms:.1f} ms")
+    return selected
+
+
+def write_maa_endpoint(endpoint: str, output_path: Path) -> None:
+    """Atomically write the selected endpoint."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=output_path.parent,
+            prefix=f".{output_path.name}.",
+            delete=False,
+        ) as temporary_file:
+            temporary_file.write(f"{endpoint}\n")
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+            temporary_path = Path(temporary_file.name)
+
+        temporary_path.chmod(0o644)
+        os.replace(temporary_path, output_path)
+        temporary_path = None
+        log("INFO", f"Saved MAA endpoint to {output_path}")
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def refresh_maa_endpoint(
+    output_path: Path = Path(SWARM_MAA_ENDPOINT_FILE),
+) -> str | None:
+    """Discard a stale selection, measure endpoints, and persist the winner."""
+    output_path.unlink(missing_ok=True)
+    selected = select_nearest_maa_endpoint()
+    if selected is None:
+        log("WARN", "All MAA endpoints are unavailable; keeping the template default")
+        return None
+
+    write_maa_endpoint(selected, output_path)
+    return selected
 
 
 def dump_yaml(data: dict) -> str:
@@ -275,6 +472,12 @@ def run_get_vm_mode(config_path: Path, output_path: Path) -> int:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(f"{vm_mode}\n", encoding="utf-8")
         log("INFO", f"Detected vm-mode '{vm_mode}' and saved to {output_path}")
+
+        try:
+            refresh_maa_endpoint()
+        except Exception as error:
+            log("WARN", f"Failed to refresh MAA endpoint: {error}")
+
         return 0
     except Exception as error:
         log("ERROR", f"Failed to detect vm-mode from /sp/swarm/config.yaml: {error}")

@@ -33,6 +33,36 @@ function build_kernel() {
         -j "$(nproc)" \
         "ARCH=$ARCH" \
         || log_fail "failed to build kernel";
+    ikcfg="$(mktemp)"
+    if ! scripts/extract-ikconfig arch/"$ARCH"/boot/bzImage >"$ikcfg"; then
+        log_fail "extract-ikconfig failed (need CONFIG_IKCONFIG=y in bzImage)"
+    fi
+    for sym in \
+        CONFIG_HYPERV \
+        CONFIG_HYPERV_TIMER \
+        CONFIG_HYPERV_STORAGE \
+        CONFIG_HYPERV_NET \
+        CONFIG_PCI_HYPERV \
+        CONFIG_PCI_HYPERV_INTERFACE \
+        CONFIG_NET_VENDOR_MICROSOFT \
+        CONFIG_MICROSOFT_MANA
+    do
+        if ! grep -qx "${sym}=y" "$ikcfg"; then
+            grep -E 'HYPERV|PCI_HYPERV|MICROSOFT_MANA|SCSI_FC_ATTRS' "$ikcfg" || true
+            rm -f "$ikcfg"
+            log_fail "${sym}=y missing from bzImage IKCONFIG"
+        fi
+    done
+    rm -f "$ikcfg"
+    if ! grep -q 'hv_acpi_init' System.map; then
+        log_fail "hv_acpi_init missing from System.map (CONFIG_HYPERV not linked into vmlinux)"
+    fi
+    if ! grep -q 'hv_storvsc' System.map; then
+        log_fail "hv_storvsc missing from System.map (CONFIG_HYPERV_STORAGE not linked)"
+    fi
+    if ! grep -q 'hv_pci' System.map; then
+        log_fail "hv_pci missing from System.map (CONFIG_PCI_HYPERV not linked)"
+    fi
     popd;
 }
 
