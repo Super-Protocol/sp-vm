@@ -359,6 +359,18 @@ if ! az sig show --resource-group "$RESOURCE_GROUP" --gallery-name "$GALLERY" >/
   run az sig create --resource-group "$RESOURCE_GROUP" --gallery-name "$GALLERY" --location "$LOCATION" -o none
 fi
 
+# A new version, its image definition and the staging blob it is imported from
+# all live in the gallery's own region: Azure refuses a source blob from another
+# region. --location then only has to be among the replication targets, which
+# is how a build reaches every other region.
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  HOME_REGION="$LOCATION"
+else
+  HOME_REGION="$(az sig show --resource-group "$RESOURCE_GROUP" --gallery-name "$GALLERY" --query location -o tsv | tr -d '\r')"
+fi
+[[ " ${TARGET_REGIONS} " == *" ${HOME_REGION} "* ]] || TARGET_REGIONS="${HOME_REGION} ${TARGET_REGIONS}"
+echo "    gallery region ${HOME_REGION}; replication targets: ${TARGET_REGIONS}"
+
 if ! az sig image-definition show \
     --resource-group "$RESOURCE_GROUP" \
     --gallery-name "$GALLERY" \
@@ -367,7 +379,7 @@ if ! az sig image-definition show \
     --resource-group "$RESOURCE_GROUP" \
     --gallery-name "$GALLERY" \
     --gallery-image-definition "$IMAGE_DEFINITION" \
-    --location "$LOCATION" \
+    --location "$HOME_REGION" \
     --publisher superprotocol \
     --offer sp-vm \
     --sku "${IMAGE_DEFINITION#sp-vm-}" \
@@ -387,7 +399,7 @@ create_version() {
     --gallery-name "$GALLERY" \
     --gallery-image-definition "$IMAGE_DEFINITION" \
     --gallery-image-version "$IMAGE_VERSION" \
-    --location "$LOCATION" \
+    --location "$HOME_REGION" \
     --target-regions $TARGET_REGIONS \
     --block-deletion-before-end-of-life false \
     --tags "build_tag=${BUILD_TAG}" "image_sha256=${IMAGE_SHA256}" \
@@ -499,11 +511,16 @@ run python3 "${SCRIPT_DIR}/vhd_footer.py" "$VHD"
 ### Staging blob ##############################################################
 
 echo "==> ensuring staging storage account ${STORAGE_ACCOUNT}"
-if ! az storage account show --resource-group "$RESOURCE_GROUP" --name "$STORAGE_ACCOUNT" >/dev/null 2>&1; then
+if staging_region="$(az storage account show --resource-group "$RESOURCE_GROUP" --name "$STORAGE_ACCOUNT" \
+    --query location -o tsv 2>/dev/null)"; then
+  staging_region="${staging_region//$'\r'/}"
+  [[ "$staging_region" == "$HOME_REGION" ]] \
+    || die "Staging account ${STORAGE_ACCOUNT} is in ${staging_region}, the gallery in ${HOME_REGION}; Azure imports only from a blob in the gallery's region. Pass --storage-account <new name> to stage in ${HOME_REGION}."
+else
   run az storage account create \
     --resource-group "$RESOURCE_GROUP" \
     --name "$STORAGE_ACCOUNT" \
-    --location "$LOCATION" \
+    --location "$HOME_REGION" \
     --sku Standard_LRS \
     --kind StorageV2 \
     --min-tls-version TLS1_2 \
