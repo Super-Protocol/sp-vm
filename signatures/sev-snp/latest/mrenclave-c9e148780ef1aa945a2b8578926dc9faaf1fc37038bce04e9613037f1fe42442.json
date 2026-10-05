@@ -1,0 +1,7 @@
+{
+  "mrenclave": "c9e148780ef1aa945a2b8578926dc9faaf1fc37038bce04e9613037f1fe42442",
+  "signature": "xfRb/vWyy1FYdSIBoVpB9+qefbmcVycBfrMEPKBn6NMS9xokUQKJYPUKKol2Szq3B/Q2jrtWS1k7169STlTzebPITskP1CnIHCxrRFtKLuNlmpmTTuLjcRPey5qFQz+B8xQRT7Bd3qF/fXAKXSrgilP+VLANqkmZvsuYfdxyinuEowDxjcDoGXJYG4pXH+GnJdu8irPpWf6SswZKhOrUvxr9IxcZz10u0vCPCUinYx14L5dguTyGso+HuxsjNs8/YfRRa8yCoGFWMq4jMkuvIy8gH0mrWufKANqSIguhJpAFAK+v4MnO3hAT2mp4qnpYNzN8nV3HloXNYX5ABlBWt/DBF4eJ148uDsC92CC2iFPqn9ylnsujkYPowJrapCXw1ydNabKSrmso3UhEfVSDm2nt3P1VM1s+w8+D0qLXvAJX5FcQhGkE94ZXf+392t72BMFYN8AN8jCBBpXl9e7pZMGQGTAaEsysNRc7cUhetGiQPTEdmwdYg4R8l5dTN7Kf",
+  "build": "build-448-release",
+  "description": "sp-vm build-448-release reference measurement (stable cmdline, spnet/vm_mode from provider_config); SUP-199",
+  "creationDate": "2026-10-05T07:43:22.012Z"
+}
