@@ -52,14 +52,19 @@ def normalize_node(raw, defaults, where):
     if unknown:
         fail(f"{where}: unknown field(s) {', '.join(sorted(unknown))}; allowed: {', '.join(NODE_FIELDS)}")
     node = {**defaults, **raw}
-    missing = [field for field in NODE_FIELDS if node.get(field) in (None, "")]
+    required = [field for field in NODE_FIELDS if field != "zone"]
+    missing = [field for field in required if node.get(field) in (None, "")]
     if missing:
         fail(f"{where}: missing {', '.join(missing)} (set them on the node or in defaults)")
     node["size"] = str(node["size"])
     node["location"] = str(node["location"])
-    node["zone"] = str(node["zone"])
-    if not re.fullmatch(r"[1-9]", node["zone"]):
-        fail(f"{where}: zone must be a single digit, got {node['zone']!r}")
+    zone = node.get("zone")
+    if zone in (None, ""):
+        node["zone"] = ""
+    else:
+        node["zone"] = str(zone)
+        if not re.fullmatch(r"[1-9]", node["zone"]):
+            fail(f"{where}: zone must be a single digit or empty, got {node['zone']!r}")
     try:
         node["state_disk_size"] = int(node["state_disk_size"])
     except (TypeError, ValueError):
