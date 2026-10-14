@@ -112,7 +112,7 @@ if [ -n "$SERVICES_TAG" ]; then
     INDEX_URL="https://super-protocol.github.io/swarm-cloud-services/${SERVICES_TAG}/index.json?v=$(date +%s)"
     INDEX_FILE="$TMP/index.json"
 
-    if ! curl -sfL "$INDEX_URL" -o "$INDEX_FILE"; then
+    if ! curl -sfL --retry 5 --retry-all-errors --retry-delay 2 "$INDEX_URL" -o "$INDEX_FILE"; then
         rm -rf "$TMP"
         log "ERROR: failed to fetch services index from $INDEX_URL"
         exit 1
@@ -120,7 +120,7 @@ if [ -n "$SERVICES_TAG" ]; then
 
     SERVICES_TAG="$SERVICES_TAG" INDEX_FILE="$INDEX_FILE" TMP_DIR="$TMP" \
     python3 - << 'PYEOF'
-import hashlib, json, os, subprocess, zipfile
+import hashlib, json, os, shutil, subprocess, zipfile
 
 services_tag = os.environ['SERVICES_TAG']
 index_file = os.environ['INDEX_FILE']
@@ -143,9 +143,14 @@ for entry in services:
     filename = entry['file']
     expected_sha = entry['sha256']
     dest = os.path.join(tmp_dir, filename)
-    url = f'{base_url}/{filename}'
+    # ?v={sha} busts GitHub Pages cache (max-age=600) so a republish of the
+    # same tag cannot pair a fresh index with a stale zip.
+    url = f'{base_url}/{filename}?v={expected_sha}'
 
-    subprocess.run(['curl', '-sfL', '-o', dest, url], check=True)
+    subprocess.run(
+        ['curl', '-sfL', '--retry', '5', '--retry-all-errors', '--retry-delay', '2', '-o', dest, url],
+        check=True,
+    )
 
     actual_sha = hashlib.sha256(open(dest, 'rb').read()).hexdigest()
     if actual_sha != expected_sha:
@@ -156,6 +161,7 @@ for entry in services:
         raise SystemExit(1)
 
     svc_dir = os.path.join(services_dir, service_name)
+    shutil.rmtree(svc_dir, ignore_errors=True)
     os.makedirs(svc_dir, exist_ok=True)
     with zipfile.ZipFile(dest, 'r') as zf:
         zf.extractall(svc_dir)
