@@ -334,14 +334,22 @@ render_node() {
 # launch_node <name> <index> <role> <node json>; prints the public IP.
 launch_node() {
   local name="$1" index="$2" role="$3" node="$4" ip_file ip
-  log "${name}: creating ($(jq -r '"\(.size), \(.location) zone \(.zone), state disk \(.state_disk_size) GB"' <<<"$node"))"
+  local zone zone_label
+  zone="$(jq -r '.zone // empty' <<<"$node")"
+  if [[ -n "$zone" ]]; then
+    zone_label="zone ${zone}"
+  else
+    zone_label="no availability zone"
+  fi
+  log "${name}: creating ($(jq -r '.size + ", " + .location' <<<"$node") ${zone_label}, state disk $(jq -r .state_disk_size <<<"$node") GB)"
   ip_file="${STATE_DIR}/nodes/${name}.ip"
   # stdout of the launcher is only the IP (--print-ip-only); its progress on
-  # stderr is shown indented.
+  # stderr is shown indented. An empty --zone overrides the launcher default
+  # and creates a regional VM.
   "$LAUNCHER" --release "$RELEASE" --vm "$name" \
     --size "$(jq -r .size <<<"$node")" \
     --location "$(jq -r .location <<<"$node")" \
-    --zone "$(jq -r .zone <<<"$node")" \
+    --zone "$zone" \
     --state-disk-size "$(jq -r .state_disk_size <<<"$node")" \
     --provider-config "${STATE_DIR}/nodes/${name}" \
     --tag "sp-cluster=${CLUSTER}" --tag "sp-node=${name}" --tag "sp-index=${index}" \

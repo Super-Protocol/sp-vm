@@ -104,57 +104,64 @@ else
     log "tags.sdk not set, using built-in provision-plugin-sdk"
 fi
 
-# Download swarm-services from GitHub Release into /etc/swarm-services (always overwrite)
+# Download swarm-services from GitHub Pages into /etc/swarm-services (always overwrite)
+# URL: https://super-protocol.github.io/swarm-cloud-services/<tags.services>/
 if [ -n "$SERVICES_TAG" ]; then
     log "downloading swarm-services $SERVICES_TAG..."
-    SERVICES_RELEASE_TAG="services-${SERVICES_TAG}"
     TMP=$(mktemp -d)
-    REL_FILE=$(mktemp)
-    auth_curl_args=()
-    [ -n "$GITHUB_TOKEN" ] && auth_curl_args=(-H "Authorization: token $GITHUB_TOKEN")
+    INDEX_URL="https://super-protocol.github.io/swarm-cloud-services/${SERVICES_TAG}/index.json?v=$(date +%s)"
+    INDEX_FILE="$TMP/index.json"
 
-    if ! curl -sf "${auth_curl_args[@]}" \
-            "https://api.github.com/repos/Super-Protocol/swarm-cloud/releases/tags/$SERVICES_RELEASE_TAG" \
-            -o "$REL_FILE"; then
-        rm -f "$REL_FILE"
-        log "ERROR: failed to fetch release info for swarm-services $SERVICES_RELEASE_TAG"
+    if ! curl -sfL --retry 5 --retry-all-errors --retry-delay 2 "$INDEX_URL" -o "$INDEX_FILE"; then
+        rm -rf "$TMP"
+        log "ERROR: failed to fetch services index from $INDEX_URL"
         exit 1
     fi
 
-    GITHUB_TOKEN="$GITHUB_TOKEN" REL_FILE="$REL_FILE" TMP_DIR="$TMP" \
+    SERVICES_TAG="$SERVICES_TAG" INDEX_FILE="$INDEX_FILE" TMP_DIR="$TMP" \
     python3 - << 'PYEOF'
-import json, os, subprocess, re, zipfile
+import hashlib, json, os, shutil, subprocess, zipfile
 
-github_token = os.environ.get('GITHUB_TOKEN', '')
-rel_file = os.environ['REL_FILE']
+services_tag = os.environ['SERVICES_TAG']
+index_file = os.environ['INDEX_FILE']
 tmp_dir = os.environ['TMP_DIR']
 services_dir = '/etc/swarm-services'
+base_url = f'https://super-protocol.github.io/swarm-cloud-services/{services_tag}'
 
-with open(rel_file) as f:
+with open(index_file) as f:
     data = json.load(f)
-os.unlink(rel_file)
+
+services = data.get('services') or []
+if not services:
+    print('ERROR: services index has no entries', flush=True)
+    raise SystemExit(1)
 
 os.makedirs(services_dir, exist_ok=True)
-auth_headers = ['-H', f'Authorization: token {github_token}'] if github_token else []
 
-for asset in data.get('assets', []):
-    name = asset['name']
-    if not name.endswith('.zip'):
-        continue
-    asset_id = asset['id']
-    service_name = re.sub(r'^(.+)-(v[\d.]+[^/]*|develop|main)\.zip$', r'\1', name)
-    dest = os.path.join(tmp_dir, name)
+for entry in services:
+    service_name = entry['name']
+    filename = entry['file']
+    expected_sha = entry['sha256']
+    dest = os.path.join(tmp_dir, filename)
+    # ?v={sha} busts GitHub Pages cache (max-age=600) so a republish of the
+    # same tag cannot pair a fresh index with a stale zip.
+    url = f'{base_url}/{filename}?v={expected_sha}'
 
     subprocess.run(
-        ['curl', '-sfL'] + auth_headers + [
-            '-H', 'Accept: application/octet-stream',
-            '-o', dest,
-            f'https://api.github.com/repos/Super-Protocol/swarm-cloud/releases/assets/{asset_id}',
-        ],
+        ['curl', '-sfL', '--retry', '5', '--retry-all-errors', '--retry-delay', '2', '-o', dest, url],
         check=True,
     )
 
+    actual_sha = hashlib.sha256(open(dest, 'rb').read()).hexdigest()
+    if actual_sha != expected_sha:
+        print(
+            f'ERROR: sha256 mismatch for {filename}: expected {expected_sha}, got {actual_sha}',
+            flush=True,
+        )
+        raise SystemExit(1)
+
     svc_dir = os.path.join(services_dir, service_name)
+    shutil.rmtree(svc_dir, ignore_errors=True)
     os.makedirs(svc_dir, exist_ok=True)
     with zipfile.ZipFile(dest, 'r') as zf:
         zf.extractall(svc_dir)

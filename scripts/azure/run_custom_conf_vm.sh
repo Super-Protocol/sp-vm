@@ -36,7 +36,8 @@ VM:
   --vm <name>                 Default: sp-conf-vm
   --vm-resource-group <name>  Default: sp-vm-<vm name>
   --location <region>         Default: westus3 (or $AZURE_LOCATION)
-  --zone <n>                  Default: 3
+  --zone <n>                  Default: 3. Pass an empty value to create the VM
+                              without an availability zone
   --size <vm-size>            Default: Standard_DC2es_v6
   --state-disk-size <GB>      Default: 100. 0 creates no managed data disk, so the
                               VM's own built-in disk becomes the state disk
@@ -239,7 +240,11 @@ fi
 
 echo "Parameters:"
 echo "  Subscription:   ${SUBSCRIPTION_ID}"
-echo "  VM:             ${VM_NAME} (${VM_SIZE}, ${LOCATION} zone ${ZONE})"
+if [[ -n "$ZONE" ]]; then
+  echo "  VM:             ${VM_NAME} (${VM_SIZE}, ${LOCATION} zone ${ZONE})"
+else
+  echo "  VM:             ${VM_NAME} (${VM_SIZE}, ${LOCATION}, no availability zone)"
+fi
 echo "  Resource group: ${VM_RESOURCE_GROUP}"
 echo "  Storage:        ${STORAGE_ACCOUNT}/${CONTAINER}"
 if [[ "$SKIP_PROVIDER_CONFIG" -eq 0 ]]; then
@@ -431,7 +436,7 @@ fi
 create_args=(
   az vm create
   -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" -l "$LOCATION"
-  --zone "$ZONE" --size "$VM_SIZE"
+  --size "$VM_SIZE"
   --image "$IMAGE_ID" --specialized
   --security-type ConfidentialVM
   --os-disk-security-encryption-type VMGuestStateOnly
@@ -440,6 +445,9 @@ create_args=(
   --nic-delete-option Delete
   --ssh-key-values "$THROWAWAY_KEY"
 )
+if [[ -n "$ZONE" ]]; then
+  create_args+=(--zone "$ZONE")
+fi
 if [[ "$STATE_DISK_SIZE" != "0" ]]; then
   create_args+=(--data-disk-sizes-gb "$STATE_DISK_SIZE" --data-disk-delete-option Delete)
 fi
