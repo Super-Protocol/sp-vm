@@ -218,6 +218,25 @@ RUN mkdir -p "${OUTPUTDIR}/etc/apt/apt.conf.d"
 ADD rootfs/files/configs/etc/apt/apt.conf.d/99-sp-configure-podman-cni \
     ${OUTPUTDIR}/etc/apt/apt.conf.d/99-sp-configure-podman-cni
 
+# flannel overlay recovery after a wg0 removal (SUP-350/SUP-355): deleting wg0
+# cascade-deletes flannel.1 and flanneld never rebuilds it.
+ADD rootfs/files/configs/usr/local/bin/sp-cni-after-wg0 \
+    ${OUTPUTDIR}/usr/local/bin/sp-cni-after-wg0
+RUN chmod 0755 ${OUTPUTDIR}/usr/local/bin/sp-cni-after-wg0
+RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/wg-quick@wg0.service.d"
+ADD rootfs/files/configs/etc/systemd/system/wg-quick@wg0.service.d/10-cni-recovery.conf \
+    ${OUTPUTDIR}/etc/systemd/system/wg-quick@wg0.service.d/10-cni-recovery.conf
+ADD rootfs/files/configs/etc/systemd/system/sp-cni-after-wg0.service \
+    ${OUTPUTDIR}/etc/systemd/system/sp-cni-after-wg0.service
+ADD rootfs/files/configs/etc/systemd/system/sp-cni-after-wg0.timer \
+    ${OUTPUTDIR}/etc/systemd/system/sp-cni-after-wg0.timer
+RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/timers.target.wants"
+RUN ln -sf /etc/systemd/system/sp-cni-after-wg0.timer \
+    "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/sp-cni-after-wg0.timer"
+ADD rootfs/tests/test_cni_after_wg0.sh /buildroot/tests/test_cni_after_wg0.sh
+RUN chmod 0755 /buildroot/tests/test_cni_after_wg0.sh
+RUN SP_CNI_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_cni_after_wg0.sh
+
 # copy iscsi configs, cause this partition will be remounted with empty dir
 RUN mkdir -p "${OUTPUTDIR}/etc/iscsi"
 RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";

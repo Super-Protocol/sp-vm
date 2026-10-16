@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Rebuild the flannel VXLAN overlay after wg0 has been (re-)created.
+#
+# `wg-quick down` deletes the interface (`ip link delete dev wg0`). flannel.1 is
+# a VXLAN device whose lower device is wg0, so the kernel cascade-deletes it and
+# every 10.42.x.0/24 overlay route with it. flanneld builds flannel.1 once at
+# start-up and never notices: the node keeps running with no pod-to-pod network
+# while Kubernetes still reports it Ready, the canal pod stays 2/2 Running and
+# `wg show` looks perfectly healthy. Restarting the kube-flannel container
+# rebuilds flannel.1 against the new wg0 and restores the routes; running pods
+# keep their IPs. See SUP-350 for the full analysis.
+#
+# Called from:
+#   - /etc/systemd/system/wg-quick@wg0.service.d/10-cni-recovery.conf (ExecStartPost)
+#   - sp-cni-after-wg0.timer, every 60 s, for device removals that bypass the unit
+#
+# Every "nothing to do" path exits 0 — boot bring-up depends on it.
+set -u
+
+IFACE="${1:-wg0}"
+VXLAN="${SP_CNI_VXLAN_DEV:-flannel.1}"
+CRICTL="${SP_CNI_CRICTL:-/var/lib/rancher/rke2/bin/crictl}"
+RUNTIME_ENDPOINT="${SP_CNI_RUNTIME_ENDPOINT:-unix:///run/k3s/containerd/containerd.sock}"
+# Must stay well below wg-quick@wg0's TimeoutStartSec (raised to 180 s by the
+# drop-in): a start timeout would make systemd stop the unit, i.e. delete wg0.
+WAIT_SEC="${SP_CNI_WAIT_SEC:-60}"
+# After a failed rebuild, leave flanneld alone for a while instead of letting the
+# 60 s timer restart its container forever. Successful rebuilds are never
+# throttled, so repeated bounces each recover immediately.
+BACKOFF_SEC="${SP_CNI_BACKOFF_SEC:-300}"
+STATE_DIR="${SP_CNI_STATE_DIR:-/run}"
+LOCK_FILE="$STATE_DIR/sp-cni-after-wg0.lock"
+FAIL_FILE="$STATE_DIR/sp-cni-after-wg0.failed-at"
+
+log() {
+    command -v logger >/dev/null 2>&1 && logger -t sp-cni-after-wg0 -- "$*"
+    echo "sp-cni-after-wg0: $*"
+}
+
+# The timer and the ExecStartPost hook can fire at the same time; a second
+# concurrent run would stop the container flanneld is restarting into.
+if command -v flock >/dev/null 2>&1 && exec 9>"$LOCK_FILE" 2>/dev/null; then
+    if ! flock --nonblock 9; then
+        log "another run holds $LOCK_FILE, nothing to do"
+        exit 0
+    fi
+fi
+
+ip link show "$IFACE" >/dev/null 2>&1 || { log "$IFACE absent, nothing to do"; exit 0; }
+if ip link show "$VXLAN" >/dev/null 2>&1; then
+    rm -f "$FAIL_FILE"
+    log "$VXLAN present, nothing to do"
+    exit 0
+fi
+[[ -x "$CRICTL" ]] || { log "crictl not found, cannot restart flannel"; exit 0; }
+
+if [[ -r "$FAIL_FILE" ]]; then
+    failed_at=$(cat "$FAIL_FILE" 2>/dev/null)
+    now=$(date +%s)
+    if [[ "$failed_at" =~ ^[0-9]+$ ]] && (( now - failed_at < BACKOFF_SEC )); then
+        log "previous rebuild failed $(( now - failed_at ))s ago, backing off ${BACKOFF_SEC}s"
+        exit 0
+    fi
+fi
+
+export CONTAINER_RUNTIME_ENDPOINT="$RUNTIME_ENDPOINT"
+cid=$("$CRICTL" ps --name kube-flannel --state Running -q 2>/dev/null | head -1)
+[[ -n "$cid" ]] || { log "no running kube-flannel container (CNI not up yet?)"; exit 0; }
+
+log "$VXLAN missing after $IFACE came up; restarting kube-flannel (${cid:0:12})"
+"$CRICTL" stop "$cid" >/dev/null 2>&1
+
+deadline=$(( $(date +%s) + WAIT_SEC ))
+while (( $(date +%s) < deadline )); do
+    sleep 2
+    if ip link show "$VXLAN" >/dev/null 2>&1; then
+        rm -f "$FAIL_FILE"
+        log "$VXLAN restored"
+        exit 0
+    fi
+done
+
+date +%s > "$FAIL_FILE"
+log "ERROR: $VXLAN did not come back within ${WAIT_SEC}s"
+exit 1
