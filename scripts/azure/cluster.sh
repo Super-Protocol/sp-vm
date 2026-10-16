@@ -774,7 +774,7 @@ config_state() {
 
 status_table() {
   local groups group name index role release info ip size location zone measure type hex reg ca domain
-  local conf conf_bad=0
+  local conf conf_bad=0 conf_unknown=0
   groups="$(cluster_groups)"
   [[ -n "$groups" ]] || { log "Cluster ${CLUSTER}: no resource groups"; return 0; }
   echo
@@ -803,17 +803,28 @@ status_table() {
       fi
     fi
     conf="$(config_state "$group" "$name")"
-    [[ "$conf" == "ok" || "$conf" == "-" ]] || conf_bad=$((conf_bad + 1))
+    # Only a definite answer from storage counts as broken: a "?" is this
+    # host's own network failing to reach the blob and says nothing about the
+    # node, so it must not raise the alarm.
+    case "$conf" in
+      GONE|EXPIRED) conf_bad=$((conf_bad + 1)) ;;
+      \?*) conf_unknown=$((conf_unknown + 1)) ;;
+    esac
     printf '%-28s %-9s %-20s %-14s %-15s %-13s %-17s %-8s %-4s %s\n' \
       "$name" "$role" "${size:--}" "${location:--}/${zone:--}" "${ip:--}" "$type" "${hex:0:16}" "$reg" "$ca" "$conf"
   done <<<"$groups"
 
   if [[ "$conf_bad" -gt 0 ]]; then
     echo
-    echo "WARNING: ${conf_bad} node(s) can no longer fetch their provider_config (CONFIG != ok)."
+    echo "WARNING: ${conf_bad} node(s) can no longer fetch their provider_config (CONFIG GONE/EXPIRED)."
     echo "  A reboot — Azure service healing does this without asking — loses them silently."
     echo "  Re-arm them without touching the running nodes:"
-    echo "    ${BASH_SOURCE[0]} refresh-configs --cluster ${CLUSTER}"
+    echo "    ${BASH_SOURCE[0]} refresh-configs --cluster ${CLUSTER} --only-missing"
+  fi
+  if [[ "$conf_unknown" -gt 0 ]]; then
+    echo
+    echo "NOTE: CONFIG could not be determined for ${conf_unknown} node(s) (shown as ?<code>)."
+    echo "  That is this host failing to reach blob storage, not a verdict on the node; re-run status."
   fi
 
   domain="$(cat "${STATE_DIR}/swarm_domain" 2>/dev/null || true)"
@@ -867,6 +878,9 @@ cmd_refresh_configs() {
         skipped=$((skipped + 1))
         continue
       fi
+      # Anything else — including a "?" we could not resolve — gets re-armed:
+      # a needless re-upload costs nothing, a missed one costs the node.
+      log "${name}: CONFIG=${conf}"
     fi
     template="${STATE_DIR}/nodes/${name}"
     [[ -d "$template" ]] \

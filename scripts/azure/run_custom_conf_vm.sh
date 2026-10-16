@@ -288,6 +288,31 @@ fi
 
 USER_DATA_FILE="${WORK_TMP}/userdata.json"
 BLOB_NAME=""
+STORAGE_KEY=""
+
+# Every refresh uploads a new <vm>-<timestamp>.tar.gz, and nothing expires them
+# any more. Drop the superseded ones once the VM's userData points at the new
+# blob — call this only after that update succeeded, never before, or a failed
+# update would leave the VM pointing at a blob that is already gone.
+prune_old_provider_config_blobs() {
+  local stale
+  [[ -n "$BLOB_NAME" ]] || return 0
+  [[ "$DRY_RUN" -eq 0 ]] || { echo "==> would delete superseded provider_config blobs"; return 0; }
+
+  stale="$(az storage blob list \
+    --account-name "$STORAGE_ACCOUNT" --account-key "$STORAGE_KEY" \
+    --container-name "$CONTAINER" --query "[?name!='${BLOB_NAME}'].name" -o tsv 2>/dev/null || true)"
+  [[ -n "$stale" ]] || return 0
+
+  echo "==> deleting $(wc -l <<<"$stale") superseded provider_config blob(s)"
+  while IFS= read -r blob; do
+    [[ -n "$blob" ]] || continue
+    az storage blob delete \
+      --account-name "$STORAGE_ACCOUNT" --account-key "$STORAGE_KEY" \
+      --container-name "$CONTAINER" --name "$blob" -o none 2>/dev/null \
+      || echo "    WARNING: could not delete ${blob}; it is harmless, remove it by hand" >&2
+  done <<<"$stale"
+}
 
 prepare_provider_config() {
   local archive sha256 expiry sas_url storage_key policy_file
@@ -323,6 +348,7 @@ prepare_provider_config() {
     storage_key="$(az storage account keys list -g "$VM_RESOURCE_GROUP" \
       -n "$STORAGE_ACCOUNT" --query "[0].value" -o tsv)"
   fi
+  STORAGE_KEY="$storage_key"
 
   run az storage container create \
     --account-name "$STORAGE_ACCOUNT" --account-key "$storage_key" \
@@ -413,6 +439,7 @@ if [[ "$REFRESH_PROVIDER_CONFIG" -eq 1 ]]; then
   # --user-data: it stores the path itself as userData. Pass the contents.
   run az vm update -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" \
     --user-data "$(cat "$USER_DATA_FILE")" -o none
+  prune_old_provider_config_blobs
   if [[ "$NO_RESTART" -eq 1 ]]; then
     echo "==> not restarting ${VM_NAME} (--no-restart)"
     echo "    The running node keeps the /sp it already has; the new archive is"
@@ -489,6 +516,9 @@ fi
 create_args+=(-o none)
 
 run "${create_args[@]}"
+# A --force-overwrite-vm relaunch reuses the storage account, so the previous
+# VM's archives can still be sitting there; the new VM's userData is in place.
+[[ "$SKIP_PROVIDER_CONFIG" -eq 1 ]] || prune_old_provider_config_blobs
 ensure_inbound_rules
 
 PUBLIC_IP=""
