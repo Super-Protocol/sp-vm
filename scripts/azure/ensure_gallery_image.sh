@@ -154,8 +154,8 @@ if [[ -z "$STORAGE_ACCOUNT" ]]; then
 fi
 
 WORK_DIR="$(cd "$WORK_DIR" && pwd)"
-TMPDIR="$(mktemp -d "${WORK_DIR}/tmpdir.azure-image.XXXXXX")"
-trap 'rm -rf "$TMPDIR"' EXIT
+WORK_TMP="$(mktemp -d "${WORK_DIR}/tmpdir.azure-image.XXXXXX")"
+trap 'rm -rf "$WORK_TMP"' EXIT
 
 ### Source description ########################################################
 
@@ -169,7 +169,7 @@ STORJ_PREFIX=""
 if [[ -n "$RELEASE" ]]; then
   need_cmd curl
   BUILD_TAG="${BUILD_TAG:-$RELEASE}"
-  VM_JSON="${TMPDIR}/vm.json"
+  VM_JSON="${WORK_TMP}/vm.json"
   echo "==> fetching vm.json from release ${RELEASE}"
   curl -sfL -o "$VM_JSON" \
     "https://github.com/${RELEASE_REPO}/releases/download/${RELEASE}/vm.json" \
@@ -177,8 +177,8 @@ if [[ -n "$RELEASE" ]]; then
 elif [[ -n "$VM_JSON" && "$VM_JSON" =~ ^https?:// ]]; then
   need_cmd curl
   echo "==> fetching ${VM_JSON}"
-  curl -sfL -o "${TMPDIR}/vm.json" "$VM_JSON" || die "Cannot download ${VM_JSON}"
-  VM_JSON="${TMPDIR}/vm.json"
+  curl -sfL -o "${WORK_TMP}/vm.json" "$VM_JSON" || die "Cannot download ${VM_JSON}"
+  VM_JSON="${WORK_TMP}/vm.json"
 fi
 
 if [[ -n "$VM_JSON" ]]; then
@@ -452,12 +452,12 @@ fi
 
 ### Fetch, convert and upload #################################################
 
-VHD="${TMPDIR}/${BLOB_NAME}"
+VHD="${WORK_TMP}/${BLOB_NAME}"
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
   need_space=$IMAGE_SIZE
   [[ -z "$ARCHIVE_NAME" ]] || need_space=$((IMAGE_SIZE * 2))
-  avail="$(df --output=avail -B1 "$TMPDIR" | tail -n1 | tr -d ' ')"
+  avail="$(df --output=avail -B1 "$WORK_TMP" | tail -n1 | tr -d ' ')"
   (( avail >= need_space )) \
     || die "Not enough free space in ${WORK_DIR}: need ${need_space} bytes, have ${avail}"
 fi
@@ -465,7 +465,7 @@ fi
 if [[ -n "$ARCHIVE_NAME" ]]; then
   need_cmd uplink
   need_cmd zstd
-  ARCHIVE="${TMPDIR}/${ARCHIVE_NAME}"
+  ARCHIVE="${WORK_TMP}/${ARCHIVE_NAME}"
   echo "==> downloading sj://${STORJ_BUCKET}/${STORJ_PREFIX}/${ARCHIVE_NAME}"
   run uplink cp \
     --parallelism 16 --interactive=false --analytics=false --progress \
@@ -595,10 +595,10 @@ if [[ "$VERIFY_UPLOAD" -eq 1 ]] && [[ "$DRY_RUN" -eq 0 ]]; then
   az storage blob download \
     --account-name "$STORAGE_ACCOUNT" --account-key "$STORAGE_KEY" \
     --container-name "$CONTAINER" --name "$BLOB_NAME" \
-    --file "${TMPDIR}/verify.vhd" --max-connections 16 \
+    --file "${WORK_TMP}/verify.vhd" --max-connections 16 \
     --no-progress --only-show-errors -o none
-  cmp "$VHD" "${TMPDIR}/verify.vhd" || die "Staging blob differs from the local VHD"
-  rm -f "${TMPDIR}/verify.vhd"
+  cmp "$VHD" "${WORK_TMP}/verify.vhd" || die "Staging blob differs from the local VHD"
+  rm -f "${WORK_TMP}/verify.vhd"
 fi
 
 rm -f "$VHD"

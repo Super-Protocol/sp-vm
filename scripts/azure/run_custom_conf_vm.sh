@@ -12,12 +12,15 @@ provider_config archive), so --delete removes all of it in one operation.
 
 The provider_config directory is packed into a tar.gz, uploaded as a blob and
 handed to the guest as a read-only SAS URL in the VM's userData. The guest
-downloads it once, verifies its sha256 and unpacks it into /sp. A lifecycle
-rule on the storage account deletes the archive a day later.
+downloads it once, verifies its sha256 and unpacks it into /sp.
 
-NOTE: the VM does not survive a reboot. Its state disk is wiped and re-encrypted
-with a fresh key on every boot, so /sp is empty again and the archive may
-already be gone. Re-run this script to launch a fresh VM.
+NOTE: the state disk is wiped and re-encrypted with a fresh key on every boot,
+so after any reboot /sp is empty and the guest downloads the archive again. The
+archive must therefore stay reachable for as long as the VM exists: it is kept
+until --delete removes the resource group, and the SAS lives a year. Letting it
+expire is what makes a rebooted node unrecoverable (SUP-343) — it then has no
+config, no PKI keys and, on debug images, no /sp/authorized_keys either, so it
+is silently lost while its Measurement API keeps answering on :9180.
 
 Examples:
   ./run_custom_conf_vm.sh --release build-441-debug --provider-config ./provider_config
@@ -51,10 +54,16 @@ Gallery (only used when the image has to be ensured):
 provider_config:
   --provider-config <dir>  Default: <script dir>/provider_config ($PROVIDER_CONFIG_DIR)
   --skip-provider-config   Launch without one (the VM will wait for it forever)
-  --config-ttl-days <n>    Lifecycle rule deleting the archive; default 1
-  --sas-expiry-days <n>    SAS lifetime; default 30. Keep it above --config-ttl-days
-                           so the lifecycle rule stays the only real deadline
+  --config-ttl-days <n>    Lifecycle rule deleting the archive after <n> days;
+                           default 0 = no rule, the archive lives as long as the
+                           resource group. Only set this for a VM you know will
+                           never reboot — the guest needs the archive on every boot
+  --sas-expiry-days <n>    SAS lifetime; default 365. Keep it above
+                           --config-ttl-days so the rule stays the only deadline
   --refresh-provider-config  Re-upload the archive and update an existing VM's userData
+  --no-restart             With --refresh-provider-config: do not restart the VM.
+                           Use this to re-arm a healthy node's archive — a restart
+                           wipes its state disk and makes it rejoin from scratch
 
 Other:
   --update-network  Apply the inbound firewall rules to an existing VM and exit
@@ -89,9 +98,10 @@ GALLERY="${AZURE_GALLERY:-sp_vm_images}"
 GALLERY_RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-sp-vm-images}"
 PROVIDER_CONFIG_DIR="${PROVIDER_CONFIG_DIR:-}"
 SKIP_PROVIDER_CONFIG=0
-CONFIG_TTL_DAYS="1"
-SAS_EXPIRY_DAYS="30"
+CONFIG_TTL_DAYS="0"
+SAS_EXPIRY_DAYS="365"
 REFRESH_PROVIDER_CONFIG=0
+NO_RESTART=0
 DELETE=0
 UPDATE_NETWORK=0
 PRINT_IP_ONLY=0
@@ -130,6 +140,7 @@ while [[ $# -gt 0 ]]; do
     --config-ttl-days) CONFIG_TTL_DAYS="${2:-}"; shift 2 ;;
     --sas-expiry-days) SAS_EXPIRY_DAYS="${2:-}"; shift 2 ;;
     --refresh-provider-config) REFRESH_PROVIDER_CONFIG=1; shift 1 ;;
+    --no-restart) NO_RESTART=1; shift 1 ;;
     --delete) DELETE=1; shift 1 ;;
     --update-network) UPDATE_NETWORK=1; shift 1 ;;
     --dry-run) DRY_RUN=1; shift 1 ;;
@@ -171,8 +182,11 @@ SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
 # Globally unique, <=24 chars, lowercase alphanumeric only.
 STORAGE_ACCOUNT="spvmcfg$(printf '%s/%s' "$SUBSCRIPTION_ID" "$VM_NAME" | sha256sum | cut -c1-17)"
 
-TMPDIR="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR"' EXIT
+[[ "$CONFIG_TTL_DAYS" =~ ^[0-9]+$ ]] || die "--config-ttl-days takes a non-negative integer, got: ${CONFIG_TTL_DAYS}"
+[[ "$SAS_EXPIRY_DAYS" =~ ^[0-9]+$ ]] || die "--sas-expiry-days takes a non-negative integer, got: ${SAS_EXPIRY_DAYS}"
+
+WORK_TMP="$(mktemp -d)"
+trap 'rm -rf "$WORK_TMP"' EXIT
 
 ### Teardown ##################################################################
 
@@ -272,7 +286,7 @@ fi
 
 ### provider_config payload ###################################################
 
-USER_DATA_FILE="${TMPDIR}/userdata.json"
+USER_DATA_FILE="${WORK_TMP}/userdata.json"
 BLOB_NAME=""
 
 prepare_provider_config() {
@@ -287,7 +301,7 @@ prepare_provider_config() {
   fi
 
   echo "==> packing ${PROVIDER_CONFIG_DIR}"
-  archive="${TMPDIR}/provider_config.tar.gz"
+  archive="${WORK_TMP}/provider_config.tar.gz"
   # "-C dir ." so the archive root is what becomes /sp
   tar -czf "$archive" -C "$PROVIDER_CONFIG_DIR" .
   sha256="$(sha256sum "$archive" | awk '{print $1}')"
@@ -314,11 +328,25 @@ prepare_provider_config() {
     --account-name "$STORAGE_ACCOUNT" --account-key "$storage_key" \
     --name "$CONTAINER" --public-access off -o none
 
+  # The guest re-downloads the archive on every boot (the state disk is wiped),
+  # so an expiry rule is a deadline on the VM's ability to reboot at all. By
+  # default there is none; --delete takes the whole account with it anyway.
   # The archive is the only thing in this account, so the rule cannot reach
   # anything else; the filters are belt and braces.
-  echo "==> setting the ${CONFIG_TTL_DAYS}-day lifecycle rule"
-  policy_file="${TMPDIR}/lifecycle.json"
-  cat >"$policy_file" <<EOF
+  if [[ "$CONFIG_TTL_DAYS" -le 0 ]]; then
+    # Also clears a rule left by an earlier run of this script, so re-running it
+    # against an existing stand makes that stand reboot-survivable.
+    if [[ "$DRY_RUN" -eq 1 ]] || az storage account management-policy show \
+        -g "$VM_RESOURCE_GROUP" --account-name "$STORAGE_ACCOUNT" >/dev/null 2>&1; then
+      echo "==> removing the archive expiry rule (the guest needs it on every boot)"
+      run az storage account management-policy delete \
+        -g "$VM_RESOURCE_GROUP" --account-name "$STORAGE_ACCOUNT" -o none
+    fi
+  else
+    echo "==> setting the ${CONFIG_TTL_DAYS}-day lifecycle rule"
+    echo "    WARNING: the VM cannot reboot after that — it needs the archive on every boot"
+    policy_file="${WORK_TMP}/lifecycle.json"
+    cat >"$policy_file" <<EOF
 {
   "rules": [
     {
@@ -340,9 +368,10 @@ prepare_provider_config() {
   ]
 }
 EOF
-  run az storage account management-policy create \
-    -g "$VM_RESOURCE_GROUP" --account-name "$STORAGE_ACCOUNT" \
-    --policy "@${policy_file}" -o none
+    run az storage account management-policy create \
+      -g "$VM_RESOURCE_GROUP" --account-name "$STORAGE_ACCOUNT" \
+      --policy "@${policy_file}" -o none
+  fi
 
   BLOB_NAME="${VM_NAME}-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
   echo "==> uploading ${BLOB_NAME}"
@@ -384,8 +413,14 @@ if [[ "$REFRESH_PROVIDER_CONFIG" -eq 1 ]]; then
   # --user-data: it stores the path itself as userData. Pass the contents.
   run az vm update -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" \
     --user-data "$(cat "$USER_DATA_FILE")" -o none
-  echo "==> restarting ${VM_NAME} so it picks the new provider_config up"
-  run az vm restart -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" -o none
+  if [[ "$NO_RESTART" -eq 1 ]]; then
+    echo "==> not restarting ${VM_NAME} (--no-restart)"
+    echo "    The running node keeps the /sp it already has; the new archive is"
+    echo "    what it will download on its next boot."
+  else
+    echo "==> restarting ${VM_NAME} so it picks the new provider_config up"
+    run az vm restart -g "$VM_RESOURCE_GROUP" -n "$VM_NAME" -o none
+  fi
   echo
   echo "==> provider_config refreshed"
   exit 0
@@ -420,12 +455,12 @@ fi
 # config, which is what sshd reads.
 echo "==> creating ${VM_NAME}"
 if [[ "$DRY_RUN" -eq 1 ]]; then
-  THROWAWAY_KEY="${TMPDIR}/unused_vm_key.pub"
+  THROWAWAY_KEY="${WORK_TMP}/unused_vm_key.pub"
 else
   need_cmd ssh-keygen
   ssh-keygen -t ed25519 -N '' -C 'unused-specialized-image-placeholder' \
-    -f "${TMPDIR}/unused_vm_key" -q
-  THROWAWAY_KEY="${TMPDIR}/unused_vm_key.pub"
+    -f "${WORK_TMP}/unused_vm_key" -q
+  THROWAWAY_KEY="${WORK_TMP}/unused_vm_key.pub"
 fi
 
 create_args=(
@@ -474,7 +509,13 @@ echo "  Name:           ${VM_NAME}"
 echo "  Resource group: ${VM_RESOURCE_GROUP}"
 echo "  Image version:  ${IMAGE_ID}"
 [[ -z "$PUBLIC_IP" ]] || echo "  Public IP:      ${PUBLIC_IP}"
-[[ -z "$BLOB_NAME" ]] || echo "  Config blob:    ${CONTAINER}/${BLOB_NAME} (deleted after ${CONFIG_TTL_DAYS}d)"
+if [[ -n "$BLOB_NAME" ]]; then
+  if [[ "$CONFIG_TTL_DAYS" -le 0 ]]; then
+    echo "  Config blob:    ${CONTAINER}/${BLOB_NAME} (kept until --delete)"
+  else
+    echo "  Config blob:    ${CONTAINER}/${BLOB_NAME} (deleted after ${CONFIG_TTL_DAYS}d)"
+  fi
+fi
 echo
 echo "Serial console:"
 echo "  az serial-console connect -g ${VM_RESOURCE_GROUP} -n ${VM_NAME}"
@@ -482,7 +523,9 @@ echo
 echo "Delete everything (VM, disks, NIC, IP, config storage):"
 echo "  ${BASH_SOURCE[0]} --vm ${VM_NAME} --vm-resource-group ${VM_RESOURCE_GROUP} --delete"
 echo
-echo "The VM does not survive a reboot: its state disk is wiped on every boot."
+echo "A reboot wipes the state disk, so the VM re-downloads the config archive and"
+echo "rejoins from scratch. Keep that archive: if it is gone when the VM reboots,"
+echo "the node is lost silently (:9180 still answers, :9443 never comes back)."
 
 if [[ "$PRINT_IP_ONLY" -eq 1 ]]; then
   [[ -n "$PUBLIC_IP" || "$DRY_RUN" -eq 1 ]] || die "${VM_NAME} has no public IP"
