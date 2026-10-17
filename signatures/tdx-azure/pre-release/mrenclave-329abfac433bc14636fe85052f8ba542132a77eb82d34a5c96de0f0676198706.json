@@ -1,0 +1,7 @@
+{
+  "mrenclave": "329abfac433bc14636fe85052f8ba542132a77eb82d34a5c96de0f0676198706",
+  "signature": "PT1l2gzaMk6P8mWNKxUAKhq9vXqNzRNkidJfQJer2YjCvHidUz0Y8214/JTE/ytXrg7IT9wQKlZEFWoU2j68I8BDOmgvAiaYB3FB7ROT8DIVVqqpPlbyu0jQLuNCvA18uF8eBJDQU/ziKYzkemiiez7Vzxcvx/r+FWzSBKnMXZ6LNe2TOsRYuQJRS4/C9ejt/9+ZJbdpa1B94b/Sc5vNgmGJCSmqrYIrAJ30MQsfkQb1NnS/k1KUGirqDouM1VG8LOOs53rnktpFbBLQm77ccbwv+kf/baIDWx/0fUiRpy2cBx/zkPJy621JTDB4bX1ZLjHrAEHFK0D31ljhAjulh2LJLDSSChcRf9hY4yETXuyXpVFw1bt/lXxGyABNnrVm1v+NYOsKgVemT6dYIB0ikfDwT7ZJa50j14huWreU4CsPjOqN+JVk9sm4VTN1oSU97seXZ0X3p2gOz0MdLOKb4MWoaQ5fCnvJvJiRowN1xjZDUKi/wF2ouWK9iOJpRAg7",
+  "build": "build-456-release",
+  "description": "Reliability release: SUP-327 DNS, SUP-343 reboot survival, SUP-344 WG/membership",
+  "creationDate": "2026-10-17T09:41:50.871Z"
+}
