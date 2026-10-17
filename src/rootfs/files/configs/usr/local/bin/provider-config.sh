@@ -13,8 +13,13 @@ set -euo pipefail
 log() { echo "[provider-config] $*"; }
 log_err() { echo "[provider-config] ERROR: $*" >&2; }
 
-SP_DIR="/sp"
-PASSWD_FILE="/etc/passwd-s3fs"
+# These four are overridable only so src/rootfs/tests can exercise this script
+# off a real VM; on a node they always resolve to the production paths.
+SP_DIR="${SP_PROVIDER_CONFIG_SP_DIR:-/sp}"
+PASSWD_FILE="${SP_PROVIDER_CONFIG_PASSWD_FILE:-/etc/passwd-s3fs}"
+DMI_DIR="${SP_PROVIDER_CONFIG_DMI_DIR:-/sys/class/dmi/id}"
+# /run is tmpfs, so the downloaded payload never touches unencrypted storage.
+STAGE_ROOT="${SP_PROVIDER_CONFIG_STAGE_ROOT:-/run}"
 
 IMDS_HOST="169.254.169.254"
 AZURE_IMDS_COMPUTE="http://${IMDS_HOST}/metadata/instance/compute"
@@ -31,7 +36,7 @@ cleanup() {
 trap cleanup EXIT
 
 dmi_value() {
-    local path="/sys/class/dmi/id/$1"
+    local path="${DMI_DIR}/$1"
     if [[ -r "$path" ]]; then
         tr -d '\0' <"$path" 2>/dev/null || true
     fi
@@ -89,13 +94,31 @@ do_azure() {
     # /run is tmpfs, so the payload never touches unencrypted storage; /sp is on
     # the LUKS-encrypted state disk.
     umask 077
-    STAGE_DIR="$(mktemp -d /run/provider-config.XXXXXX)"
+    STAGE_DIR="$(mktemp -d "${STAGE_ROOT}/provider-config.XXXXXX")"
 
     log "Downloading provider_config archive"
-    if ! curl -sSfL --max-time 300 --retry 3 --retry-delay 5 \
-        -o "${STAGE_DIR}/payload.tar.gz" "$url"; then
-        log_err "Failed to download the provider_config archive."
-        log_err "It may have been removed by the storage lifecycle policy; re-run scripts/azure/run_custom_conf_vm.sh."
+    local http_code=""
+    http_code="$(curl -sSL --max-time 300 --retry 3 --retry-delay 5 \
+        -o "${STAGE_DIR}/payload.tar.gz" -w '%{http_code}' "$url" || true)"
+    if [[ "$http_code" != "200" ]]; then
+        # 404 = the blob is gone (storage lifecycle policy), 403 = the SAS
+        # expired. Either way no retry can ever succeed, and this VM is now a
+        # blank node: no /sp, so no swarm config, no PKI key material and no
+        # /sp/authorized_keys. Say so unambiguously — from the outside the only
+        # symptom is that :9443 never opens while :9180 keeps answering.
+        case "$http_code" in
+            404|403|410)
+                log_err "UNRECOVERABLE: the provider_config archive is gone (HTTP ${http_code})."
+                log_err "This node booted blank and cannot rejoin the swarm. Re-upload the archive with"
+                log_err "  scripts/azure/run_custom_conf_vm.sh --vm <name> --refresh-provider-config"
+                log_err "or replace the node. Retrying will not help."
+                ;;
+            *)
+                log_err "Failed to download the provider_config archive (HTTP ${http_code:-none})."
+                log_err "If this is transient the next retry succeeds; if it is 404/403 the archive"
+                log_err "expired and the node must be re-armed with --refresh-provider-config."
+                ;;
+        esac
         exit 1
     fi
 

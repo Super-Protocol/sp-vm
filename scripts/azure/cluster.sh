@@ -12,6 +12,7 @@ Usage:
   cluster.sh up     --spec <cluster.yaml> [options]
   cluster.sh add    --cluster <name> [--node 'key=value,...']... [options]
   cluster.sh status --cluster <name>
+  cluster.sh refresh-configs --cluster <name> [--only-missing]
   cluster.sh delete --cluster <name> [--yes]
 
 up — start a cluster from a specification (see cluster.example.yaml):
@@ -32,6 +33,14 @@ add — add nodes to a running cluster, one after another:
   --provider-config <dir>   Default: the template the cluster was started with
   --spec <file>             Where to take defaults, template and release from
                             when the local cluster state is missing
+
+refresh-configs — re-upload every node's provider_config archive and repoint its
+userData at the fresh blob, without restarting anything:
+  --cluster <name>
+  --only-missing            Only nodes whose archive is already unreachable
+A node re-downloads that archive on every boot, so an unreachable archive means
+the next reboot (Azure service healing reboots VMs on host failure) loses the
+node silently. `status` shows this as CONFIG=GONE/EXPIRED.
 
 Common:
   --node-timeout <seconds>  How long a node may take to boot and join; default 1800
@@ -754,13 +763,31 @@ check_members() {
   log "${live} node(s) of ${CLUSTER} serve the cluster CA"
 }
 
+# Whether the node could still boot: on every boot the guest re-downloads its
+# provider_config archive from the SAS URL in userData. "gone" means the next
+# reboot loses the node for good (SUP-343).
+config_state() {
+  local group="$1" name="$2" url code
+  url="$(az vm show -g "$group" -n "$name" --include-user-data --query userData -o tsv 2>/dev/null \
+    | base64 -d 2>/dev/null | jq -r '.provider_config.url // empty' 2>/dev/null || true)"
+  [[ -n "$url" ]] || { echo "-"; return 0; }
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 --head "$url" 2>/dev/null || true)"
+  case "$code" in
+    200) echo "ok" ;;
+    404|410) echo "GONE" ;;
+    403) echo "EXPIRED" ;;
+    *) echo "?${code:-err}" ;;
+  esac
+}
+
 status_table() {
   local groups group name index role release info ip size location zone measure type hex reg ca domain
+  local conf conf_bad=0 conf_unknown=0
   groups="$(cluster_groups)"
   [[ -n "$groups" ]] || { log "Cluster ${CLUSTER}: no resource groups"; return 0; }
   echo
-  printf '%-28s %-9s %-20s %-14s %-15s %-13s %-17s %-8s %s\n' \
-    NODE ROLE SIZE LOCATION IP TEE MRENCLAVE REGISTRY CA
+  printf '%-28s %-9s %-20s %-14s %-15s %-13s %-17s %-8s %-4s %s\n' \
+    NODE ROLE SIZE LOCATION IP TEE MRENCLAVE REGISTRY CA CONFIG
   while IFS=$'\t' read -r group name index role release; do
     info="$(az vm show -d -g "$group" -n "$name" \
       --query '[hardwareProfile.vmSize, location, zones[0], publicIps]' -o tsv 2>/dev/null | tr '\n' '\t' || true)"
@@ -783,9 +810,30 @@ status_table() {
         ca=down
       fi
     fi
-    printf '%-28s %-9s %-20s %-14s %-15s %-13s %-17s %-8s %s\n' \
-      "$name" "$role" "${size:--}" "${location:--}/${zone:--}" "${ip:--}" "$type" "${hex:0:16}" "$reg" "$ca"
+    conf="$(config_state "$group" "$name")"
+    # Only a definite answer from storage counts as broken: a "?" is this
+    # host's own network failing to reach the blob and says nothing about the
+    # node, so it must not raise the alarm.
+    case "$conf" in
+      GONE|EXPIRED) conf_bad=$((conf_bad + 1)) ;;
+      \?*) conf_unknown=$((conf_unknown + 1)) ;;
+    esac
+    printf '%-28s %-9s %-20s %-14s %-15s %-13s %-17s %-8s %-4s %s\n' \
+      "$name" "$role" "${size:--}" "${location:--}/${zone:--}" "${ip:--}" "$type" "${hex:0:16}" "$reg" "$ca" "$conf"
   done <<<"$groups"
+
+  if [[ "$conf_bad" -gt 0 ]]; then
+    echo
+    echo "WARNING: ${conf_bad} node(s) can no longer fetch their provider_config (CONFIG GONE/EXPIRED)."
+    echo "  A reboot — Azure service healing does this without asking — loses them silently."
+    echo "  Re-arm them without touching the running nodes:"
+    echo "    ${BASH_SOURCE[0]} refresh-configs --cluster ${CLUSTER} --only-missing"
+  fi
+  if [[ "$conf_unknown" -gt 0 ]]; then
+    echo
+    echo "NOTE: CONFIG could not be determined for ${conf_unknown} node(s) (shown as ?<code>)."
+    echo "  That is this host failing to reach blob storage, not a verdict on the node; re-run status."
+  fi
 
   domain="$(cat "${STATE_DIR}/swarm_domain" 2>/dev/null || true)"
   echo
@@ -809,6 +857,50 @@ cmd_status() {
   done
   [[ -n "$CLUSTER" ]] || die "status: --cluster is required"
   status_table
+}
+
+# Re-upload every node's provider_config archive and point its userData at the
+# fresh blob, without restarting anything: a restart wipes the state disk and
+# makes the node rejoin from scratch. This is what turns a cluster whose
+# archives expired back into one that survives a reboot.
+cmd_refresh_configs() {
+  local only_missing=0 groups group name index role release conf template refreshed=0 skipped=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --cluster) use_cluster "$2"; shift 2 ;;
+      --only-missing) only_missing=1; shift 1 ;;
+      *) die "refresh-configs: unknown argument $1 (see --help)" ;;
+    esac
+  done
+  [[ -n "$CLUSTER" ]] || die "refresh-configs: --cluster is required"
+
+  groups="$(cluster_groups)"
+  [[ -n "$groups" ]] || die "Cluster ${CLUSTER}: no resource groups"
+
+  while IFS=$'\t' read -r group name index role release; do
+    [[ -n "$name" ]] || continue
+    if [[ "$only_missing" -eq 1 ]]; then
+      conf="$(config_state "$group" "$name")"
+      if [[ "$conf" == "ok" ]]; then
+        log "${name}: archive still available, skipping"
+        skipped=$((skipped + 1))
+        continue
+      fi
+      # Anything else — including a "?" we could not resolve — gets re-armed:
+      # a needless re-upload costs nothing, a missed one costs the node.
+      log "${name}: CONFIG=${conf}"
+    fi
+    template="${STATE_DIR}/nodes/${name}"
+    [[ -d "$template" ]] \
+      || die "${name}: no rendered provider_config in ${template}; run this from the host that created the cluster"
+    log "${name}: re-uploading provider_config"
+    "$LAUNCHER" --vm "$name" --vm-resource-group "$group" \
+      --provider-config "$template" --refresh-provider-config --no-restart \
+      || die "${name}: refresh failed"
+    refreshed=$((refreshed + 1))
+  done <<<"$groups"
+
+  log "refreshed ${refreshed} node(s), skipped ${skipped}"
 }
 
 cmd_delete() {
@@ -866,6 +958,7 @@ case "$command" in
   up) cmd_up "$@" ;;
   add) cmd_add "$@" ;;
   status) cmd_status "$@" ;;
+  refresh-configs) cmd_refresh_configs "$@" ;;
   delete) cmd_delete "$@" ;;
   *) die "Unknown command: ${command} (see --help)" ;;
 esac

@@ -317,10 +317,10 @@ swarm's behaviour, not the script's.
 ```
 
 ```
-NODE                  ROLE      SIZE               LOCATION   IP              TEE           MRENCLAVE         REGISTRY CA
-rtest-node-1-mct4     bootstrap Standard_DC8es_v6  westus3/3  203.0.113.10    tdx-azure     3b87e54d9c175958  yes      ok
-rtest-node-2-hiej     join      Standard_DC8es_v6  westus3/3  203.0.113.11    tdx-azure     3b87e54d9c175958  yes      ok
-rtest-node-3-pqtc     join      Standard_DC8as_v5  eastus/1   203.0.113.12    sev-snp-azure 1cccb72fb97be3a0  yes      ok
+NODE                  ROLE      SIZE               LOCATION   IP              TEE           MRENCLAVE         REGISTRY CA   CONFIG
+rtest-node-1-mct4     bootstrap Standard_DC8es_v6  westus3/3  203.0.113.10    tdx-azure     3b87e54d9c175958  yes      ok   ok
+rtest-node-2-hiej     join      Standard_DC8es_v6  westus3/3  203.0.113.11    tdx-azure     3b87e54d9c175958  yes      ok   ok
+rtest-node-3-pqtc     join      Standard_DC8as_v5  eastus/1   203.0.113.12    sev-snp-azure 1cccb72fb97be3a0  yes      GONE
 
 UI: https://swarm.example.com/ is up
 ```
@@ -329,10 +329,28 @@ UI: https://swarm.example.com/ is up
 |---|---|
 | `REGISTRY` | `yes` / `no` — whether the `mrEnclave` is in the registry; `debug` — not checked for debug builds |
 | `CA` | `ok` — the node serves the cluster CA; `other` — a different CA; `down` — PKI does not answer |
+| `CONFIG` | whether the node's provider_config archive is still downloadable: `ok`; `GONE` — the blob is deleted; `EXPIRED` — the SAS expired. Anything but `ok` means the next reboot loses the node (see Pitfalls); fix it with `refresh-configs` |
 | `UI` | whether `https://<swarm_domain>/` and `/graphql` answer |
 
 `status` queries every node, so it takes from tens of seconds to a couple of
 minutes.
+
+## Re-arming the provider_config archives
+
+Every node re-downloads its provider_config archive on every boot, so the
+archive has to stay reachable for the life of the cluster. If `status` reports
+`CONFIG` as anything but `ok` — which is the case for any cluster started before
+the one-day expiry rule was removed — re-upload them:
+
+```bash
+./cluster_docker.sh refresh-configs --cluster azure-test                  # all nodes
+./cluster_docker.sh refresh-configs --cluster azure-test --only-missing   # only the broken ones
+```
+
+This only replaces the blob and the VM's `userData`; no node is restarted, so a
+healthy cluster keeps running. It needs the rendered per-node templates in
+`~/.sp-vm/azure-clusters/<cluster>/nodes/`, so run it from the host that
+started the cluster.
 
 ## Deleting
 
@@ -479,10 +497,19 @@ disk. Do not do this on sizes without a local disk (`MaxResourceVolumeMB` in
 
 ## Pitfalls
 
-- **A VM does not survive a reboot.** The state disk is wiped and re-encrypted
-  on every boot, and the provider_config archive lives in the blob for one day
-  only. Do not stop or restart nodes. Replace a node that Azure rebooted:
-  delete it and `add` a new one.
+- **A rebooted node rejoins as a fresh node — provided its archive is still
+  there.** The state disk is wiped and re-encrypted on every boot, so the node
+  re-downloads its provider_config archive and goes through the whole join
+  again (certificates and the swarm key come back over the attested PKI sync).
+  Azure reboots VMs on host failure ("service healing", redeploy onto another
+  host) without asking, and a node recovers from that unattended in roughly
+  five to ten minutes. The archive is kept until the cluster is deleted.
+  If the archive is *not* reachable at boot, the node is lost silently: `:9180`
+  keeps serving the same mrEnclave while `:9443` never opens and nothing
+  rejoins. `status` reports this ahead of time as `CONFIG=GONE`/`EXPIRED`;
+  `refresh-configs` re-arms the whole cluster without restarting any node.
+  Clusters started before this was fixed had a one-day expiry rule on the
+  archive — run `refresh-configs` on them once.
 - **A stopped VM still costs money** for its disks. Only `delete` saves.
 - **One domain, one cluster.** Two running clusters with the same
   `swarm_domain`/`pki_domain` overwrite each other's DNS records. For a second
@@ -542,6 +569,7 @@ How to read it:
 |---|---|
 | Measurement API does not answer | the VM did not boot, or the provider_config did not arrive (wrong template, expired blob) |
 | Measurement API answers, PKI silent, release build | the `mrEnclave` was not accepted. Check the registry; with `--skip-registry` the script did not wait for it |
+| Measurement API answers, PKI silent, node had been running | it rebooted (Azure service healing) and its provider_config archive was gone, so it booted blank. Check `CONFIG` in `status`, then `refresh-provider-config` that node — `--no-restart` is wrong here, it has to reboot to pick the archive up |
 | PKI serves a different CA | the node came up as a bootstrap: its config has empty `join_addresses`, `caBundle` or `servers` |
 | all nodes `ok`, the UI does not come up | the cluster is still converging, or the nodes are too small; see `status` and the sizes above |
 

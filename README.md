@@ -313,10 +313,20 @@ without restarting it:
 scripts/azure/run_custom_conf_vm.sh --vm my-vm --update-network
 ```
 
-**The VM does not survive a reboot.** The state disk is wiped and re-encrypted
-with a fresh key on every boot, so `/sp` comes up empty, and by then the archive
-may already be gone. Launch a new VM instead, or use
-`--refresh-provider-config` to re-upload and restart.
+**A reboot resets the VM to a fresh node.** The state disk is wiped and
+re-encrypted with a fresh key on every boot, so `/sp`, the PKI key material and
+every data directory come up empty; the VM then re-downloads its
+provider_config archive and goes through the whole join again. That works —
+including after an Azure "service healing" redeploy onto another host — **as
+long as the archive is still reachable**. It is kept until `--delete` removes
+the resource group, and the SAS lives a year.
+
+If the archive is gone when the VM boots, the node is lost silently: no `/sp`
+means no swarm config, no PKI keys and no `/sp/authorized_keys`, so `:9443`
+never opens and (on debug images) SSH stops working — while `:9180` keeps
+answering with an unchanged mrEnclave, which makes the VM look healthy from the
+outside. Re-arm it with `--refresh-provider-config` (add `--no-restart` for a
+node that is still running, since a restart wipes its state disk).
 
 Under the hood the VM is created like this. The GRUB image is not signed, so
 Secure Boot must be disabled; the largest extra disk becomes the encrypted state
