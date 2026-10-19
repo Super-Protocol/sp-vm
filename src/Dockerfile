@@ -236,6 +236,8 @@ ADD rootfs/files/configs/pki-service/systemd/pki-vm-mode.service "${OUTPUTDIR}/e
 ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements-healthcheck.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/usr/local/bin/pki-authority-sync.sh "${OUTPUTDIR}/usr/local/bin/pki-authority-sync.sh"
+RUN chmod 0755 "${OUTPUTDIR}/usr/local/bin/pki-authority-sync.sh"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-authority-sync"
 ADD rootfs/files/configs/pki-service/conf/secrets-config.yaml "${OUTPUTDIR}/etc/super/pki-authority-sync/secrets-config.yaml"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-cert-generator"
@@ -247,6 +249,9 @@ RUN ln -s /etc/systemd/system/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/sy
 RUN ln -s /etc/systemd/system/pki-vm-measurements.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-vm-measurements.service"
 RUN ln -s /etc/systemd/system/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-vm-measurements-healthcheck.timer"
 RUN SP_NVIDIA_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_nvidia_service_ordering.sh
+ADD rootfs/tests/test_pki_authority_sync.sh /buildroot/tests/test_pki_authority_sync.sh
+RUN chmod 0755 /buildroot/tests/test_pki_authority_sync.sh
+RUN SP_PKI_SYNC_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_pki_authority_sync.sh
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append

@@ -3,28 +3,31 @@ Description=PKI authority sync client service
 After=network-online.target sp-nvidia-gpu-ready.service pki-vm-mode.service
 Wants=network-online.target pki-vm-mode.service
 Requires=sp-nvidia-gpu-ready.service pki-vm-mode.service
+# SUP-372: retry forever, but never faster than RestartSec.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-TimeoutStartSec=infinity
+# SUP-372: one bounded attempt per start. It used to be TimeoutStartSec=infinity
+# around an `until ...; sleep 60; done` loop, which made an authority that would
+# not sign this node a permanent boot gate: multi-user.target was never reached
+# and no timeout ever fired. The script bounds the attempt itself to 240s, so
+# this limit only catches a hang outside the sync call.
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=60
 Environment=NODE_ENV=production
 ExecCondition=/bin/bash -c '[[ "$(head -n1 /etc/swarm/swarm-vm-mode 2>/dev/null | tr -d "[:space:]")" == "normal" ]]'
 ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure_helper.py \
     configure-sync-client \
     --config /sp/swarm/config.yaml \
     --output /etc/swarm/sync-client-config.yaml
-ExecStart=/bin/bash -c 'until /usr/bin/node /usr/bin/pki-sync-client sync \
-    --config /etc/super/pki-authority-sync/secrets-config.yaml \
-    --swarm-env /etc/swarm/sync-client-config.yaml \
-    --save-certs-to-dir /etc/super/certs/vm \
-    --save-certs-prefix vm \
-    --network-type-file /etc/swarm/swarm-network-type \
-    --disable-server-identity-check \
-    --log-level debug; do \
-    echo "[pki-authority-sync] remote not ready, retry in 60s"; \
-    sleep 60; \
-done'
+ExecStart=/usr/local/bin/pki-authority-sync.sh
+# A sync that only succeeds after boot has to revive the stack it gated. These
+# three jobs failed with JOB_DEPENDENCY when the boot-time attempt failed, and
+# Restart= cannot help a unit whose start job never ran.
+ExecStartPost=-/usr/bin/systemctl --no-block start swarm-db.service swarm-node.service swarm-services.service
 
 [Install]
 WantedBy=multi-user.target

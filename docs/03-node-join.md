@@ -156,3 +156,40 @@ The SwarmDB configuration is generated afterwards. A system dependency
 prevents SwarmDB from starting before PKI synchronization succeeds. A node
 without a certificate and `swarm key` therefore cannot join the SwarmDB
 cluster through the normal flow.
+
+## 7. When Synchronization Fails
+
+`pki-authority-sync.service` makes **one bounded attempt per start**: the sync
+call is cut off after 240 s and the unit's `TimeoutStartSec` is 300 s, so the
+start job always finishes. The retry belongs to systemd
+(`Restart=on-failure`, `RestartSec=60`, `StartLimitIntervalSec=0`), which keeps
+it off the boot path — the node reaches `multi-user.target` and stays
+diagnosable instead of waiting for an authority that may never sign it.
+
+Every attempt publishes its verdict to `/run/sp-health/pki-authority-sync.json`:
+
+```json
+{
+  "unit": "pki-authority-sync.service",
+  "state": "failed",
+  "attempt": 3,
+  "exit_code": 124,
+  "reason": "the authority did not complete the sync within 240s",
+  "authority_servers": ["10.0.0.10:9443", "10.0.0.11:9443"],
+  "attempt_log": "/run/sp-health/pki-authority-sync.log",
+  "updated_at": "2026-10-19T13:40:02Z"
+}
+```
+
+`state` is `attempting`, `ok` or `failed`; `/run` is tmpfs, so a reboot cannot
+leave a node looking synced before it has synced again. A failure is also
+written to `/dev/console` with the authority it tried and the tail of the
+attempt's own output — on a `-release` image there is no SSH and no readable
+journal, so the console is the only channel left.
+
+While synchronization keeps failing, `swarm-db`, `swarm-node` and
+`swarm-services` stay down and `:9443` never opens, exactly as before. The
+difference is that boot completes and the node says why. When a later attempt
+succeeds, the unit starts those three services itself: their boot-time start
+jobs died with the failed dependency, and `Restart=` cannot revive a unit whose
+start job never ran.
