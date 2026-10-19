@@ -237,7 +237,16 @@ ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements.service "${OUTP
 ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements-healthcheck.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/usr/local/bin/pki-authority-sync.sh "${OUTPUTDIR}/usr/local/bin/pki-authority-sync.sh"
-RUN chmod 0755 "${OUTPUTDIR}/usr/local/bin/pki-authority-sync.sh"
+# SUP-375: the shared bounded-attempt runner behind swarm-init, pki-cert-init
+# and pki-vm-mode, plus the two scripts that replaced the `until` loops those
+# units used to carry in their own ExecStart.
+ADD rootfs/files/configs/usr/local/bin/sp-boot-attempt.sh "${OUTPUTDIR}/usr/local/bin/sp-boot-attempt.sh"
+ADD rootfs/files/configs/usr/local/bin/pki-cert-init.sh "${OUTPUTDIR}/usr/local/bin/pki-cert-init.sh"
+ADD rootfs/files/configs/usr/local/bin/pki-vm-mode.sh "${OUTPUTDIR}/usr/local/bin/pki-vm-mode.sh"
+RUN chmod 0755 "${OUTPUTDIR}/usr/local/bin/pki-authority-sync.sh" \
+          "${OUTPUTDIR}/usr/local/bin/sp-boot-attempt.sh" \
+          "${OUTPUTDIR}/usr/local/bin/pki-cert-init.sh" \
+          "${OUTPUTDIR}/usr/local/bin/pki-vm-mode.sh"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-authority-sync"
 ADD rootfs/files/configs/pki-service/conf/secrets-config.yaml "${OUTPUTDIR}/etc/super/pki-authority-sync/secrets-config.yaml"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-cert-generator"
@@ -252,6 +261,11 @@ RUN SP_NVIDIA_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_nvidia_se
 ADD rootfs/tests/test_pki_authority_sync.sh /buildroot/tests/test_pki_authority_sync.sh
 RUN chmod 0755 /buildroot/tests/test_pki_authority_sync.sh
 RUN SP_PKI_SYNC_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_pki_authority_sync.sh
+ADD rootfs/tests/test_sp_boot_attempt.sh /buildroot/tests/test_sp_boot_attempt.sh
+ADD rootfs/tests/test_boot_gate_helpers.sh /buildroot/tests/test_boot_gate_helpers.sh
+RUN chmod 0755 /buildroot/tests/test_sp_boot_attempt.sh /buildroot/tests/test_boot_gate_helpers.sh
+RUN SP_BOOT_ATTEMPT_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_sp_boot_attempt.sh
+RUN SP_BOOT_GATE_HELPERS_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_boot_gate_helpers.sh
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append
@@ -397,6 +411,12 @@ RUN --security=insecure bash /buildroot/files/scripts/install_python_deps.sh
 # Build info
 ARG SP_VM_IMAGE_VERSION
 RUN bash -c '[[ -n "$SP_VM_IMAGE_VERSION" ]] && echo "$SP_VM_IMAGE_VERSION" > "${OUTPUTDIR}/etc/sp-release"'
+
+# SUP-375: the cross-unit boot-gate contract reads the whole unit graph - which
+# unit Requires= which - so it can only run once every unit file is in place.
+ADD rootfs/tests/test_boot_gate_units.sh /buildroot/tests/test_boot_gate_units.sh
+RUN chmod 0755 /buildroot/tests/test_boot_gate_units.sh
+RUN SP_BOOT_GATE_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_boot_gate_units.sh
 
 # after all!
 # cleanup apt lists and policy-rc.d
