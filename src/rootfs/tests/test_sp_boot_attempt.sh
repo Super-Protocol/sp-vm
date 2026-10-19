@@ -233,8 +233,17 @@ run_attempt "$bad_dir" reject && fail "the second failing attempt exited 0"
 grep -q '"attempt": 2' "$state_json" || fail "the attempt counter does not advance across restarts"
 
 # An image that lost the binary must say so rather than retry a missing file.
+# Run in a state dir that already holds a previous attempt's output: the paths
+# that report WITHOUT running the command (missing-command, and a signal that
+# arrives before the pipeline) must not print that output under this attempt's
+# "last N line(s) of the attempt" heading. On a -release guest the block is the
+# whole diagnosis, so a stale tail is worse than no tail.
 missing_dir="$test_root/missing-command"
 make_case "$missing_dir"
+run_attempt "$missing_dir" reject && fail "the seeding attempt exited 0"
+grep -q 'chain generation refused' "$missing_dir/console" \
+    || fail "the seeding attempt left no output to go stale"
+: >"$missing_dir/console"
 SP_BOOT_ATTEMPT_STATE_DIR="$missing_dir/state" SP_BOOT_ATTEMPT_CONSOLE="$missing_dir/console" \
     "$runner" --unit demo-gate.service --timeout 10 --action "the demo attempt" \
         -- /usr/local/bin/definitely-not-installed >/dev/null 2>&1 \
@@ -243,6 +252,15 @@ grep -q 'is missing from this image' "$missing_dir/console" \
     || fail "a missing command was not reported to the console"
 grep -q '"reason_class": "missing-command"' "$(state_of "$missing_dir")" \
     || fail "a missing command was not classed as such"
+! grep -q 'chain generation refused' "$missing_dir/console" \
+    || fail "the console showed the PREVIOUS attempt's output under this attempt's heading"
+! grep -q 'line(s) of the attempt' "$missing_dir/console" \
+    || fail "a tail heading was printed for an attempt whose command never ran"
+# The invariant the above rests on, asserted directly - it is also what keeps
+# the signal path (TimeoutStartSec kills the cgroup before the pipeline starts)
+# from reporting somebody else's output.
+[[ ! -s "$missing_dir/state/demo-gate.log" ]] \
+    || fail "the attempt log still holds the previous attempt's output: $(cat "$missing_dir/state/demo-gate.log")"
 
 # --- console discipline: an outage must not evict the original boot output ---
 

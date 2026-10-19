@@ -300,6 +300,12 @@ report_failure() {
 }
 
 install -d -m 0755 "$state_dir" 2>/dev/null || true
+# Truncated here, not where `tee` opens it: the missing-command path and a
+# signal arriving before the pipeline both report without ever running the
+# command, and would otherwise print the PREVIOUS attempt's output under this
+# attempt's "last N line(s) of the attempt" heading. On a -release guest that
+# block is the whole diagnosis, so a stale tail is worse than no tail.
+: >"$attempt_log" 2>/dev/null || true
 
 attempt=1
 if [[ -r "$attempt_file" ]]; then
