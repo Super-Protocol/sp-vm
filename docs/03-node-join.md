@@ -182,10 +182,27 @@ Every attempt publishes its verdict to `/run/sp-health/pki-authority-sync.json`:
 ```
 
 `state` is `attempting`, `ok` or `failed`; `/run` is tmpfs, so a reboot cannot
-leave a node looking synced before it has synced again. A failure is also
-written to `/dev/console` with the authority it tried and the tail of the
-attempt's own output — on a `-release` image there is no SSH and no readable
-journal, so the console is the only channel left.
+leave a node looking synced before it has synced again. **Nothing exposes this
+file off the node today** — `:9180` is served by `pki-vm-measurements`, which
+does not read `/run/sp-health` — so it is reachable only from inside the guest,
+in practice on a debug image over SSH. Exposing node bring-up health to the
+fabric and the host orchestrator is follow-up work alongside SUP-366.
+
+On a `-release` image there is no SSH and no readable journal, so **the console
+is the only channel**, and a failure is written there with the authority it
+tried and the tail of the attempt's own output:
+
+- the full block is printed for the first 3 attempts, again whenever the reason
+  changes, and then once every 60 attempts (hourly at `RestartSec=60`); in
+  between a single `still failing (attempt N)` line keeps the outage visible.
+  The console is a bounded shared buffer — Azure boot diagnostics and nova
+  `console-log` both keep only a tail — and an unthrottled block would push the
+  original boot output out of the very logs collected as forensics. The journal
+  keeps every block, and the health file is per-attempt regardless;
+- lines longer than 200 characters, lines with a PEM marker and lines
+  containing a long base64/hex run are dropped rather than truncated. The
+  console on a confidential VM is outside the TEE boundary and the tail is
+  another repository's debug output; a half-printed key is still a leak.
 
 While synchronization keeps failing, `swarm-db`, `swarm-node` and
 `swarm-services` stay down and `:9443` never opens, exactly as before. The

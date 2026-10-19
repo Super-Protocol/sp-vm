@@ -134,6 +134,14 @@ case "$SP_TEST_NODE_BEHAVIOUR" in
         echo "connecting to authority"
         sleep 300
         ;;
+    leak)
+        echo "connecting to authority"
+        echo "-----BEGIN PRIVATE KEY-----" >&2
+        echo "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDexampleexample" >&2
+        echo "x: $(printf 'A%.0s' $(seq 1 300))" >&2
+        echo "authority rejected the CSR: unknown CA" >&2
+        exit 3
+        ;;
     *)
         echo "connecting to authority"
         echo "authority rejected the CSR: unknown CA" >&2
@@ -146,6 +154,8 @@ chmod +x "$test_root/fake-node"
 run_sync() {
     local case_dir="$1" behaviour="$2" attempt_timeout_override="${3:-240}"
     SP_PKI_SYNC_NODE="$test_root/fake-node" \
+    SP_PKI_SYNC_CONSOLE_FULL_ATTEMPTS="${SP_TEST_CONSOLE_FULL_ATTEMPTS:-3}" \
+    SP_PKI_SYNC_CONSOLE_FULL_EVERY="${SP_TEST_CONSOLE_FULL_EVERY:-60}" \
     SP_PKI_SYNC_CLIENT="$case_dir/client.js" \
     SP_PKI_SYNC_SECRETS_CONFIG="$case_dir/secrets.yaml" \
     SP_PKI_SYNC_SWARM_ENV="$case_dir/swarm-env.yaml" \
@@ -215,5 +225,52 @@ rm -f "$missing_dir/client.js"
 run_sync "$missing_dir" ok && fail "a missing sync client exited 0"
 grep -q 'is missing from this image' "$missing_dir/console" \
     || fail "a missing sync client was not reported to the console"
+
+# The console is a bounded shared buffer: an outage of SUP-370's length must not
+# push the original boot output out of the logs QA collects as forensics.
+rate_dir="$test_root/rate-limit"
+make_env "$rate_dir"
+for expected_attempt in 1 2 3; do
+    run_sync "$rate_dir" reject && fail "rejected sync $expected_attempt exited 0"
+    [[ "$(grep -c 'FAILED (attempt' "$rate_dir/console")" == "$expected_attempt" ]] \
+        || fail "attempt $expected_attempt did not print its full console block"
+done
+# Fourth attempt, same reason: one line, no block.
+run_sync "$rate_dir" reject && fail "the fourth rejected sync exited 0"
+[[ "$(grep -c 'FAILED (attempt' "$rate_dir/console")" == "3" ]] \
+    || fail "the console block repeated once the reason had stopped changing"
+grep -q 'still failing (attempt 4)' "$rate_dir/console" \
+    || fail "a throttled attempt left no trace on the console at all"
+# A different reason is new information and must print in full even when throttled.
+run_sync "$rate_dir" hang 1 && fail "the hanging sync exited 0"
+grep -q 'FAILED (attempt 5)' "$rate_dir/console" \
+    || fail "a changed reason did not break through the console throttle"
+# Hourly heartbeat: the block returns on a multiple of console_full_every.
+printf '%s\n' 5 >"$rate_dir/state/pki-authority-sync.attempt"
+SP_TEST_CONSOLE_FULL_EVERY=6 run_sync "$rate_dir" hang 1 && fail "the periodic sync exited 0"
+grep -q 'FAILED (attempt 6)' "$rate_dir/console" \
+    || fail "the full block never returns on the periodic schedule"
+# A success clears the remembered reason, so the same failure prints in full again.
+run_sync "$rate_dir" ok || fail "the recovering sync did not exit 0"
+printf '%s\n' 20 >"$rate_dir/state/pki-authority-sync.attempt"
+run_sync "$rate_dir" hang 1 && fail "the post-recovery sync exited 0"
+grep -q 'FAILED (attempt 21)' "$rate_dir/console" \
+    || fail "a failure after a success was throttled as a repeat"
+
+# /dev/console on a confidential VM is outside the TEE boundary, and the tail is
+# another repository's debug output: nothing key-shaped may reach it.
+leak_dir="$test_root/leak"
+make_env "$leak_dir"
+run_sync "$leak_dir" leak && fail "the leaking sync exited 0"
+! grep -q 'BEGIN PRIVATE KEY' "$leak_dir/console" \
+    || fail "a PEM marker reached the console"
+! grep -q 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDexampleexample' "$leak_dir/console" \
+    || fail "a base64 run reached the console"
+! grep -qE 'A{250}' "$leak_dir/console" \
+    || fail "an over-long line reached the console instead of being dropped"
+grep -q 'suppressed' "$leak_dir/console" \
+    || fail "suppressed lines left no marker, so the gap is invisible"
+grep -q 'authority rejected the CSR: unknown CA' "$leak_dir/console" \
+    || fail "the redaction swallowed the ordinary error message too"
 
 echo "pki-authority-sync tests passed"

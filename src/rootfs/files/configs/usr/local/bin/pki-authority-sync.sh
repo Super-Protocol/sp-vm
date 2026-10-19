@@ -12,9 +12,13 @@
 #   - this script always terminates. The attempt is bounded by `timeout` well
 #     below the unit's TimeoutStartSec, because systemd kills the whole cgroup
 #     when that expires and a killed script reports nothing;
-#   - every outcome leaves something readable behind: a health file under
-#     /run that the node and the host orchestrator can poll, and - on failure -
-#     a diagnostic on the console, the only channel a release guest has.
+#   - every outcome leaves something readable behind. On failure that is a
+#     console diagnostic: on a -release guest, with no SSH and no readable
+#     journal, the console is the only channel there is. The health file under
+#     /run/sp-health is the machine-readable half, but today it is readable
+#     only from inside the guest - so in practice on debug images. Nothing
+#     exposes it to the fabric or the host orchestrator yet; that surface is
+#     follow-up work alongside SUP-366, not a promise this script keeps.
 
 # Deliberately no `set -e`: every failure here has to reach write_state and the
 # console before the script exits, so each one is handled explicitly.
@@ -43,6 +47,23 @@ readonly timeout_cmd="${SP_TIMEOUT:-/usr/bin/timeout}"
 # must stay strictly larger, or systemd kills this script before it reports.
 readonly attempt_timeout="${SP_PKI_SYNC_ATTEMPT_TIMEOUT:-240}"
 readonly error_tail_lines="${SP_PKI_SYNC_ERROR_TAIL_LINES:-20}"
+
+# The full console block is ~25 lines. At RestartSec=60 forever that is ~2 KB a
+# minute, and both Azure boot diagnostics and nova console-log keep only a
+# bounded tail - so an outage of SUP-370's length (25 h) would push the original
+# boot output out of the very logs QA collects as forensics. Print the block for
+# the first few attempts, again whenever the reason changes, and then only once
+# an hour; in between a single line keeps the outage visible.
+readonly console_full_attempts="${SP_PKI_SYNC_CONSOLE_FULL_ATTEMPTS:-3}"
+readonly console_full_every="${SP_PKI_SYNC_CONSOLE_FULL_EVERY:-60}"
+readonly last_reason_file="${state_dir}/pki-authority-sync.last-reason"
+
+# /dev/console on a confidential VM is outside the TEE boundary, and the tail
+# below is another repository's debug output. pki-sync-client logs only
+# error.message strings today, but one added log line there must not be able to
+# put key material on the console, so the guard lives here rather than in a
+# trust assumption about tee-pki.
+readonly max_line_chars="${SP_PKI_SYNC_MAX_LINE_CHARS:-200}"
 
 log() { echo "[pki-authority-sync] $*"; }
 log_err() { echo "[pki-authority-sync] ERROR: $*" >&2; }
@@ -115,8 +136,37 @@ console_say() {
     printf '%s\n' "$@" >>"$console" 2>/dev/null || true
 }
 
+# Anything long enough to be a secret is dropped rather than truncated: a
+# half-printed key is still a leak. PEM markers and long base64/hex runs are the
+# shapes key material arrives in; a message with one is worth less than the
+# guarantee that none reaches the console.
+redact() {
+    local line
+    line="$(sanitize "${1-}")"
+    if (( ${#line} > max_line_chars )); then
+        printf '<suppressed: %s-char line>' "${#line}"
+        return 0
+    fi
+    if [[ "$line" == *-----BEGIN* ]] || [[ "$line" =~ [A-Za-z0-9+/=]{40,} ]]; then
+        printf '<suppressed: line may carry key material>'
+        return 0
+    fi
+    printf '%s' "$line"
+}
+
+# True for the first few attempts, whenever the reason changes, and then once
+# every console_full_every attempts.
+console_wants_full_block() {
+    local reason="$1" previous=""
+    (( attempt <= console_full_attempts )) && return 0
+    [[ -r "$last_reason_file" ]] && previous="$(cat "$last_reason_file" 2>/dev/null)"
+    [[ "$reason" != "$previous" ]] && return 0
+    (( console_full_every > 0 )) && (( attempt % console_full_every == 0 )) && return 0
+    return 1
+}
+
 report_failure() {
-    local reason="$1"
+    local reason="$1" line
     local -a lines=(
         ""
         "*** ${unit_name} FAILED (attempt ${attempt}) ***"
@@ -128,15 +178,23 @@ report_failure() {
     if [[ -s "$attempt_log" ]]; then
         lines+=("last ${error_tail_lines} line(s) of the attempt:")
         while IFS= read -r line; do
-            lines+=("  $(sanitize "$line")")
+            lines+=("  $(redact "$line")")
         done < <(tail -n "$error_tail_lines" "$attempt_log")
     fi
     lines+=(
         "systemd retries this unit on its own; boot is no longer blocked (SUP-372)."
         ""
     )
-    console_say "${lines[@]}"
+
+    # The journal keeps every block; only the console is rate-limited, because
+    # only the console is a bounded shared buffer.
     printf '%s\n' "${lines[@]}" >&2
+    if console_wants_full_block "$reason"; then
+        console_say "${lines[@]}"
+    else
+        console_say "[pki-authority-sync] still failing (attempt ${attempt}): $(sanitize "$reason")"
+    fi
+    printf '%s\n' "$reason" >"$last_reason_file" 2>/dev/null || true
 }
 
 install -d -m 0755 "$state_dir" 2>/dev/null || true
@@ -189,6 +247,9 @@ trap - TERM INT
 
 if (( rc == 0 )); then
     write_state ok "synced with the authority on attempt ${attempt} after ${elapsed}s" 0
+    # Forget the last failure reason, or a later identical one would be treated
+    # as a repeat and never print its full block.
+    rm -f "$last_reason_file" 2>/dev/null || true
     log "attempt ${attempt} succeeded after ${elapsed}s"
     exit 0
 fi
