@@ -187,7 +187,9 @@ detail; `reason_class` is the stable grouping key for the same failure across
 attempts (`timeout`, `exit-<code>`, `signal`, `missing-client`), which is what a
 health aggregator should match on — `reason` embeds the elapsed seconds and
 moves every attempt. `/run` is tmpfs, so a reboot cannot leave a node looking
-synced before it has synced again. **Nothing exposes this
+synced before it has synced again. The units on the bootstrap path are bounded
+the same way — see
+[When Bootstrap Fails](02-first-vm-bootstrap.md#when-bootstrap-fails). **Nothing exposes this
 file off the node today** — `:9180` is served by `pki-vm-measurements`, which
 does not read `/run/sp-health` — so it is reachable only from inside the guest,
 in practice on a debug image over SSH. Exposing node bring-up health to the

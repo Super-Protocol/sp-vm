@@ -2,16 +2,50 @@
 Description=PKI VM mode detector service
 After=network-online.target
 Wants=network-online.target
+# SUP-375: retry forever, but never faster than RestartSec.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-TimeoutStartSec=infinity
-ExecStartPre=/bin/bash -c 'until [[ -s /sp/swarm/config.yaml ]]; do \
-	echo "[pki-vm-mode] waiting for /sp/swarm/config.yaml"; \
-	sleep 5; \
-done'
-ExecStart=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure_helper.py get-vm-mode --config /sp/swarm/config.yaml --output /etc/swarm/swarm-vm-mode
+# SUP-375: one bounded attempt per start. The ExecStartPre used to be
+# `until [[ -s /sp/swarm/config.yaml ]]; do sleep 5; done` under
+# TimeoutStartSec=infinity, so when provider-config.service could not populate
+# /sp - the SUP-343 blob-expiry case - THIS unit was the one that held
+# multi-user.target forever, even though provider-config.service itself already
+# fails on its own with Restart=on-failure.
+#
+# The wait is bounded inside pki-vm-mode.sh (120s) rather than removed: /sp
+# normally lands within seconds, and failing on the first missing read would
+# turn an ordinary ordering race into a console block on every boot. The limit
+# below covers the whole start phase - the runner's 180s cap plus up to 10s of
+# SIGKILL grace, and ExecStartPost - which leaves ~50s of headroom.
+TimeoutStartSec=240
+Restart=on-failure
+RestartSec=30
+ExecStart=/usr/local/bin/sp-boot-attempt.sh \
+    --unit pki-vm-mode.service \
+    --timeout 180 \
+    --action "VM mode detection from /sp/swarm/config.yaml" \
+    --impact "/etc/swarm/swarm-vm-mode is unset, so neither pki-cert-init nor" \
+    --impact "pki-authority-sync can tell whether this node is a seed or a worker." \
+    --detail "config:    /sp/swarm/config.yaml (populated by provider-config.service)" \
+    --detail "output:    /etc/swarm/swarm-vm-mode" \
+    -- /usr/local/bin/pki-vm-mode.sh
+# Both of these died with JOB_DEPENDENCY when the boot-time attempt failed, and
+# Restart= cannot help a unit whose start job never ran. Each one revives the
+# chain behind it through its own ExecStartPost; the ExecCondition on each makes
+# the one that does not apply to this node a no-op.
+#
+# That no-op is load-bearing in a way worth spelling out. A condition-skipped
+# unit goes inactive with Result=success and its ExecStartPost does NOT run, so
+# on a WORKER (vm-mode=normal) pki-cert-init is skipped and never starts
+# swarm-init. swarm-init comes back only because pki-authority-sync's
+# ExecStartPost starts swarm-db.service, which Requires=swarm-init.service and
+# therefore pulls it in. On a SEED (vm-mode=init) it is the other way round:
+# pki-authority-sync is the skipped one and pki-cert-init starts swarm-init
+# directly. Both paths verified under systemd 255.
+ExecStartPost=-/usr/bin/systemctl --no-block start pki-cert-init.service pki-authority-sync.service
 
 [Install]
 WantedBy=multi-user.target

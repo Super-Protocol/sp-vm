@@ -181,3 +181,67 @@ Bootstrap is complete when the following exist:
 - the `swarm key`;
 - SwarmDB containing PKI secrets and network state;
 - a running PKI Authority.
+
+## When Bootstrap Fails
+
+Every step above runs as a systemd unit that `multi-user.target` waits for, so
+each one of them can keep a VM in boot. The units that can fail for a reason
+outside the VM — a provider archive that is gone, a PKI chain that cannot be
+built, a release asset that cannot be downloaded — therefore make **one bounded
+attempt per start** and leave the retry to systemd (`Restart=on-failure`,
+`RestartSec`, `StartLimitIntervalSec=0`):
+
+| Unit | Attempt bounded at | `TimeoutStartSec` | Retried every |
+|---|---|---|---|
+| `provider-config.service` | — | default | 60 s |
+| `pki-vm-mode.service` | 180 s (waits 120 s for `/sp`) | 240 s | 30 s |
+| `pki-cert-init.service` | 240 s | 300 s | 60 s |
+| `swarm-init.service` | 600 s | 660 s | 30 s |
+| `pki-authority-sync.service` | 240 s | 300 s | 60 s |
+
+The VM reaches `multi-user.target` either way, which is the point: a node that
+cannot bootstrap stays reachable and says why instead of sitting in a start job
+forever with its HTTP port answering (SUP-370).
+
+Each attempt publishes its verdict to `/run/sp-health/<unit>.json` — `state`
+(`attempting` / `ok` / `failed`), the attempt number, the exit code, a stable
+`reason_class`, and a pointer to that attempt's log. `/run` is tmpfs, so a
+reboot cannot leave a node looking initialised before it has initialised again.
+
+A failure is also written to `/dev/console`, naming what stays down and the tail
+of the attempt's own output. On a `-release` image there is no SSH and no
+readable journal, so the console is the only channel left. The block is
+rate-limited — full for the first three attempts, again whenever the failure
+changes kind, then hourly, with a one-line reminder in between — because both
+Azure boot diagnostics and nova `console-log` keep only a bounded tail, and an
+unthrottled diagnostic would evict the original boot output. Key material is
+stripped out of that tail by shape: whole PEM blocks are suppressed, base64
+tokens are suppressed, and hex tokens keep a short head so a CA fingerprint
+stays comparable against the authority's. GitHub tokens are matched by prefix
+instead (`ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`, `github_pat_`), because the
+underscore breaks the run a length rule looks for — `swarm-init` is the unit
+that carries `github.token`, and `/dev/console` on a confidential VM is outside
+the TEE boundary.
+
+When a later attempt succeeds, the unit starts the services whose boot-time
+start jobs died with it (`ExecStartPost`): a failed dependency leaves them with
+no start job at all, and `Restart=` cannot revive a unit that never started.
+
+Each unit starts only the dependents nobody else will revive, so the chain
+cascades: `pki-vm-mode` → `pki-cert-init` and `pki-authority-sync` →
+`swarm-init` → `swarm-db`, `swarm-host-agent`, `swarm-node`, `swarm-services`.
+Exactly one of `pki-cert-init` / `pki-authority-sync` applies to a given node;
+the other is skipped by its `ExecCondition`, and **a condition-skipped unit's
+`ExecStartPost` does not run**. So the cascade takes a different route on each
+role:
+
+- **Seed** (`vm-mode` = `init`): `pki-cert-init` runs and starts `swarm-init`
+  directly. `pki-authority-sync` is the skipped one.
+- **Worker** (`vm-mode` = `normal`): `pki-cert-init` is skipped, so nothing
+  starts `swarm-init` by name. It is pulled in instead by
+  `swarm-db.service`, which `Requires=swarm-init.service` and is started by
+  `pki-authority-sync`'s `ExecStartPost`.
+
+The worker route is indirect and therefore worth knowing about: it is why
+`pki-vm-mode` does not need to name `swarm-init` itself, and it is the line to
+check first if a worker ever recovers its PKI but not its swarm services.
