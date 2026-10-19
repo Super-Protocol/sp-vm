@@ -16,9 +16,36 @@
 #     console diagnostic: on a -release guest, with no SSH and no readable
 #     journal, the console is the only channel there is. The health file under
 #     /run/sp-health is the machine-readable half, but today it is readable
-#     only from inside the guest - so in practice on debug images. Nothing
-#     exposes it to the fabric or the host orchestrator yet; that surface is
-#     follow-up work alongside SUP-366, not a promise this script keeps.
+#     only from inside the guest - so in practice on debug images. SUP-376
+#     builds the surface that exposes it (:9180/v1/nodeHealth in tee-pki); this
+#     script's job is to publish an honest record, not to serve it.
+#
+# SUP-376: the record format is the `sp.unit-health/v1` convention, and three of
+# its fields exist because a reader outside the guest has to act on them:
+#
+#   - `terminal` - true iff NO retry of this unit can succeed. The publisher is
+#     the only layer that can tell a 403 from an ECONNREFUSED, so the
+#     classification belongs here; the endpoint cannot infer it. This is the
+#     whole of *not yet* vs *will not*, and SUP-370 was 25 hours of waiting on
+#     a condition that would never clear.
+#   - `ttl_sec` - twice this script's own bounded attempt. A publisher SIGKILLed
+#     by TimeoutStartSec leaves `state: attempting` on disk forever, and a
+#     rollup that trusted it would report "still booting" indefinitely - SUP-370
+#     reproduced at the reporting layer. Past updated_at + ttl_sec the record is
+#     stale, and stale is a verdict, never silence.
+#   - `gate` - whether the node's ability to serve depends on this unit, so a
+#     non-gate publisher can be added later without touching the rollup.
+#
+# And one rule, which is what makes a single redactor sufficient for the whole
+# chain (contract §4):
+#
+#   *** `reason` and `reason_class` are COMPOSED, never CAPTURED. ***
+#
+# Every write_state call below passes publisher-authored literals plus numbers.
+# Captured third-party output - the client's own log lines - reaches the console
+# tail and $attempt_log and nothing else. The endpoint keeps a redaction
+# tripwire, but it is a backstop on an input that is already safe; the boundary
+# is here, at the writer. test_pki_authority_sync.sh asserts both halves.
 
 # Deliberately no `set -e`: every failure here has to reach write_state and the
 # console before the script exits, so each one is handled explicitly.
@@ -47,6 +74,15 @@ readonly timeout_cmd="${SP_TIMEOUT:-/usr/bin/timeout}"
 # must stay strictly larger, or systemd kills this script before it reports.
 readonly attempt_timeout="${SP_PKI_SYNC_ATTEMPT_TIMEOUT:-240}"
 readonly error_tail_lines="${SP_PKI_SYNC_ERROR_TAIL_LINES:-20}"
+
+readonly state_schema="sp.unit-health/v1"
+# Twice the bounded attempt: a verdict older than this means the script was
+# killed mid-attempt and systemd has not restarted it yet, which is a different
+# fact from "still trying" and the reader must be able to tell them apart.
+readonly state_ttl_sec="${SP_PKI_SYNC_STATE_TTL_SEC:-$((attempt_timeout * 2))}"
+# Without certificates and without a swarm key this node cannot serve: swarm-db,
+# swarm-node and swarm-services all stay down. This unit is a gate.
+readonly state_gate=true
 
 # The full console block is ~25 lines. At RestartSec=60 forever that is ~2 KB a
 # minute, and both Azure boot diagnostics and nova console-log keep only a
@@ -136,17 +172,30 @@ servers_json() {
     printf ']'
 }
 
+# reason/reason_class are publisher-authored literals plus numbers - see the
+# COMPOSED, never CAPTURED rule at the top of this file. terminal defaults to
+# false: a caller that has not decided must not claim a wait can end.
+#
+# authority_servers and attempt_log stay in the file deliberately. They are
+# local-only - the private PKI topology and a runtime path - and the :9180
+# endpoint drops them by allowlist rather than by trusting this writer to omit
+# them (contract §4).
 write_state() {
     local state="$1" reason="$2" exit_code="$3" reason_class="${4:-$1}"
+    local terminal="${5:-false}"
     install -d -m 0755 "$state_dir" 2>/dev/null || true
     {
         printf '{\n'
+        printf '  "schema": "%s",\n' "$state_schema"
         printf '  "unit": "%s",\n' "$unit_name"
         printf '  "state": "%s",\n' "$state"
+        printf '  "terminal": %s,\n' "$terminal"
+        printf '  "gate": %s,\n' "$state_gate"
+        printf '  "ttl_sec": %s,\n' "$state_ttl_sec"
         printf '  "attempt": %s,\n' "$attempt"
         printf '  "exit_code": %s,\n' "${exit_code:-null}"
-        printf '  "reason": "%s",\n' "$(sanitize "$reason")"
         printf '  "reason_class": "%s",\n' "$(sanitize "$reason_class")"
+        printf '  "reason": "%s",\n' "$(sanitize "$reason")"
         printf '  "authority_servers": %s,\n' "$(servers_json "$servers")"
         printf '  "attempt_log": "%s",\n' "$attempt_log"
         printf '  "updated_at": "%s"\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -214,6 +263,50 @@ redact() {
     printf '%s%s' "$out" "$rest"
 }
 
+# SUP-376 finding 2: the guest already receives a terminal verdict and throws
+# it away. An idHex mismatch does NOT refuse the certificate - the authority
+# sets validated=false, logs at warn and issues it anyway - so the refusal lands
+# at the SECOND hop, POST /api/v1/secrets/get, as
+# 403 "Certificate is missing challenge validation extension". 403 is not in the
+# client's RETRYABLE_HTTP_STATUS_CODES ({429, 502}), so the client itself
+# concludes "no retry can succeed", logs that verdict, and stops - and the only
+# thing this wrapper used to publish was `exit_code: 1, reason_class: exit-1`.
+#
+# Prints the three-digit status of a refusal no retry can fix, or nothing.
+# Deliberately narrow about what crosses out of the log: the matched LINE is
+# third-party text and stays in $attempt_log and on the console tail, while the
+# only value that reaches the health record is a NUMBER this function has
+# validated as exactly three digits. That is what keeps reason_class composed.
+terminal_http_status() {
+    local line code best=""
+    [[ -s "$attempt_log" ]] || return 0
+    # The client logs this line only when it has decided the error is not
+    # retryable (sync-client.ts:499-502), so it is the verdict itself rather
+    # than our re-derivation of it.
+    while IFS= read -r line; do
+        code="${line##*Reason: http-status:}"
+        code="${code%%[^0-9]*}"
+        # 1-5 rather than 0-9 for the leading digit: the log is third-party
+        # text, and a leading zero would reach bash arithmetic as an octal
+        # literal. No HTTP status starts with 0, 6, 7, 8 or 9.
+        [[ "$code" =~ ^[1-5][0-9]{2}$ ]] || continue
+        # 4xx is the authority refusing THIS NODE, which every authority in the
+        # list will do for the same reason - a node property, not a server
+        # property. 429 is the one 4xx the client already retries; 5xx stays
+        # non-terminal because a server can be fixed without touching the node.
+        (( code >= 400 && code < 500 )) || continue
+        (( code == 429 )) && continue
+        # 403 is the SUP-370 shape and outranks any other refusal in the list.
+        if (( code == 403 )); then
+            printf '403'
+            return 0
+        fi
+        best="$code"
+    done < <(grep -F 'is not retryable for sync server' "$attempt_log" 2>/dev/null)
+    [[ -n "$best" ]] && printf '%s' "$best"
+    return 0
+}
+
 # True for the first few attempts, whenever the failure changes KIND, and then
 # once every console_full_every attempts.
 console_wants_full_block() {
@@ -226,7 +319,7 @@ console_wants_full_block() {
 }
 
 report_failure() {
-    local reason="$1" reason_class="$2" line
+    local reason="$1" reason_class="$2" terminal="${3:-false}" line
     local -a lines=(
         ""
         "*** ${unit_name} FAILED (attempt ${attempt}) ***"
@@ -272,10 +365,20 @@ report_failure() {
             lines+=("  $(redact "$line")")
         done
     fi
-    lines+=(
-        "systemd retries this unit on its own; boot is no longer blocked (SUP-372)."
-        ""
-    )
+    if [[ "$terminal" == true ]]; then
+        # The one verdict that should end an operator's wait rather than extend
+        # it. Saying "systemd retries this unit" here would be true and useless.
+        lines+=(
+            "This failure is TERMINAL: no retry of this unit can succeed, so the"
+            "node will never join. Fix the cause or replace the node (SUP-376)."
+            ""
+        )
+    else
+        lines+=(
+            "systemd retries this unit on its own; boot is no longer blocked (SUP-372)."
+            ""
+        )
+    fi
 
     # The journal keeps every block; only the console is rate-limited, because
     # only the console is a bounded shared buffer.
@@ -300,22 +403,26 @@ printf '%s\n' "$attempt" >"$attempt_file" 2>/dev/null || true
 servers="$(authority_servers)"
 servers_oneline="$(printf '%s' "$servers" | tr '\n' ' ')"
 
-write_state attempting "sync attempt ${attempt} in progress" "" attempting
+write_state attempting "sync attempt ${attempt} in progress" "" attempting false
 
 # systemd's TimeoutStartSec kills this cgroup without warning; catching the
 # signal is the only way the console still learns which attempt was cut short.
 on_signal() {
     local reason="attempt ${attempt} terminated by signal before it finished"
-    write_state failed "$reason" 143 signal
-    report_failure "$reason" signal
+    # Not terminal: the next restart may well succeed, and the record carries
+    # ttl_sec so a reader can tell this from a live attempt either way.
+    write_state failed "$reason" 143 signal false
+    report_failure "$reason" signal false
     exit 143
 }
 trap on_signal TERM INT
 
 if [[ ! -r "$sync_client" ]]; then
     reason="sync client ${sync_client} is missing from this image"
-    write_state failed "$reason" 127 missing-client
-    report_failure "$reason" missing-client
+    # Terminal: the image is signed and immutable, so no restart will produce a
+    # file that was never built into it.
+    write_state failed "$reason" 127 missing-client true
+    report_failure "$reason" missing-client true
     exit 127
 fi
 
@@ -337,7 +444,7 @@ elapsed=$((SECONDS - started))
 trap - TERM INT
 
 if (( rc == 0 )); then
-    write_state ok "synced with the authority on attempt ${attempt} after ${elapsed}s" 0 ok
+    write_state ok "synced with the authority on attempt ${attempt} after ${elapsed}s" 0 ok false
     # Forget the last failure reason, or a later identical one would be treated
     # as a repeat and never print its full block.
     rm -f "$last_reason_file" 2>/dev/null || true
@@ -348,17 +455,29 @@ fi
 # 124 is `timeout`'s verdict; 137 means the client ignored SIGTERM and was
 # killed. Both are the SUP-372 failure mode - an authority that answers but
 # never signs - and must not be reported as a plain non-zero exit.
+terminal=false
 if (( rc == 124 || rc == 137 )); then
     reason="the authority did not complete the sync within ${attempt_timeout}s"
     reason_class="timeout"
 else
-    reason="pki-sync-client exited with code ${rc} after ${elapsed}s"
-    # The class deliberately drops ${elapsed}: it is the per-attempt detail the
-    # health file and the journal keep, and the one thing that must not reach
-    # the throttle key.
-    reason_class="exit-${rc}"
+    http_status="$(terminal_http_status)"
+    if [[ "$http_status" == 403 ]]; then
+        reason="the authority issued a certificate it will not accept (secrets 403)"
+        reason_class="http-403-unvalidated"
+        terminal=true
+    elif [[ -n "$http_status" ]]; then
+        reason="the authority refused this node with HTTP ${http_status}"
+        reason_class="http-${http_status}-refused"
+        terminal=true
+    else
+        reason="pki-sync-client exited with code ${rc} after ${elapsed}s"
+        # The class deliberately drops ${elapsed}: it is the per-attempt detail
+        # the health file and the journal keep, and the one thing that must not
+        # reach the throttle key.
+        reason_class="exit-${rc}"
+    fi
 fi
 
-write_state failed "$reason" "$rc" "$reason_class"
-report_failure "$reason" "$reason_class"
+write_state failed "$reason" "$rc" "$reason_class" "$terminal"
+report_failure "$reason" "$reason_class" "$terminal"
 exit 1

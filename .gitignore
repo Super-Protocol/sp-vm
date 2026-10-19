@@ -153,3 +153,8 @@ scripts/**/provider_config/
 
 # Generated documentation
 docs/**/*.pdf
+
+# Checked-in test fixtures. These are deliberately REAL captured artefacts
+# (SUP-376 §5), and one of them is a captured *.log that the rule above would
+# otherwise swallow silently.
+!src/rootfs/tests/fixtures/**

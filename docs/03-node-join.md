@@ -166,32 +166,96 @@ start job always finishes. The retry belongs to systemd
 it off the boot path — the node reaches `multi-user.target` and stays
 diagnosable instead of waiting for an authority that may never sign it.
 
-Every attempt publishes its verdict to `/run/sp-health/pki-authority-sync.json`:
+Every attempt publishes its verdict to `/run/sp-health/pki-authority-sync.json`,
+in the `sp.unit-health/v1` record format (SUP-376):
 
 ```json
 {
+  "schema": "sp.unit-health/v1",
   "unit": "pki-authority-sync.service",
   "state": "failed",
-  "attempt": 3,
-  "exit_code": 124,
-  "reason": "the authority did not complete the sync within 240s",
-  "reason_class": "timeout",
+  "terminal": true,
+  "gate": true,
+  "ttl_sec": 480,
+  "attempt": 412,
+  "exit_code": 1,
+  "reason_class": "http-403-unvalidated",
+  "reason": "the authority issued a certificate it will not accept (secrets 403)",
   "authority_servers": ["10.0.0.10:9443", "10.0.0.11:9443"],
   "attempt_log": "/run/sp-health/pki-authority-sync.log",
-  "updated_at": "2026-10-19T13:40:02Z"
+  "updated_at": "2026-10-19T17:04:11Z"
 }
 ```
 
 `state` is `attempting`, `ok` or `failed`. `reason` carries the per-attempt
 detail; `reason_class` is the stable grouping key for the same failure across
-attempts (`timeout`, `exit-<code>`, `signal`, `missing-client`), which is what a
-health aggregator should match on — `reason` embeds the elapsed seconds and
-moves every attempt. `/run` is tmpfs, so a reboot cannot leave a node looking
-synced before it has synced again. **Nothing exposes this
-file off the node today** — `:9180` is served by `pki-vm-measurements`, which
-does not read `/run/sp-health` — so it is reachable only from inside the guest,
-in practice on a debug image over SSH. Exposing node bring-up health to the
-fabric and the host orchestrator is follow-up work alongside SUP-366.
+attempts (`timeout`, `exit-<code>`, `signal`, `missing-client`,
+`http-403-unvalidated`, `http-<code>-refused`), which is what a health
+aggregator should match on — `reason` embeds the elapsed seconds and moves every
+attempt. `/run` is tmpfs, so a reboot cannot leave a node looking synced before
+it has synced again.
+
+The other three fields exist because a reader **outside** the guest has to act
+on them:
+
+- **`terminal`** — true iff no retry of this unit can succeed, which is the
+  difference between *not yet* and *will not*. Only the publisher can tell a
+  403 from an `ECONNREFUSED`, so the classification lives here and an
+  aggregator cannot infer it. The terminal set is `http-403-unvalidated`,
+  `http-<4xx>-refused` and `missing-client`; `timeout`, `network-code:*` and
+  `exit-<code>` stay non-terminal, as does any 5xx — a server fault can be
+  fixed without touching this node. SUP-370 was 25 hours of waiting on a
+  condition that would never clear, and that is the fact that would have ended
+  it;
+- **`ttl_sec`** — twice the script's own bounded attempt (480 s at the default
+  240 s attempt). A publisher killed by `TimeoutStartSec` leaves
+  `state: attempting` on disk forever, and a reader that trusted it would
+  report "still booting" indefinitely — SUP-370 reproduced at the reporting
+  layer. Past `updated_at + ttl_sec` the record is **stale**, and stale is a
+  verdict, not silence. A `failed` + `terminal` record never goes stale: `/run`
+  is tmpfs, so it cannot outlive its boot;
+- **`gate`** — whether the node's ability to serve depends on this unit. Without
+  certificates and without a swarm key, `swarm-db`, `swarm-node` and
+  `swarm-services` all stay down, so this one is `true`.
+
+### The secrets 403 is terminal, and only this layer can say so
+
+An `idHex` mismatch does **not** refuse the certificate: the authority sets
+`validated = false`, logs the mismatch at `warn`, and issues the certificate
+anyway, just without the challenge-validated extension. The refusal lands at the
+**second** hop — `POST /api/v1/secrets/get` returns
+`403 Certificate is missing challenge validation extension`. 403 is not in
+`pki-sync-client`'s retryable status set (`{429, 502}`), so the client itself
+concludes that no retry can succeed, logs that verdict, and stops.
+
+Until SUP-376 the wrapper published only `exit_code: 1, reason_class: exit-1`,
+destroying a fact the guest already had. It now reads the client's own
+non-retryable verdict out of the attempt log and publishes
+`reason_class: http-403-unvalidated` with `terminal: true` — and the console
+block says the failure is terminal instead of reassuring the operator that
+systemd will retry. Only the three-digit status code crosses out of the log; the
+line itself is third-party text and stays where it was.
+
+### `reason` is composed, never captured
+
+Every `reason` and `reason_class` is built from a publisher-authored template
+plus numbers. Captured client output reaches the console tail and
+`attempt_log` and nothing else. This is a **rule of the format**, not an
+accident of the current call sites: the `:9180` endpoint that serialises these
+records to an unauthenticated port keeps a redaction tripwire, but that tripwire
+is a backstop on an input that is already safe — the trust boundary is here, at
+the writer. `src/rootfs/tests/test_pki_authority_sync.sh` enforces both halves:
+no `write_state` call site may interpolate a command substitution, and every
+record the suite produces must carry a `reason` matching one of the templates.
+
+`authority_servers` and `attempt_log` stay in the file deliberately — the
+private PKI topology and a runtime-local path, both useful on the console and
+neither fit to leave the node. The endpoint drops them by **allowlist** rather
+than by trusting this writer to omit them.
+
+**Nothing in `pki-vm-measurements` exposes this file off the node yet** —
+`:9180/v1/nodeHealth` is the `tee-pki` half of SUP-376 — so until that ships it
+is reachable only from inside the guest, in practice on a debug image over SSH.
 
 On a `-release` image there is no SSH and no readable journal, so **the console
 is the only channel**, and a failure is written there with the authority it

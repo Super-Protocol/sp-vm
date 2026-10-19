@@ -250,6 +250,9 @@ RUN ln -s /etc/systemd/system/pki-vm-measurements.service "${OUTPUTDIR}/etc/syst
 RUN ln -s /etc/systemd/system/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-vm-measurements-healthcheck.timer"
 RUN SP_NVIDIA_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_nvidia_service_ordering.sh
 ADD rootfs/tests/test_pki_authority_sync.sh /buildroot/tests/test_pki_authority_sync.sh
+# Real artefacts, shared byte-for-byte with the tee-pki endpoint's redaction
+# tripwire: a hand-written line is not acceptable evidence here (SUP-376 §5).
+ADD rootfs/tests/fixtures/sp-health-redaction /buildroot/tests/fixtures/sp-health-redaction
 RUN chmod 0755 /buildroot/tests/test_pki_authority_sync.sh
 RUN SP_PKI_SYNC_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_pki_authority_sync.sh
 
