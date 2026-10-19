@@ -125,6 +125,19 @@ readonly max_line_chars="${SP_BOOT_ATTEMPT_MAX_LINE_CHARS:-2000}"
 # 25 of them is 200 uniformly-sampled characters of a private key.
 readonly token_min_chars="${SP_BOOT_ATTEMPT_TOKEN_MIN_CHARS:-40}"
 readonly token_head_chars="${SP_BOOT_ATTEMPT_TOKEN_HEAD_CHARS:-8}"
+# A GitHub token is not caught by the rule above: "_" is outside
+# [A-Za-z0-9+/=], so it breaks the run. A classic PAT is `ghp_` plus 36
+# characters - 36 is under the 40 threshold - and a fine-grained
+# `github_pat_...` is split into three sub-40 pieces by its own underscores.
+# Both print verbatim on a token_min_chars rule alone (measured).
+#
+# swarm-init is the unit that carries github.token, and the console is outside
+# the TEE boundary - so this is matched by PREFIX rather than by widening the
+# character class, which would start swallowing long paths and base64url
+# payloads that are not secrets. The prefix is kept and the body dropped: the
+# prefix is not secret and tells an operator which kind of credential leaked,
+# while no part of the body was ever diagnostic.
+readonly github_token_pattern='(gh[pousr]|github_pat)_[A-Za-z0-9_]{20,}'
 
 log() { echo "[${slug}] $*"; }
 log_err() { echo "[${slug}] ERROR: $*" >&2; }
@@ -197,7 +210,7 @@ is_pem_end() {
 # Whole PEM blocks are handled by the caller, not here: this runs inside a
 # command substitution, so any state it kept would die with the subshell.
 redact() {
-    local line rest out tok pattern
+    local line rest out tok pattern label
     line="$(sanitize "${1-}")"
     if [[ "$line" == *-----BEGIN* ]] || [[ "$line" == *-----END* ]]; then
         printf '<suppressed: PEM marker>'
@@ -207,6 +220,15 @@ redact() {
         printf '<suppressed: %s-char line>' "${#line}"
         return 0
     fi
+    while [[ "$line" =~ $github_token_pattern ]]; do
+        tok="${BASH_REMATCH[0]}"
+        if [[ "$tok" == github_pat_* ]]; then
+            label="github_pat_"
+        else
+            label="${tok:0:4}"
+        fi
+        line="${line%%"$tok"*}<${label} github token redacted>${line#*"$tok"}"
+    done
     pattern="[A-Za-z0-9+/=]{${token_min_chars},}"
     rest="$line"
     out=""

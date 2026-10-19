@@ -217,7 +217,11 @@ Azure boot diagnostics and nova `console-log` keep only a bounded tail, and an
 unthrottled diagnostic would evict the original boot output. Key material is
 stripped out of that tail by shape: whole PEM blocks are suppressed, base64
 tokens are suppressed, and hex tokens keep a short head so a CA fingerprint
-stays comparable against the authority's.
+stays comparable against the authority's. GitHub tokens are matched by prefix
+instead (`ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`, `github_pat_`), because the
+underscore breaks the run a length rule looks for — `swarm-init` is the unit
+that carries `github.token`, and `/dev/console` on a confidential VM is outside
+the TEE boundary.
 
 When a later attempt succeeds, the unit starts the services whose boot-time
 start jobs died with it (`ExecStartPost`): a failed dependency leaves them with

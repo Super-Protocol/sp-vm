@@ -111,6 +111,20 @@ case "$SP_TEST_BEHAVIOUR" in
         echo 'trailing diagnosis: not retryable; moving to next server' >&2
         exit 1
         ;;
+    github-token)
+        # The shapes the generic [A-Za-z0-9+/=]{40,} rule cannot see, because
+        # "_" breaks the run: a classic PAT (ghp_ + 36 characters, so the run
+        # after the underscore is 36 - under the threshold) and a fine-grained
+        # one, split into three sub-threshold pieces by its own underscores.
+        # swarm-init is the unit that carries github.token.
+        echo "ERROR: failed to fetch release info for Super-Protocol/swarm-db@v1.2.3" >&2
+        echo "ERROR: bad credentials for token ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8" >&2
+        echo "ERROR: also github_pat_11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789abcdefghij failed" >&2
+        # Must survive: an ordinary path with an underscore is not a token, and
+        # neither is a short gh_-ish word.
+        echo "ERROR: wrote /etc/swarm/swarm_node_env and ghs_ok" >&2
+        exit 3
+        ;;
     leak)
         # Shapes that must be caught line by line, outside any PEM block, with
         # the ordinary error kept. The unterminated BEGIN comes last on purpose:
@@ -405,5 +419,33 @@ grep -q 'chain generation refused: unknown CA' "$leak_dir/console" \
     || fail "the redaction swallowed the ordinary error message too"
 # A BEGIN with no END inside the window: everything after it is presumed body.
 ! grep -q 'LEAKEDBODY' "$leak_dir/console" || fail "an unterminated PEM block leaked its body"
+
+# A GitHub token is the one credential swarm-init actually handles, and the
+# generic token rule cannot see either of its shapes.
+pat_dir="$test_root/github-token"
+make_case "$pat_dir"
+run_attempt "$pat_dir" github-token && fail "the token-leaking attempt exited 0"
+! grep -q 'ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8' "$pat_dir/console" \
+    || fail "a classic GitHub PAT reached the console verbatim"
+! grep -q 'github_pat_11ABCDEFG0aBcDeFgHiJkL' "$pat_dir/console" \
+    || fail "a fine-grained GitHub PAT reached the console verbatim"
+! grep -q 'mNoPqRsTuVwXyZ0123456789abcdefghij' "$pat_dir/console" \
+    || fail "the second half of a fine-grained PAT reached the console"
+# The prefix is kept: it is not secret, and it says which kind of credential
+# leaked - which is the whole diagnostic value the body never had.
+grep -q '<ghp_ github token redacted>' "$pat_dir/console" \
+    || fail "the classic PAT was not replaced by a labelled marker: $(cat "$pat_dir/console")"
+grep -q '<github_pat_ github token redacted>' "$pat_dir/console" \
+    || fail "the fine-grained PAT was not replaced by a labelled marker"
+grep -q 'bad credentials for token' "$pat_dir/console" \
+    || fail "redacting the token threw away the message around it"
+grep -q 'failed to fetch release info' "$pat_dir/console" \
+    || fail "the error that explains the failure was lost"
+# Over-redaction is a real cost here: a prefix rule that eats ordinary words
+# makes the console useless.
+grep -q '/etc/swarm/swarm_node_env' "$pat_dir/console" \
+    || fail "an ordinary underscored path was redacted as a token"
+grep -q 'ghs_ok' "$pat_dir/console" \
+    || fail "a short gh-prefixed word was redacted as a token"
 
 echo "sp-boot-attempt tests passed"
