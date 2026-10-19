@@ -202,11 +202,23 @@ on them:
   difference between *not yet* and *will not*. Only the publisher can tell a
   403 from an `ECONNREFUSED`, so the classification lives here and an
   aggregator cannot infer it. The terminal set is `http-403-unvalidated`,
-  `http-<4xx>-refused` and `missing-client`; `timeout`, `network-code:*` and
-  `exit-<code>` stay non-terminal, as does any 5xx — a server fault can be
-  fixed without touching this node. SUP-370 was 25 hours of waiting on a
-  condition that would never clear, and that is the fact that would have ended
-  it;
+  `http-400-refused` / `http-401-refused` / `http-422-refused`, and
+  `missing-client`. Everything else stays non-terminal: `timeout`,
+  `network-code:*`, `exit-<code>`, every 5xx, and — deliberately — **every
+  other 4xx**.
+
+  The set is an explicit list rather than a 4xx range because "every authority
+  will refuse this node for the same reason" is only true of some of them. A
+  malformed, unauthenticated or unvalidated client certificate is a property
+  this node carries to every authority in the list. A `404` from an authority
+  that predates the route is a property of the *cluster*, and version skew is
+  routine — publishing `terminal: true` for it would tell an operator to
+  replace a healthy node. The asymmetry sets the default: a wrong
+  `terminal: true` ends a wait that should have continued, while a wrong
+  `terminal: false` costs retries that are already bounded and already read as
+  `degraded`. SUP-370 was 25 hours of waiting on a condition that would never
+  clear, and `terminal` is the fact that would have ended it — which is exactly
+  why it must never be wrong in the other direction;
 - **`ttl_sec`** — twice the script's own bounded attempt (480 s at the default
   240 s attempt). A publisher killed by `TimeoutStartSec` leaves
   `state: attempting` on disk forever, and a reader that trusted it would
@@ -272,8 +284,8 @@ tried and the tail of the attempt's own output:
   over a 25-hour outage. The journal keeps every block, and the health file is
   per-attempt regardless;
 - key-shaped **tokens** are redacted out of a line rather than the line being
-  dropped, so the message around them survives. A run of 40+ characters is
-  treated by shape:
+  dropped, so the message around them survives. A run of 40+ characters, **or
+  20+ hex pairs separated by colons or spaces**, is treated by shape:
   - **hex** keeps a short head — `<329abfac... 64-char token redacted>` — which
     is what makes a CA fingerprint or an `mrEnclave` comparable against the
     authority's. A CA mismatch is the common root cause, so that token is the
@@ -282,6 +294,15 @@ tried and the tail of the attempt's own output:
     of a secret was never diagnostic, and a PEM body line is nothing *but* a
     token: 8 characters from each of 25 body lines is 200 uniformly-sampled
     characters of a private key;
+  - **delimited hex** — `17:F2:A7:7C:…` or `de ad be ef …` — is treated as hex
+    and keeps a head. It needs its own rule because a separator every two
+    characters means there is no 40-character run in the line at all: a
+    32-pair SHA-256 fingerprint is 95 characters and was passing through
+    whole. The floor of 20 pairs sits above a MAC address (6 pairs), a
+    4-hex-group IPv6 address, a `host:port` and a UUID, all of which are
+    diagnostic and must survive. Found by running the `tee-pki` half of the
+    shared fixture through this redactor, which is what the shared fixture is
+    for;
 - a whole **PEM block** is suppressed, `-----BEGIN` through `-----END`, not just
   its header. The last body line of a key is short enough not to be a token at
   all, so no per-line rule can reach it. A block whose `-----BEGIN` has already

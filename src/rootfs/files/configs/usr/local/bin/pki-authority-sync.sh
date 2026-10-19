@@ -127,6 +127,19 @@ readonly max_line_chars="${SP_PKI_SYNC_MAX_LINE_CHARS:-2000}"
 # be told from a 64-hex key without context, so the fingerprint is worth more.
 readonly token_min_chars="${SP_PKI_SYNC_TOKEN_MIN_CHARS:-40}"
 readonly token_head_chars="${SP_PKI_SYNC_TOKEN_HEAD_CHARS:-8}"
+# Hex with a separator every two characters defeats token_min_chars entirely: a
+# 32-byte SHA-256 fingerprint written as 17:F2:A7:... has no 40-character run of
+# [A-Za-z0-9+/=] in it at all, so the shape rule above never sees it. Found by
+# running the tee-pki half of the shared fixture through this redactor (SUP-376
+# §5): its `rootFingerprint256` fields passed through untouched. A fingerprint
+# is not a secret, but the SHAPE is - anything a tool prints with
+# `openssl -fingerprint` or `xxd` spacing arrives this way, and the guarantee
+# here is supposed to be about shape, not about which field happened to carry it.
+#
+# 20 pairs = 160 bits is the floor: above a MAC address (6) and a 4-hex-group
+# IPv6 address, which are diagnostic and must survive, and below any digest or
+# key. Treated as hex, so it keeps a comparable head like a bare hex token.
+readonly delimited_pair_min="${SP_PKI_SYNC_DELIMITED_PAIR_MIN:-20}"
 
 log() { echo "[pki-authority-sync] $*"; }
 log_err() { echo "[pki-authority-sync] ERROR: $*" >&2; }
@@ -248,12 +261,16 @@ redact() {
         printf '<suppressed: %s-char line>' "${#line}"
         return 0
     fi
-    pattern="[A-Za-z0-9+/=]{${token_min_chars},}"
+    # Two shapes, one leftmost-longest scan: a bare base64/hex run, and hex
+    # delimited by colons or spaces. They cannot overlap - a delimiter breaks
+    # the first pattern's character class, and the second requires delimiters.
+    pattern="([0-9A-Fa-f]{2}[: ]){$((delimited_pair_min - 1)),}[0-9A-Fa-f]{2}"
+    pattern="${pattern}|[A-Za-z0-9+/=]{${token_min_chars},}"
     rest="$line"
     out=""
     while [[ "$rest" =~ $pattern ]]; do
         tok="${BASH_REMATCH[0]}"
-        if [[ "$tok" =~ ^[0-9a-fA-F]+$ ]]; then
+        if [[ "$tok" =~ ^[0-9a-fA-F]+$ ]] || [[ "$tok" =~ ^[0-9a-fA-F][0-9a-fA-F:[:space:]]*[0-9a-fA-F]$ ]]; then
             out+="${rest%%"$tok"*}<${tok:0:$token_head_chars}... ${#tok}-char token redacted>"
         else
             out+="${rest%%"$tok"*}<${#tok}-char token redacted>"
@@ -290,12 +307,20 @@ terminal_http_status() {
         # text, and a leading zero would reach bash arithmetic as an octal
         # literal. No HTTP status starts with 0, 6, 7, 8 or 9.
         [[ "$code" =~ ^[1-5][0-9]{2}$ ]] || continue
-        # 4xx is the authority refusing THIS NODE, which every authority in the
-        # list will do for the same reason - a node property, not a server
-        # property. 429 is the one 4xx the client already retries; 5xx stays
-        # non-terminal because a server can be fixed without touching the node.
-        (( code >= 400 && code < 500 )) || continue
-        (( code == 429 )) && continue
+        # An explicit set, not a 4xx range. "Every authority will refuse this
+        # node for the same reason" holds for 400/401/403/422 - a malformed or
+        # unvalidated client certificate is a property of THIS NODE. It breaks
+        # on version skew: a 404 from an authority that predates the route is a
+        # CLUSTER property, and publishing terminal: true for it would tell an
+        # operator to replace a healthy node. The asymmetry decides the default
+        # - a wrong terminal: true ends a wait that should have continued, while
+        # a wrong terminal: false costs retries that are already bounded and
+        # already read as degraded. 429 and every 5xx stay out for the same
+        # reason: they can be fixed without touching this node.
+        case "$code" in
+            400|401|403|422) ;;
+            *) continue ;;
+        esac
         # 403 is the SUP-370 shape and outranks any other refusal in the list.
         if (( code == 403 )); then
             printf '403'
