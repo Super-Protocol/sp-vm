@@ -19,16 +19,58 @@ verification path below — vendor `0x10de` combined with a `0x03` class prefix.
 The vendor check is what separates a real GPU from the hypervisor's emulated
 VGA.
 
-On a VM without a GPU, `sp-nvidia-gpu-ready.service` — the barrier that the PKI
-units order themselves after — succeeds immediately, and the NVIDIA units
-(`nvidia-persistenced`, `nvidia-imex`, `nvidia-cdi-refresh`) are skipped through
-`ExecCondition`, so they end up inactive rather than failed. The absence of a
-GPU therefore never blocks certificate initialization or node join.
+On a VM without a GPU, `sp-nvidia-gpu-ready.service` — the barrier that
+`pki-cert-init` and `pki-authority-sync` order themselves after — succeeds
+immediately, and the NVIDIA units (`nvidia-persistenced`, `nvidia-imex`,
+`nvidia-cdi-refresh`) are skipped through `ExecCondition`, so they end up
+inactive rather than failed. The absence of a GPU therefore never blocks
+certificate initialization or node join.
 
 Detection is deliberately independent of the driver. On a node where a GPU is
 physically present but the driver, the persistence daemon, or confidential-
 compute setup did not come up, the barrier still fails loudly instead of
 degrading the node to CPU-only attestation.
+
+### The barrier is a health publisher
+
+The barrier is `Type=oneshot` with no `Restart=`, so both of its failure paths
+are failures **no retry can fix**: systemd will not run it again, and without it
+`pki-cert-init` and `pki-authority-sync` never start. Each writes
+`/run/sp-health/sp-nvidia-gpu-ready.json` in the `sp.unit-health/v1` format with
+`state: failed`, `terminal: true` and a reason class from a closed set —
+`fabricmanager-timeout` (Fabric Manager not active within
+`SP_NVIDIA_READY_TIMEOUT`, 1200 s by default) or `persistenced-failed`
+(`nvidia-persistenced` did not establish CC readiness in three attempts). It
+also publishes `attempting` while it waits, `ok` with `gpu-ready` on success,
+and `ok` with `no-gpu` on a CPU-only VM — because "no GPU to wait for" and "the
+GPU is still coming up" are different facts and only one of them is a reason to
+keep waiting.
+
+`ttl_sec` is twice the barrier's own bound (2400 s), so a record from a node
+fifteen minutes into GPU bring-up still reads as fresh. Nothing device-specific
+is published: no PCI addresses, no device names, no `nvidia-smi` output. The
+record is served off the node on an unauthenticated port, and its `reason` is
+composed from publisher-authored templates, never captured from a tool.
+
+### Why `:9180` is *not* behind the barrier
+
+`pki-vm-measurements.service` used to carry
+`Requires=sp-nvidia-gpu-ready.service`, and the barrier named it in its own
+`Before=`. That made the health surface sit behind the thing it reports on: on a
+GPU node whose GPU never came ready, the barrier exited 1 and
+`pki-vm-measurements` **never started at all** — no `:9180`, no `/healthcheck`,
+no node health, permanently, on exactly the node class node health exists for.
+
+Nothing in that process needs the barrier. Every `getMeasure` path reads only
+`/dev/tdx_guest` or `/dev/sev-guest` through `@super-protocol/addons-tee`;
+`packages/pki-vm-measurements/src/` contains no reference to NVIDIA, the GPU or
+`/run/sp-nvidia/cc-ready`, and `cc-ready` is written by
+`sp-nvidia-enable-cc-ready` and read only by the barrier itself. So the
+dependency is simply dropped, with no route left needing a readiness gate.
+
+`pki-cert-init` and `pki-authority-sync` keep the barrier: a certificate must
+not be issued against hardware whose confidential-computing state is not
+established. Reporting is not issuing.
 
 ## Complete Flow
 

@@ -1,7 +1,25 @@
 #!/bin/bash
 
+# The GPU readiness barrier for pki-cert-init and pki-authority-sync: no
+# certificate may be issued against hardware whose confidential-computing state
+# is not established.
+#
+# SUP-376: it is also a health PUBLISHER, and on a GPU node it is the
+# highest-value one. Both of its exit-1 paths are failures no retry can fix -
+# the unit is Type=oneshot with no Restart=, so systemd will not try again - and
+# until this change they left nothing any layer outside the guest could read.
+# On the H200 stand that is the difference between "this node never came back"
+# and "Fabric Manager never became active; replace or reseat the GPU".
+#
+# What it publishes to /run/sp-health/sp-nvidia-gpu-ready.json, and nothing
+# more: a state, a terminal flag and a reason class from a closed set. No device
+# names, no PCI addresses, no nvidia-smi output - the record is served off the
+# node on an unauthenticated port (SUP-376 contract §4), and reason is COMPOSED,
+# never CAPTURED.
+
 set -euo pipefail
 
+readonly unit_name="sp-nvidia-gpu-ready.service"
 readonly gpu_present="${SP_NVIDIA_GPU_PRESENT:-/usr/local/bin/sp-nvidia-gpu-present}"
 readonly fabric_condition="${SP_NVIDIA_FABRIC_CONDITION:-/usr/local/bin/sp-nvidia-fabricmanager-condition}"
 readonly systemctl_cmd="${SP_SYSTEMCTL:-/usr/bin/systemctl}"
@@ -10,13 +28,47 @@ readonly wait_timeout="${SP_NVIDIA_READY_TIMEOUT:-1200}"
 readonly max_persistence_attempts="${SP_NVIDIA_PERSISTENCE_MAX_ATTEMPTS:-3}"
 readonly sleep_cmd="${SP_SLEEP:-/bin/sleep}"
 
+readonly publish="${SP_HEALTH_PUBLISH:-/usr/local/bin/sp-health-publish}"
+# Twice this script's own bound. The fabric wait is capped at wait_timeout and
+# the persistenced path at a handful of bounded attempts, so a record older than
+# this means the script was killed rather than still waiting - which the reader
+# must be able to tell apart from "still coming up".
+readonly ttl_sec="${SP_NVIDIA_READY_TTL_SEC:-$((wait_timeout * 2))}"
+
+# Never let publishing break the barrier: this unit gates the PKI units, and a
+# missing health file is a reporting gap, not a reason to refuse certificates.
+publish_state() {
+    local state="$1" reason_class="$2" reason="$3" terminal="${4:-false}" exit_code="${5:-}"
+    local -a args=(
+        --unit "$unit_name"
+        --state "$state"
+        --reason-class "$reason_class"
+        --reason "$reason"
+        --ttl-sec "$ttl_sec"
+        --gate true
+        --terminal "$terminal"
+    )
+    [[ -n "$exit_code" ]] && args+=(--exit-code "$exit_code")
+    "$publish" "${args[@]}" \
+        || echo "could not publish health state to /run/sp-health" >&2
+    return 0
+}
+
 # A CPU-only VM satisfies the barrier vacuously, without touching any NVIDIA
 # unit. Keep this ahead of every systemctl call: the dependent PKI units must
 # start, and nothing may be pulled in that has no hardware to work with.
 if ! "$gpu_present"; then
     echo "No NVIDIA GPU present; readiness barrier satisfied for a CPU-only VM"
+    # Published rather than left absent: "no GPU to wait for" and "the GPU is
+    # still coming up" are different facts, and only one of them is a reason to
+    # keep waiting.
+    publish_state ok no-gpu \
+        "no NVIDIA GPU is present, so the readiness barrier is satisfied vacuously"
     exit 0
 fi
+
+publish_state attempting waiting-for-gpu \
+    "waiting for NVIDIA confidential-computing readiness, bounded to ${wait_timeout}s"
 
 fabric_required=0
 if "$fabric_condition" >/dev/null 2>&1; then
@@ -32,6 +84,12 @@ while true; do
         && ! "$systemctl_cmd" is-active --quiet nvidia-fabricmanager.service; then
         if (( SECONDS >= deadline )); then
             echo "Fabric Manager did not become active within ${wait_timeout}s; NVIDIA GPU access remains blocked" >&2
+            # Terminal: Type=oneshot with no Restart=, so systemd will not run
+            # this again. Without the barrier, pki-cert-init and
+            # pki-authority-sync never start and the node can never serve.
+            publish_state failed fabricmanager-timeout \
+                "Fabric Manager did not become active within ${wait_timeout}s, so NVIDIA GPU access stays blocked" \
+                true 1
             exit 1
         fi
         "$sleep_cmd" "$delay"
@@ -45,6 +103,8 @@ while true; do
         # Close the small race in which FM stopped after the first check.
         if (( fabric_required == 0 )) \
             || "$systemctl_cmd" is-active --quiet nvidia-fabricmanager.service; then
+            publish_state ok gpu-ready \
+                "NVIDIA confidential-computing readiness is established" "" 0
             exit 0
         fi
         continue
@@ -52,6 +112,9 @@ while true; do
 
     if (( persistence_attempts >= max_persistence_attempts )); then
         echo "nvidia-persistenced/CC ready state failed after ${max_persistence_attempts} attempts" >&2
+        publish_state failed persistenced-failed \
+            "nvidia-persistenced did not establish confidential-computing readiness in ${max_persistence_attempts} attempts" \
+            true 1
         exit 1
     fi
 

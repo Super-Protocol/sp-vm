@@ -156,3 +156,66 @@ The SwarmDB configuration is generated afterwards. A system dependency
 prevents SwarmDB from starting before PKI synchronization succeeds. A node
 without a certificate and `swarm key` therefore cannot join the SwarmDB
 cluster through the normal flow.
+
+## 7. Node Health: the Positive Witness that this Node Serves
+
+Every bring-up unit publishes its own verdict to `/run/sp-health/<unit>.json` in
+the `sp.unit-health/v1` format, and `:9180/v1/nodeHealth` aggregates the
+directory. There is no central writer, so a unit that is dead cannot lie by
+omission, and `/run` is tmpfs, so the whole surface is per-boot by construction.
+
+`sp-health-publish` is the single writer of that format. It validates everything
+it is given — the state must be `attempting`, `ok` or `failed`; `ttl_sec` must be
+a positive number of seconds; `terminal` is only meaningful on a failure; a
+record name is a file name and never a path — because a typo in a caller would
+otherwise reach an unauthenticated port as an unparseable record. And `reason`
+is **composed by the publisher, never captured** from a tool's output: that rule
+is what lets the endpoint serialise these records with only a redaction tripwire
+as a backstop rather than a second redactor with its own blind spots.
+
+### `node-serving` is the only source of `serving`
+
+Every other publisher reports a **gate** — something that must not have failed.
+No gate, and no combination of gates, is evidence that the node serves:
+`pki-authority-sync` can report `ok` while `swarm-node` is down, and a departed
+node's gates all stay `ok` forever. So `sp-node-serving.timer` runs
+`sp-node-serving-probe` every 30 s, probing from loopback exactly what the host
+probes from outside:
+
+1. `https://127.0.0.1:9443/api/v1/pki/certs/ca` returns a PEM — unauthenticated,
+   the same call `cluster.sh`'s `fetch_ca` makes, so it answers only once
+   `pki-cert-init`, `pki-authority-sync` and the PKI service have all finished;
+2. `http://127.0.0.1:4001/nodes` is 2xx and lists this node — the same payload
+   and the same match as `spvm_cloud.py`'s `parse_membership`, so it answers only
+   once SwarmDB, the host agent and `swarm-node` are up and gossip has converged.
+
+Both must pass. A CA with no membership entry is a node that is Ready but not
+serving; a membership entry with no CA is a node that gossips but cannot serve a
+request.
+
+It publishes **two booleans and one status word from a closed set** —
+`ca_ok`, `membership_ok`, and a `reason_class` of `serving`, `ca-unavailable`,
+`membership-absent` or `no-local-evidence`. Never a name, an address, a port or
+the member list: `:9180` is plain HTTP on a port opened with no source
+restriction, and this record would otherwise be the only place on the surface
+carrying a membership list.
+
+Three numbers, all chosen here rather than in the contract:
+
+| value | choice | why |
+|---|---|---|
+| timer interval | **30 s** | matches `pki-vm-measurements-healthcheck.timer`, the other thing on this node polling a local port, and is comfortably under any host-side poll period. Two bounded loopback calls every 30 s costs nothing. |
+| `ttl_sec` | **60 s** | twice the **timer interval**. For a repeating publisher the ttl bounds the gap between writes, not the length of one attempt. `OnUnitActiveSec` measures from the previous activation, so a write lands every 30 s while the probe completes — and it is capped at 5 s per call with `TimeoutStartSec=20` as a backstop. The only way to reach 60 s between writes is a probe that gets killed by that backstop, and a record that then reads as stale is the correct verdict for a probe that is not completing. |
+| bring-up budget | **1800 s** | how long the node may legitimately take to reach `serving` before `attempting` becomes `failed`. The slowest honest path is the 1200 s GPU readiness barrier *before* `pki-cert-init` even starts, plus PKI sync, SwarmDB, `swarm-node` and gossip convergence — call it 20 + 10 minutes. Shorter, and every GPU node reports a failure while it is simply booting. |
+
+The verdict is never `terminal`. This unit is a witness, not an authority on
+impossibility: a node can start serving at any later point, and the record flips
+straight back to `ok` when both probes pass. The verdicts that end a wait come
+from the gates that know they cannot be retried — `pki-authority-sync`'s
+`http-403-unvalidated`, or the GPU barrier's `fabricmanager-timeout`.
+
+The probe is ordered `After=swarm-node.service` but deliberately does **not**
+require or want it. A dependency would silence the probe in exactly the state it
+exists to describe. For the same reason `pki-vm-measurements`, which serves
+`:9180`, no longer depends on the GPU readiness barrier — see
+[the barrier's own section](05-nvidia-gpu-attestation.md#why-9180-is-not-behind-the-barrier).

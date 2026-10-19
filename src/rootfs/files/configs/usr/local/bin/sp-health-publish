@@ -1,0 +1,142 @@
+#!/bin/bash
+
+# Writes one `sp.unit-health/v1` record to /run/sp-health/<name>.json.
+#
+# SUP-376: a confidential guest has no way to tell anything outside itself that
+# it is unhealthy. Each bring-up unit publishes its own verdict here, and
+# :9180/v1/nodeHealth (tee-pki) aggregates the directory - so there is no
+# central writer, and a unit that is dead cannot lie by omission.
+#
+# The record this writes:
+#
+#   {
+#     "schema": "sp.unit-health/v1",
+#     "unit": "node-serving.service",
+#     "state": "attempting | ok | failed",
+#     "terminal": false,     # true iff NO retry of this unit can succeed
+#     "gate": true,          # does the node's ability to serve depend on it
+#     "ttl_sec": 60,         # past updated_at + this, the record is STALE
+#     "reason_class": "ca-unavailable",
+#     "reason": "the local PKI service is not serving a CA yet",
+#     "updated_at": "2026-10-19T17:04:11Z",
+#     ...any --bool flags, in the order given
+#   }
+#
+# *** reason and reason_class are COMPOSED, never CAPTURED. ***
+#
+# Every caller passes publisher-authored literals plus numbers. That rule is
+# what lets the endpoint serialise these records to an unauthenticated port with
+# only a redaction tripwire as a backstop, instead of needing a second redactor
+# with its own blind spots (SUP-376 contract §4). Captured third-party output -
+# a client's log lines, a tool's stderr - belongs on the console and in a
+# per-attempt log file, never in a field this writes. sanitize() below bounds
+# what a bug could do to the JSON; it is not a licence to pass captured text.
+#
+# /run is tmpfs, so the whole surface is per-boot by construction: a reboot
+# cannot leave a node looking healthy before it is.
+
+set -uo pipefail
+
+readonly state_dir="${SP_HEALTH_STATE_DIR:-/run/sp-health}"
+readonly schema="sp.unit-health/v1"
+
+usage() {
+    cat >&2 <<'USAGE'
+usage: sp-health-publish --unit <unit.service> --state attempting|ok|failed
+                         --reason-class <class> --reason <text> --ttl-sec <n>
+                         [--record <name>] [--gate true|false]
+                         [--terminal true|false] [--exit-code <n>]
+                         [--bool <key>=true|false]...
+USAGE
+    exit 64
+}
+
+# The record is JSON built without a JSON library and is read by a parser on an
+# unauthenticated port: collapse everything to printable single-line text so no
+# field can break out of its string.
+sanitize() {
+    printf '%s' "${1-}" | tr '\n\r\t' '   ' | tr -cd '[:print:]' | sed 's/[\\"]/ /g'
+}
+
+die() { echo "[sp-health-publish] ERROR: $*" >&2; exit 64; }
+
+unit=""
+state=""
+reason=""
+reason_class=""
+ttl_sec=""
+record=""
+gate=true
+terminal=false
+exit_code=""
+bool_keys=()
+bool_values=()
+
+while (( $# )); do
+    case "$1" in
+        --unit) unit="${2-}"; shift 2 || usage ;;
+        --state) state="${2-}"; shift 2 || usage ;;
+        --reason) reason="${2-}"; shift 2 || usage ;;
+        --reason-class) reason_class="${2-}"; shift 2 || usage ;;
+        --ttl-sec) ttl_sec="${2-}"; shift 2 || usage ;;
+        --record) record="${2-}"; shift 2 || usage ;;
+        --gate) gate="${2-}"; shift 2 || usage ;;
+        --terminal) terminal="${2-}"; shift 2 || usage ;;
+        --exit-code) exit_code="${2-}"; shift 2 || usage ;;
+        --bool)
+            key="${2%%=*}"
+            value="${2#*=}"
+            [[ "$key" =~ ^[a-z][a-z0-9_]*$ ]] || die "--bool key '$key' is not a snake_case identifier"
+            [[ "$value" == true || "$value" == false ]] || die "--bool $key must be true or false, got '$value'"
+            bool_keys+=("$key")
+            bool_values+=("$value")
+            shift 2 || usage
+            ;;
+        *) die "unknown argument '$1'" ;;
+    esac
+done
+
+# Validated rather than trusted: a typo in a caller must not reach the endpoint
+# as an unparseable state or an unbounded ttl that never goes stale.
+[[ "$unit" =~ ^[a-z0-9@._-]+\.(service|timer|target)$ ]] || die "--unit '$unit' is not a unit name"
+[[ "$state" == attempting || "$state" == ok || "$state" == failed ]] \
+    || die "--state must be attempting, ok or failed, got '$state'"
+[[ "$reason_class" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "--reason-class '$reason_class' is not a kebab-case class"
+[[ -n "$reason" ]] || die "--reason is required: a state with no reason is not diagnosable"
+[[ "$ttl_sec" =~ ^[1-9][0-9]*$ ]] || die "--ttl-sec must be a positive number of seconds, got '$ttl_sec'"
+[[ "$gate" == true || "$gate" == false ]] || die "--gate must be true or false, got '$gate'"
+[[ "$terminal" == true || "$terminal" == false ]] || die "--terminal must be true or false, got '$terminal'"
+[[ -z "$exit_code" || "$exit_code" =~ ^[0-9]+$ ]] || die "--exit-code must be a number, got '$exit_code'"
+# Only attempting and ok are subject to ttl_sec; a terminal failure is sticky,
+# because a publisher that writes the one verdict able to end a wait and then
+# dies must not have it silently demoted to "keep waiting" (CTO ruling, SUP-376).
+[[ "$terminal" == false || "$state" == failed ]] \
+    || die "--terminal true is only meaningful on a failed state"
+
+if [[ -z "$record" ]]; then
+    record="${unit%.*}"
+fi
+[[ "$record" =~ ^[a-z0-9][a-z0-9._-]*$ ]] || die "--record '$record' is not a plain file name"
+
+state_file="${state_dir}/${record}.json"
+
+install -d -m 0755 "$state_dir" 2>/dev/null || true
+{
+    printf '{\n'
+    printf '  "schema": "%s",\n' "$schema"
+    printf '  "unit": "%s",\n' "$unit"
+    printf '  "state": "%s",\n' "$state"
+    printf '  "terminal": %s,\n' "$terminal"
+    printf '  "gate": %s,\n' "$gate"
+    printf '  "ttl_sec": %s,\n' "$ttl_sec"
+    printf '  "exit_code": %s,\n' "${exit_code:-null}"
+    printf '  "reason_class": "%s",\n' "$(sanitize "$reason_class")"
+    printf '  "reason": "%s",\n' "$(sanitize "$reason")"
+    for i in "${!bool_keys[@]}"; do
+        printf '  "%s": %s,\n' "${bool_keys[$i]}" "${bool_values[$i]}"
+    done
+    printf '  "updated_at": "%s"\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    printf '}\n'
+} >"${state_file}.tmp" 2>/dev/null \
+    && mv -f "${state_file}.tmp" "$state_file" 2>/dev/null \
+    || { echo "[sp-health-publish] ERROR: could not publish to ${state_file}" >&2; exit 1; }

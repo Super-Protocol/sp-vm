@@ -246,9 +246,25 @@ for pki_service in pki-cert-init pki-authority-sync; do
         || fail "$pki_service is not ordered after the GPU-ready barrier"
 done
 
-grep -q '^Requires=sp-nvidia-gpu-ready.service' \
-    "$pki_unit_dir/pki-vm-measurements.service" \
-    || fail "PKI measurements can bypass the GPU-ready barrier"
+# SUP-376 inverts this one. :9180 is the only port the fabric and the host
+# orchestrator can reach before a node joins, and pki-vm-measurements serves
+# both /healthcheck and /v1/nodeHealth on it. The barrier exits 1 after a
+# 1200s Fabric Manager timeout or three failed nvidia-persistenced attempts, so
+# Requires= meant: on a GPU node whose GPU never comes ready, the health surface
+# never existed - on exactly the node class node health was built for. Nothing
+# in the process needs the barrier either: every getMeasure path reads only
+# /dev/tdx_guest or /dev/sev-guest, and /run/sp-nvidia/cc-ready is read only by
+# the barrier itself.
+measurements_unit="$pki_unit_dir/pki-vm-measurements.service"
+! grep -qE '^(Requires|Wants|BindsTo)=.*sp-nvidia-gpu-ready\.service' "$measurements_unit" \
+    || fail "the health surface depends on the GPU barrier again: an unready GPU would mean no :9180 at all"
+! grep -qE '^After=.*sp-nvidia-gpu-ready\.service' "$measurements_unit" \
+    || fail "the health surface is ordered after the GPU barrier again, so it cannot answer during GPU bring-up"
+! grep -qE '^Before=.*pki-vm-measurements\.service' "$unit_dir/sp-nvidia-gpu-ready.service" \
+    || fail "the GPU barrier still orders itself before the health surface"
+# The decoupling must not take the healthcheck timer's own contract with it.
+grep -q '^WantedBy=multi-user.target$' "$measurements_unit" \
+    || fail "pki-vm-measurements is no longer installed into multi-user.target"
 for gpu_dropin in nvidia-cdi-refresh nvidia-imex; do
     dropin="$unit_dir/$gpu_dropin.service.d/10-sp-gpu-ready.conf"
     grep -q '^Requires=sp-nvidia-gpu-ready.service' "$dropin" \
