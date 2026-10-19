@@ -181,3 +181,44 @@ Bootstrap is complete when the following exist:
 - the `swarm key`;
 - SwarmDB containing PKI secrets and network state;
 - a running PKI Authority.
+
+## When Bootstrap Fails
+
+Every step above runs as a systemd unit that `multi-user.target` waits for, so
+each one of them can keep a VM in boot. The units that can fail for a reason
+outside the VM — a provider archive that is gone, a PKI chain that cannot be
+built, a release asset that cannot be downloaded — therefore make **one bounded
+attempt per start** and leave the retry to systemd (`Restart=on-failure`,
+`RestartSec`, `StartLimitIntervalSec=0`):
+
+| Unit | Attempt bounded at | `TimeoutStartSec` | Retried every |
+|---|---|---|---|
+| `provider-config.service` | — | default | 60 s |
+| `pki-vm-mode.service` | 180 s (waits 120 s for `/sp`) | 240 s | 30 s |
+| `pki-cert-init.service` | 240 s | 300 s | 60 s |
+| `swarm-init.service` | 600 s | 660 s | 30 s |
+| `pki-authority-sync.service` | 240 s | 300 s | 60 s |
+
+The VM reaches `multi-user.target` either way, which is the point: a node that
+cannot bootstrap stays reachable and says why instead of sitting in a start job
+forever with its HTTP port answering (SUP-370).
+
+Each attempt publishes its verdict to `/run/sp-health/<unit>.json` — `state`
+(`attempting` / `ok` / `failed`), the attempt number, the exit code, a stable
+`reason_class`, and a pointer to that attempt's log. `/run` is tmpfs, so a
+reboot cannot leave a node looking initialised before it has initialised again.
+
+A failure is also written to `/dev/console`, naming what stays down and the tail
+of the attempt's own output. On a `-release` image there is no SSH and no
+readable journal, so the console is the only channel left. The block is
+rate-limited — full for the first three attempts, again whenever the failure
+changes kind, then hourly, with a one-line reminder in between — because both
+Azure boot diagnostics and nova `console-log` keep only a bounded tail, and an
+unthrottled diagnostic would evict the original boot output. Key material is
+stripped out of that tail by shape: whole PEM blocks are suppressed, base64
+tokens are suppressed, and hex tokens keep a short head so a CA fingerprint
+stays comparable against the authority's.
+
+When a later attempt succeeds, the unit starts the services whose boot-time
+start jobs died with it (`ExecStartPost`): a failed dependency leaves them with
+no start job at all, and `Restart=` cannot revive a unit that never started.
