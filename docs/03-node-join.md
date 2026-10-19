@@ -175,14 +175,19 @@ Every attempt publishes its verdict to `/run/sp-health/pki-authority-sync.json`:
   "attempt": 3,
   "exit_code": 124,
   "reason": "the authority did not complete the sync within 240s",
+  "reason_class": "timeout",
   "authority_servers": ["10.0.0.10:9443", "10.0.0.11:9443"],
   "attempt_log": "/run/sp-health/pki-authority-sync.log",
   "updated_at": "2026-10-19T13:40:02Z"
 }
 ```
 
-`state` is `attempting`, `ok` or `failed`; `/run` is tmpfs, so a reboot cannot
-leave a node looking synced before it has synced again. **Nothing exposes this
+`state` is `attempting`, `ok` or `failed`. `reason` carries the per-attempt
+detail; `reason_class` is the stable grouping key for the same failure across
+attempts (`timeout`, `exit-<code>`, `signal`, `missing-client`), which is what a
+health aggregator should match on — `reason` embeds the elapsed seconds and
+moves every attempt. `/run` is tmpfs, so a reboot cannot leave a node looking
+synced before it has synced again. **Nothing exposes this
 file off the node today** — `:9180` is served by `pki-vm-measurements`, which
 does not read `/run/sp-health` — so it is reachable only from inside the guest,
 in practice on a debug image over SSH. Exposing node bring-up health to the
@@ -192,17 +197,26 @@ On a `-release` image there is no SSH and no readable journal, so **the console
 is the only channel**, and a failure is written there with the authority it
 tried and the tail of the attempt's own output:
 
-- the full block is printed for the first 3 attempts, again whenever the reason
-  changes, and then once every 60 attempts (hourly at `RestartSec=60`); in
-  between a single `still failing (attempt N)` line keeps the outage visible.
-  The console is a bounded shared buffer — Azure boot diagnostics and nova
-  `console-log` both keep only a tail — and an unthrottled block would push the
-  original boot output out of the very logs collected as forensics. The journal
-  keeps every block, and the health file is per-attempt regardless;
-- lines longer than 200 characters, lines with a PEM marker and lines
-  containing a long base64/hex run are dropped rather than truncated. The
-  console on a confidential VM is outside the TEE boundary and the tail is
-  another repository's debug output; a half-printed key is still a leak.
+- the full block is printed for the first 3 attempts, again whenever the failure
+  changes **kind** (`reason_class`, not the rendered `reason` — keying on the
+  text makes every attempt look new, because the elapsed seconds move), and then
+  once every 60 attempts (hourly at `RestartSec=60`); in between a single
+  `still failing (attempt N)` line keeps the outage visible. The console is a
+  bounded shared buffer — Azure boot diagnostics and nova `console-log` both keep
+  only a tail — and an unthrottled block would push the original boot output out
+  of the very logs collected as forensics: measured at 4.06 MB against 0.20 MB
+  over a 25-hour outage. The journal keeps every block, and the health file is
+  per-attempt regardless;
+- key-shaped **tokens** are redacted, not whole lines. A run of 40+ base64/hex
+  characters becomes `<329abfac... 64-char token redacted>`, which keeps enough
+  head to compare a CA fingerprint or an `mrEnclave` against the authority's —
+  a CA mismatch is the common root cause — while eight characters of a private
+  key is not a leak. A line with a PEM header is dropped whole, since the header
+  announces a key block. The 2000-character line cap is only a bound on how much
+  one line may take from the console, not a security control: `pki-sync-client`
+  logs one default-pino JSON object per line and its error lines run 230–245
+  characters, so a cap near that length drops precisely the lines that diagnose
+  the node.
 
 While synchronization keeps failing, `swarm-db`, `swarm-node` and
 `swarm-services` stay down and `:9443` never opens, exactly as before. The

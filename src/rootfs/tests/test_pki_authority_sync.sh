@@ -79,6 +79,15 @@ attempt_timeout="$(sed -n 's/^readonly attempt_timeout="\${SP_PKI_SYNC_ATTEMPT_T
 (( attempt_timeout < start_timeout )) \
     || fail "attempt timeout ${attempt_timeout}s >= TimeoutStartSec ${start_timeout}s: systemd would kill the script before it reports"
 
+# The console line cap is a bound on console volume, not a security control -
+# key material is caught by shape. pki-sync-client logs one default-pino JSON
+# object per line and its error lines measure 230-245 characters, so a cap near
+# that length silently drops exactly the lines that diagnose the node.
+max_line_chars="$(sed -n 's/^readonly max_line_chars="\${SP_PKI_SYNC_MAX_LINE_CHARS:-\([0-9]*\)}".*/\1/p' "$sync_script")"
+[[ "$max_line_chars" =~ ^[0-9]+$ ]] || fail "could not read the script's default console line cap"
+(( max_line_chars > 300 )) \
+    || fail "line cap ${max_line_chars} is not clear of pki-sync-client's 230-245 char log lines"
+
 if command -v systemd-analyze >/dev/null 2>&1; then
     verify_dir="$test_root/verify"
     mkdir -p "$verify_dir"
@@ -134,6 +143,30 @@ case "$SP_TEST_NODE_BEHAVIOUR" in
         echo "connecting to authority"
         sleep 300
         ;;
+    slow-reject)
+        # Alternates 0s/1s so the rendered reason ("...after Ns") differs
+        # between consecutive attempts while the failure KIND does not. This is
+        # the shape the real client has - it tries each server with backoff, so
+        # the elapsed seconds move with network jitter - and a throttle keyed on
+        # the rendered string prints its full block every single attempt.
+        count=$(( $(cat "$SP_TEST_SLOW_COUNTER" 2>/dev/null || echo 0) + 1 ))
+        printf '%s\n' "$count" >"$SP_TEST_SLOW_COUNTER"
+        (( count % 2 == 0 )) && sleep 1
+        echo "connecting to authority"
+        echo "authority rejected the CSR: unknown CA" >&2
+        exit 3
+        ;;
+    pino)
+        # The real pki-sync-client shape: default pino, one JSON object per
+        # line, level/time/pid/hostname plus the {server, challengeType} child
+        # context from sync-client.ts, which puts its error lines at 230-245
+        # characters. Measured against pino's default field set.
+        echo '{"level":30,"time":1792418540082,"pid":1832211,"hostname":"swarm-node-2","server":"10.0.0.10:9443","challengeType":"sev-snp","msg":"Trying sync server"}'
+        echo '{"level":50,"time":1792418540082,"pid":1832211,"hostname":"swarm-node-2","server":"10.0.0.10:9443","challengeType":"sev-snp","msg":"Failed attempt 3/3 for sync server: unable to verify the first certificate. Reason: tls-verification-failed"}' >&2
+        echo '{"level":50,"time":1792418540082,"pid":1832211,"hostname":"swarm-node-2","server":"10.0.0.10:9443","challengeType":"sev-snp","msg":"Error is not retryable for sync server; moving to next server. Reason: tls-verification-failed"}' >&2
+        echo '{"level":50,"time":1792418540082,"pid":1832211,"hostname":"swarm-node-2","server":"10.0.0.10:9443","challengeType":"sev-snp","msg":"caBundle fingerprint 329abfac433bc14636fe85052f8ba542132a77eb82d34a5c96de0f0676198706 does not match"}' >&2
+        exit 1
+        ;;
     leak)
         echo "connecting to authority"
         echo "-----BEGIN PRIVATE KEY-----" >&2
@@ -164,8 +197,10 @@ run_sync() {
     SP_PKI_SYNC_STATE_DIR="$case_dir/state" \
     SP_PKI_SYNC_CONSOLE="$case_dir/console" \
     SP_PKI_SYNC_ATTEMPT_TIMEOUT="$attempt_timeout_override" \
+    SP_PKI_SYNC_MAX_LINE_CHARS="${SP_TEST_MAX_LINE_CHARS:-$max_line_chars}" \
     SP_TEST_NODE_BEHAVIOUR="$behaviour" \
     SP_TEST_NODE_ARGV_LOG="$case_dir/argv.log" \
+    SP_TEST_SLOW_COUNTER="$case_dir/slow-counter" \
         "$sync_script" >"$case_dir/stdout" 2>"$case_dir/stderr"
 }
 
@@ -257,6 +292,47 @@ run_sync "$rate_dir" hang 1 && fail "the post-recovery sync exited 0"
 grep -q 'FAILED (attempt 21)' "$rate_dir/console" \
     || fail "a failure after a success was throttled as a repeat"
 
+# The throttle must key on the failure KIND, not on the rendered reason. The
+# reject/hang fixtures above hold the duration still (they return instantly, so
+# "after 0s" never moves), which is exactly how a string-keyed throttle passes
+# while never engaging on a real node.
+vary_dir="$test_root/varying-duration"
+make_env "$vary_dir"
+for i in $(seq 1 8); do
+    run_sync "$vary_dir" slow-reject && fail "varying-duration sync $i exited 0"
+done
+full_blocks="$(grep -c 'FAILED (attempt' "$vary_dir/console")"
+[[ "$full_blocks" == "3" ]] \
+    || fail "a rejection whose duration varies printed $full_blocks full blocks, expected 3"
+[[ "$(grep -c 'still failing' "$vary_dir/console")" == "5" ]] \
+    || fail "the throttled attempts did not each leave their one-liner"
+# The per-attempt detail must survive where precision is wanted, just not in the key.
+grep -q '"reason_class": "exit-3"' "$vary_dir/state/pki-authority-sync.json" \
+    || fail "the health state lost the stable reason class"
+grep -qE '"reason": "pki-sync-client exited with code 3 after [0-9]+s"' \
+    "$vary_dir/state/pki-authority-sync.json" \
+    || fail "the health state lost the per-attempt elapsed seconds"
+[[ "$(cat "$vary_dir/state/pki-authority-sync.last-reason")" == "exit-3" ]] \
+    || fail "the throttle key is not the reason class"
+
+# The real client's lines are 230-245 characters: a cap near that length drops
+# precisely the lines that diagnose the node.
+pino_dir="$test_root/pino"
+make_env "$pino_dir"
+run_sync "$pino_dir" pino && fail "the pino-shaped sync exited 0"
+grep -q 'unable to verify the first certificate' "$pino_dir/console" \
+    || fail "the line cap dropped the error that explains the failure"
+grep -q 'moving to next server' "$pino_dir/console" \
+    || fail "the line cap dropped the retry verdict"
+# A fingerprint is key-SHAPED but is the SUP-370 root cause: redact the token,
+# keep enough head to compare it against the authority's, keep the prose.
+! grep -q '329abfac433bc14636fe85052f8ba542132a77eb82d34a5c96de0f0676198706' "$pino_dir/console" \
+    || fail "a 64-char token reached the console whole"
+grep -q '329abfac\.\.\. 64-char token redacted' "$pino_dir/console" \
+    || fail "the redacted token kept no comparable head"
+grep -q 'does not match' "$pino_dir/console" \
+    || fail "redacting the token also threw away the message around it"
+
 # /dev/console on a confidential VM is outside the TEE boundary, and the tail is
 # another repository's debug output: nothing key-shaped may reach it.
 leak_dir="$test_root/leak"
@@ -267,7 +343,17 @@ run_sync "$leak_dir" leak && fail "the leaking sync exited 0"
 ! grep -q 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDexampleexample' "$leak_dir/console" \
     || fail "a base64 run reached the console"
 ! grep -qE 'A{250}' "$leak_dir/console" \
-    || fail "an over-long line reached the console instead of being dropped"
+    || fail "a long run of identical characters reached the console"
+# The shape detector, not the line cap, is what makes this safe: the same
+# assertions must hold with the cap raised far out of the way.
+SP_TEST_MAX_LINE_CHARS=100000 run_sync "$leak_dir" leak \
+    && fail "the leaking sync exited 0 with the cap raised"
+! grep -q 'BEGIN PRIVATE KEY' "$leak_dir/console" \
+    || fail "the line cap, not the shape detector, was holding back the PEM marker"
+! grep -q 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDexampleexample' "$leak_dir/console" \
+    || fail "the line cap, not the shape detector, was holding back the base64 run"
+! grep -qE 'A{250}' "$leak_dir/console" \
+    || fail "the line cap, not the shape detector, was holding back the long run"
 grep -q 'suppressed' "$leak_dir/console" \
     || fail "suppressed lines left no marker, so the gap is invisible"
 grep -q 'authority rejected the CSR: unknown CA' "$leak_dir/console" \
