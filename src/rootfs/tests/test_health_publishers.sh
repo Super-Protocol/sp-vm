@@ -114,6 +114,26 @@ run_publish --unit node-serving.service --state ok --reason-class x \
     --reason "" --ttl-sec 60 && fail "a state with no reason was accepted"
 run_publish --unit node-serving.service --state ok --reason-class x \
     --reason y --ttl-sec 60 --bool 'ca_ok=maybe' && fail "a non-boolean --bool value was accepted"
+# A --bool that collides with a record field emits a DUPLICATE JSON key, and a
+# duplicate key is not an error to a parser - the last one wins. So this would
+# have produced {state: "ok", ..., terminal: true}: exactly the record the
+# --terminal rule below exists to make unconstructible, arriving at the
+# endpoint looking like a legitimate terminal verdict.
+for reserved in schema unit state terminal gate ttl_sec exit_code reason_class reason updated_at; do
+    run_publish --unit node-serving.service --state ok --reason-class x --reason y \
+        --ttl-sec 60 --bool "$reserved=true" \
+        && fail "--bool $reserved was accepted: it would override the record's own $reserved"
+done
+# Same defect between two --bool flags.
+run_publish --unit node-serving.service --state ok --reason-class x --reason y \
+    --ttl-sec 60 --bool ca_ok=true --bool ca_ok=false \
+    && fail "a duplicate --bool key was accepted: the second would override the first"
+# And the legitimate shape is untouched by the new rule.
+run_publish --unit node-serving.service --state ok --reason-class serving --reason y \
+    --ttl-sec 60 --bool ca_ok=true --bool membership_ok=false \
+    || fail "the new --bool rules rejected a legitimate pair of flags"
+[[ "$(json_field "$record" state)" == "ok" ]] || fail "the legitimate pair did not publish"
+grep -q '"membership_ok": false,' "$record" || fail "the second legitimate --bool was lost"
 run_publish --unit node-serving.service --state ok --reason-class x \
     --reason y --ttl-sec 60 --terminal true \
     && fail "terminal was accepted on a state that is not failed"
@@ -151,7 +171,7 @@ fi
 
 make_probe_env() {
     local case_dir="$1" ca_mode="$2" members_mode="$3"
-    mkdir -p "$case_dir/state"
+    mkdir -p "$case_dir/state" "$case_dir/run"
     cat >"$case_dir/swarm-db-config.yaml" <<'YAML'
 memberlist:
   advertise_addr: 203.0.113.17
@@ -204,6 +224,7 @@ run_probe() {
     local case_dir="$1" budget="${2:-1800}"
     SP_HEALTH_PUBLISH="$publish" \
     SP_HEALTH_STATE_DIR="$case_dir/state" \
+    SP_NODE_SERVING_RUNTIME_DIR="$case_dir/run" \
     SP_CURL="$case_dir/fake-curl" \
     SP_NODE_SERVING_SWARM_DB_CONFIG="$case_dir/swarm-db-config.yaml" \
     SP_NODE_SERVING_BUDGET="$budget" \
@@ -291,12 +312,61 @@ budget_record="$budget_dir/state/node-serving.json"
     || fail "node-serving published a terminal verdict; only a gate may do that"
 
 # Rewind the first-run marker past the budget rather than waiting for it.
-printf '%s\n' "$(( $(date -u '+%s') - 2000 ))" >"$budget_dir/state/node-serving.first-run"
+printf '%s\n' "$(( $(date -u '+%s') - 2000 ))" >"$budget_dir/run/first-run"
 run_probe "$budget_dir" 1800 || fail "the past-budget probe exited non-zero"
 [[ "$(json_field "$budget_record" state)" == "failed" ]] \
     || fail "a node past its bring-up budget was still reported as attempting - the SUP-370 shape"
 [[ "$(json_field "$budget_record" terminal)" == "false" ]] \
     || fail "an exhausted budget was published as terminal"
+
+# --- the sentinel is the only thing that makes the budget advance -----------
+# Every case above starts from a well-formed sentinel, which is exactly how a
+# zero-budget bug hides: testing the sentinel's EXISTENCE rather than its
+# CONTENT left first_run at `now` on every run, so elapsed was 0 for the life
+# of the boot and `failed` was unreachable. The record stayed `attempting`, was
+# rewritten every 30s and so never went stale either - the endpoint cannot
+# catch this one, and the rollup reads `booting` forever. SUP-370's
+# never-clearing condition, reproduced by the code meant to report it.
+#
+# A truncated sentinel is not hypothetical: the probe's own write truncates
+# before it writes, so a kill or a full tmpfs in between leaves exactly this.
+for broken in '' $'\n' 'not-a-number' '12x34'; do
+    sentinel_dir="$test_root/sentinel-$(printf '%s' "${broken:-empty}" | tr -cd '[:alnum:]')x"
+    make_probe_env "$sentinel_dir" down absent
+    printf '%s' "$broken" >"$sentinel_dir/run/first-run"
+    run_probe "$sentinel_dir" 1 || fail "the broken-sentinel probe exited non-zero"
+    repaired="$(cat "$sentinel_dir/run/first-run")"
+    [[ "$repaired" =~ ^[0-9]+$ ]] \
+        || fail "an unusable sentinel was not rewritten, so the budget can never advance: '[$repaired]'"
+    # And with a usable sentinel in place, the budget actually fires.
+    printf '%s\n' "$(( $(date -u '+%s') - 100 ))" >"$sentinel_dir/run/first-run"
+    run_probe "$sentinel_dir" 1 || fail "the repaired-sentinel probe exited non-zero"
+    [[ "$(json_field "$sentinel_dir/state/node-serving.json" state)" == "failed" ]] \
+        || fail "the budget did not fire after the sentinel was repaired"
+done
+
+# A sentinel AHEAD of now cannot be a first-run time, and chrony steps the
+# clock during boot - so this is ordinary, not corruption. Restarting the
+# budget is right; freezing it at zero is not.
+future_dir="$test_root/sentinel-future"
+make_probe_env "$future_dir" down absent
+printf '%s\n' "$(( $(date -u '+%s') + 99999 ))" >"$future_dir/run/first-run"
+run_probe "$future_dir" 1800 || fail "the future-sentinel probe exited non-zero"
+(( $(cat "$future_dir/run/first-run") <= $(date -u '+%s') )) \
+    || fail "a sentinel in the future was kept, so the budget would never advance"
+
+# --- /run/sp-health holds RECORDS ONLY -------------------------------------
+# The endpoint enumerates this directory on an unauthenticated port, so every
+# non-record file in it is one filter bug away from being served. The probe's
+# budget sentinel lives in its own /run directory for that reason.
+while IFS= read -r stray; do
+    case "$(basename "$stray")" in
+        *.json) ;;
+        *) fail "the records directory holds a non-record file: $(basename "$stray")" ;;
+    esac
+done < <(find "$budget_dir/state" -type f)
+[[ -f "$budget_dir/run/first-run" ]] \
+    || fail "the budget sentinel is not in the publisher's own per-boot runtime directory"
 
 # And it recovers: the record is a witness, not a latch.
 printf '%s' pem >"$budget_dir/ca-mode"
@@ -306,9 +376,10 @@ run_probe "$budget_dir" 1800 || fail "the recovering probe exited non-zero"
     || fail "a node that started serving stayed failed"
 
 # The budget is measured from the first run SINCE BOOT, and /run is tmpfs - so
-# the marker must live in the state directory and nowhere persistent.
-[[ -f "$budget_dir/state/node-serving.first-run" ]] \
-    || fail "the budget's first-run marker is not in the per-boot state directory"
+# the marker must live under /run and nowhere persistent. Asserted on the
+# script's own default rather than on the test's override.
+grep -q 'SP_NODE_SERVING_RUNTIME_DIR:-/run/' "$probe" \
+    || fail "the budget sentinel's default location is not under /run, so it could outlive its boot"
 
 # --- ttl_sec is twice the TIMER INTERVAL, not twice an attempt -------------
 # For a repeating publisher the ttl bounds the gap between writes. Get this

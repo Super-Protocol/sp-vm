@@ -33,7 +33,12 @@ set -uo pipefail
 readonly unit_name="node-serving.service"
 readonly publish="${SP_HEALTH_PUBLISH:-/usr/local/bin/sp-health-publish}"
 readonly state_dir="${SP_HEALTH_STATE_DIR:-/run/sp-health}"
-readonly first_run_file="${state_dir}/node-serving.first-run"
+# Scratch state, NOT in the records directory: /run/sp-health holds records only
+# (one *.json per unit), because the endpoint enumerates it on an
+# unauthenticated port and every non-record file in it is one filter bug away
+# from being served. Still under /run, so it is still per-boot.
+readonly runtime_dir="${SP_NODE_SERVING_RUNTIME_DIR:-/run/sp-node-serving}"
+readonly first_run_file="${runtime_dir}/first-run"
 
 readonly curl_cmd="${SP_CURL:-/usr/bin/curl}"
 readonly pki_url="${SP_NODE_SERVING_PKI_URL:-https://127.0.0.1:9443/api/v1/pki/certs/ca}"
@@ -119,18 +124,42 @@ probe_membership() {
 }
 
 install -d -m 0755 "$state_dir" 2>/dev/null || true
+install -d -m 0755 "$runtime_dir" 2>/dev/null || true
 
 now="$(date -u '+%s')"
-first_run="$now"
+
+# The sentinel is the ONLY thing that makes the budget advance, so it is
+# validated by CONTENT and rewritten whenever the content is unusable. Testing
+# existence instead was a latent zero-budget bug: an empty or non-numeric
+# sentinel left first_run at `now` on every single run, so elapsed was 0 for
+# the life of the boot and `failed` could never be reached - the record stayed
+# `attempting`, was rewritten every 30s and therefore always fresh, and the
+# rollup read `booting` forever. SUP-370's never-clearing condition, reproduced
+# at the reporting layer by the code meant to report it. A truncated file is
+# not hypothetical: the write below truncates before it writes, so a kill or a
+# full tmpfs in between leaves exactly that.
+#
+# /run is tmpfs, so a valid sentinel is always the first run SINCE BOOT, which
+# is what the budget has to be measured from. A reboot restarts the clock, and
+# should.
+first_run=""
 if [[ -r "$first_run_file" ]]; then
-    recorded="$(tr -cd '[:digit:]' <"$first_run_file")"
-    [[ -n "$recorded" ]] && first_run="$recorded"
+    # Whitespace stripped, nothing else: `tr -cd '[:digit:]'` would launder
+    # "12x34" into the plausible-looking epoch 1234, accepting garbage instead
+    # of repairing it.
+    recorded="$(tr -d '[:space:]' <"$first_run_file" 2>/dev/null)"
+    # A sentinel AHEAD of now cannot be a first-run time. chrony steps the
+    # clock during boot, so this is the ordinary case rather than a corruption:
+    # restarting the budget is right, freezing it at zero is not.
+    if [[ "$recorded" =~ ^[0-9]+$ ]] && (( recorded <= now )); then
+        first_run="$recorded"
+    fi
 fi
-# /run is tmpfs, so this is the first run SINCE BOOT - which is what the budget
-# has to be measured from. A reboot restarts the clock, and should.
-[[ -e "$first_run_file" ]] || printf '%s\n' "$first_run" >"$first_run_file" 2>/dev/null || true
+if [[ -z "$first_run" ]]; then
+    first_run="$now"
+    printf '%s\n' "$first_run" >"$first_run_file" 2>/dev/null || true
+fi
 elapsed=$((now - first_run))
-(( elapsed < 0 )) && elapsed=0
 
 ca_ok=false
 membership_ok=false

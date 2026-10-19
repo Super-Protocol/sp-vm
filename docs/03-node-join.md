@@ -164,6 +164,17 @@ the `sp.unit-health/v1` format, and `:9180/v1/nodeHealth` aggregates the
 directory. There is no central writer, so a unit that is dead cannot lie by
 omission, and `/run` is tmpfs, so the whole surface is per-boot by construction.
 
+**`/run/sp-health` holds records only — one `*.json` per unit.** The endpoint
+enumerates this directory on an unauthenticated port, so every non-record file
+in it is one filter bug away from being served, and a publisher's scratch state
+is the worst possible neighbour: `pki-authority-sync.log` is raw, unredacted
+client output — the same file that carried the leaked key in SUP-372. The
+endpoint does filter to regular `*.json` files, but that should be a second line
+of defence rather than the only one. Scratch state belongs in the publisher's
+own `/run/<unit>/` directory, which is where `sp-node-serving-probe` keeps its
+budget sentinel. Moving `pki-authority-sync`'s log and attempt counter out is
+the follow-up that converges the three writers of this format.
+
 `sp-health-publish` is the single writer of that format. It validates everything
 it is given — the state must be `attempting`, `ok` or `failed`; `ttl_sec` must be
 a positive number of seconds; `terminal` is only meaningful on a failure; a
@@ -208,6 +219,19 @@ Three numbers, all chosen here rather than in the contract:
 | `ttl_sec` | **60 s** | twice the **timer interval**. For a repeating publisher the ttl bounds the gap between writes, not the length of one attempt. `OnUnitActiveSec` measures from the previous activation, so a write lands every 30 s while the probe completes — and it is capped at 5 s per call with `TimeoutStartSec=20` as a backstop. The only way to reach 60 s between writes is a probe that gets killed by that backstop, and a record that then reads as stale is the correct verdict for a probe that is not completing. |
 | bring-up budget | **1800 s** | how long the node may legitimately take to reach `serving` before `attempting` becomes `failed`. The slowest honest path is the 1200 s GPU readiness barrier *before* `pki-cert-init` even starts, plus PKI sync, SwarmDB, `swarm-node` and gossip convergence — call it 20 + 10 minutes. Shorter, and every GPU node reports a failure while it is simply booting. |
 
+
+The budget is measured from a sentinel in `/run/sp-node-serving/first-run`,
+written on the first run since boot. It is validated by **content**, not
+existence, and rewritten whenever the content is unusable — empty, non-numeric,
+or dated in the future. That matters more than it looks: testing existence
+instead holds the start time at *now* on every run, so the elapsed time is
+always 0, `failed` is unreachable, and the record stays `attempting` while being
+rewritten every 30 s and therefore never going stale either. The endpoint cannot
+catch that one; the rollup simply reads `booting` forever — SUP-370's
+never-clearing condition, reproduced by the code meant to report it. A truncated
+sentinel is not hypothetical, since the write truncates before it writes. And a
+sentinel dated in the future is ordinary rather than corrupt — chrony steps the
+clock during boot — so the budget restarts instead of freezing.
 The verdict is never `terminal`. This unit is a witness, not an authority on
 impossibility: a node can start serving at any later point, and the record flips
 straight back to `ok` when both probes pass. The verdicts that end a wait come
