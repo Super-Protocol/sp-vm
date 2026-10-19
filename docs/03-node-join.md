@@ -207,16 +207,30 @@ tried and the tail of the attempt's own output:
   of the very logs collected as forensics: measured at 4.06 MB against 0.20 MB
   over a 25-hour outage. The journal keeps every block, and the health file is
   per-attempt regardless;
-- key-shaped **tokens** are redacted, not whole lines. A run of 40+ base64/hex
-  characters becomes `<329abfac... 64-char token redacted>`, which keeps enough
-  head to compare a CA fingerprint or an `mrEnclave` against the authority's —
-  a CA mismatch is the common root cause — while eight characters of a private
-  key is not a leak. A line with a PEM header is dropped whole, since the header
-  announces a key block. The 2000-character line cap is only a bound on how much
-  one line may take from the console, not a security control: `pki-sync-client`
-  logs one default-pino JSON object per line and its error lines run 230–245
-  characters, so a cap near that length drops precisely the lines that diagnose
-  the node.
+- key-shaped **tokens** are redacted out of a line rather than the line being
+  dropped, so the message around them survives. A run of 40+ characters is
+  treated by shape:
+  - **hex** keeps a short head — `<329abfac... 64-char token redacted>` — which
+    is what makes a CA fingerprint or an `mrEnclave` comparable against the
+    authority's. A CA mismatch is the common root cause, so that token is the
+    most useful thing on the console;
+  - **base64** is suppressed with no head — `<64-char token redacted>`. The head
+    of a secret was never diagnostic, and a PEM body line is nothing *but* a
+    token: 8 characters from each of 25 body lines is 200 uniformly-sampled
+    characters of a private key;
+- a whole **PEM block** is suppressed, `-----BEGIN` through `-----END`, not just
+  its header. The last body line of a key is short enough not to be a token at
+  all, so no per-line rule can reach it. A block whose `-----BEGIN` has already
+  scrolled out of the tail window is detected by its `-----END`, and a block
+  with no `-----END` inside the window suppresses everything after it — losing
+  the rest of the tail is the right trade against leaking a key. A line that
+  merely quotes a marker inside a message is dropped on its own and does not
+  open a block;
+- the 2000-character line cap is only a bound on how much one line may take from
+  the console, **not** a security control — the shape rules above are. It matters
+  that it stays well clear of the real lines: `pki-sync-client` logs one
+  default-pino JSON object per line and its error lines run 230–245 characters,
+  so a cap near that length drops precisely the lines that diagnose the node.
 
 While synchronization keeps failing, `swarm-db`, `swarm-node` and
 `swarm-services` stay down and `:9443` never opens, exactly as before. The

@@ -79,10 +79,16 @@ readonly last_reason_file="${state_dir}/pki-authority-sync.last-reason"
 # A cap anywhere near that drops precisely the lines that diagnose the node.
 readonly max_line_chars="${SP_PKI_SYNC_MAX_LINE_CHARS:-2000}"
 # 40 base64/hex characters in a row is not something a message contains by
-# accident. Keeping a short head leaves a CA fingerprint or an mrEnclave
-# comparable against the authority's - a CA mismatch is the SUP-370 root cause,
-# so that token is the most useful thing on the console - while eight
-# characters of a private key is not a leak.
+# accident. Only HEX tokens keep a head: hex is the shape a CA fingerprint, an
+# mrEnclave or a digest arrives in, and the head is what makes it comparable
+# with the authority's - a CA mismatch is the SUP-370 root cause, so that token
+# is the most useful thing on the console. Base64 is the shape key material
+# arrives in, and a head of it was never diagnostic, so those are suppressed
+# whole: a PEM body line is nothing BUT a token, and 8 characters from each of
+# 25 of them is 200 uniformly-sampled characters of a private key.
+# The residual is a hex-encoded secret, which would give up its first 8
+# characters. Nothing on this path logs one today, and a 64-hex digest cannot
+# be told from a 64-hex key without context, so the fingerprint is worth more.
 readonly token_min_chars="${SP_PKI_SYNC_TOKEN_MIN_CHARS:-40}"
 readonly token_head_chars="${SP_PKI_SYNC_TOKEN_HEAD_CHARS:-8}"
 
@@ -140,7 +146,7 @@ write_state() {
         printf '  "attempt": %s,\n' "$attempt"
         printf '  "exit_code": %s,\n' "${exit_code:-null}"
         printf '  "reason": "%s",\n' "$(sanitize "$reason")"
-        printf '  "reason_class": "%s",\n' "$reason_class"
+        printf '  "reason_class": "%s",\n' "$(sanitize "$reason_class")"
         printf '  "authority_servers": %s,\n' "$(servers_json "$servers")"
         printf '  "attempt_log": "%s",\n' "$attempt_log"
         printf '  "updated_at": "%s"\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -158,15 +164,29 @@ console_say() {
     printf '%s\n' "$@" >>"$console" 2>/dev/null || true
 }
 
+# Matches a line that IS a PEM delimiter, not one that merely mentions a marker
+# inside a message: a JSON log line quoting "-----BEGIN CERTIFICATE-----" must
+# not open a block and swallow the rest of the tail. redact() drops such a line
+# on its own.
+is_pem_delimiter() {
+    [[ "${1-}" =~ ^[[:space:]]*-----(BEGIN|END)[[:space:]A-Za-z0-9]*-----[[:space:]]*$ ]]
+}
+is_pem_end() {
+    [[ "${1-}" =~ ^[[:space:]]*-----END[[:space:]A-Za-z0-9]*-----[[:space:]]*$ ]]
+}
+
 # Redacts the key-shaped TOKENS out of a line and keeps the prose around them:
 # the message is what diagnoses the node, and dropping the whole line to be rid
-# of one token throws the diagnosis away with it. A PEM header is the exception -
-# it announces a key block rather than carrying one, so the line goes.
+# of one token throws the diagnosis away with it. A line that mentions a PEM
+# marker at all is the exception and goes whole.
+#
+# Whole PEM blocks are handled by the caller, not here: this runs inside a
+# command substitution, so any state it kept would die with the subshell.
 redact() {
     local line rest out tok pattern
     line="$(sanitize "${1-}")"
-    if [[ "$line" == *-----BEGIN* ]]; then
-        printf '<suppressed: PEM header>'
+    if [[ "$line" == *-----BEGIN* ]] || [[ "$line" == *-----END* ]]; then
+        printf '<suppressed: PEM marker>'
         return 0
     fi
     if (( ${#line} > max_line_chars )); then
@@ -178,7 +198,11 @@ redact() {
     out=""
     while [[ "$rest" =~ $pattern ]]; do
         tok="${BASH_REMATCH[0]}"
-        out+="${rest%%"$tok"*}<${tok:0:$token_head_chars}... ${#tok}-char token redacted>"
+        if [[ "$tok" =~ ^[0-9a-fA-F]+$ ]]; then
+            out+="${rest%%"$tok"*}<${tok:0:$token_head_chars}... ${#tok}-char token redacted>"
+        else
+            out+="${rest%%"$tok"*}<${#tok}-char token redacted>"
+        fi
         rest="${rest#*"$tok"}"
     done
     printf '%s%s' "$out" "$rest"
@@ -207,9 +231,40 @@ report_failure() {
     )
     if [[ -s "$attempt_log" ]]; then
         lines+=("last ${error_tail_lines} line(s) of the attempt:")
+        local -a tail_lines=()
         while IFS= read -r line; do
-            lines+=("  $(redact "$line")")
+            tail_lines+=("$line")
         done < <(tail -n "$error_tail_lines" "$attempt_log")
+
+        # A PEM body line is nothing but base64, and its last line is short
+        # enough not to be a token at all - no per-line rule can catch that one.
+        # So the block is suppressed as a block, BEGIN through END.
+        local in_pem=0 announced=0
+        # The window can open inside a block whose BEGIN has already scrolled
+        # out of it. If the first delimiter we meet is an END, everything before
+        # it is key body.
+        for line in "${tail_lines[@]}"; do
+            is_pem_delimiter "$line" || continue
+            is_pem_end "$line" && in_pem=1
+            break
+        done
+        for line in "${tail_lines[@]}"; do
+            if is_pem_delimiter "$line"; then
+                in_pem=1
+            fi
+            if (( in_pem )); then
+                if (( ! announced )); then
+                    lines+=("  <suppressed: PEM block>")
+                    announced=1
+                fi
+                if is_pem_end "$line"; then
+                    in_pem=0
+                    announced=0
+                fi
+                continue
+            fi
+            lines+=("  $(redact "$line")")
+        done
     fi
     lines+=(
         "systemd retries this unit on its own; boot is no longer blocked (SUP-372)."

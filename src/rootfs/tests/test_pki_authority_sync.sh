@@ -167,12 +167,39 @@ case "$SP_TEST_NODE_BEHAVIOUR" in
         echo '{"level":50,"time":1792418540082,"pid":1832211,"hostname":"swarm-node-2","server":"10.0.0.10:9443","challengeType":"sev-snp","msg":"caBundle fingerprint 329abfac433bc14636fe85052f8ba542132a77eb82d34a5c96de0f0676198706 does not match"}' >&2
         exit 1
         ;;
+    pem)
+        # A private key as it really arrives: a BEGIN/END block whose body lines
+        # are nothing but base64, and whose LAST body line is short enough not
+        # to be a token at all - no per-line rule can reach that one. Around it,
+        # the shapes that must still survive or still be suppressed.
+        echo '{"level":50,"msg":"caBundle fingerprint 6624582b433bc14636fe85052f8ba542132a77eb82d34a5c96de0f0676198706 does not match"}' >&2
+        echo 'swarm key was aGVsbG93b3JsZGhlbGxvd29ybGRoZWxsb3dvcmxkaGVsbG93b3JsZA== and failed' >&2
+        # Mentions a marker inside a message: must be dropped on its own without
+        # opening a block and swallowing everything after it.
+        echo '{"level":50,"msg":"unable to parse -----BEGIN CERTIFICATE----- block"}' >&2
+        # Sits between the quoted marker and the real block's END, so it is
+        # exactly what a substring delimiter match would swallow.
+        echo 'diagnosis after a quoted marker: tls-verification-failed' >&2
+        echo '-----BEGIN PRIVATE KEY-----' >&2
+        echo 'KEYAAAAAb3JsZGhlbGxvd29ybGRoZWxsb3dvcmxkaGVsbG93b3JsZGhlbGxvd29y' >&2
+        echo 'KEYBBBBBb3JsZGhlbGxvd29ybGRoZWxsb3dvcmxkaGVsbG93b3JsZGhlbGxvd29y' >&2
+        echo 'KEYCCCCCb3JsZGhlbGxvd29ybGRoZWxsb3dvcmxkaGVsbG93b3JsZGhlbGxvd29y' >&2
+        echo 'KEYZZZZZshorttail==' >&2
+        echo '-----END PRIVATE KEY-----' >&2
+        echo 'trailing diagnosis: not retryable; moving to next server' >&2
+        exit 1
+        ;;
     leak)
+        # Shapes that must be caught line by line, outside any PEM block, with
+        # the ordinary error kept. The unterminated BEGIN comes last on purpose:
+        # a block with no END inside the window must suppress everything after
+        # it, so it cannot sit above lines the test expects to survive.
         echo "connecting to authority"
-        echo "-----BEGIN PRIVATE KEY-----" >&2
-        echo "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDexampleexample" >&2
+        echo "token: MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDexampleexample" >&2
         echo "x: $(printf 'A%.0s' $(seq 1 300))" >&2
         echo "authority rejected the CSR: unknown CA" >&2
+        echo "-----BEGIN PRIVATE KEY-----" >&2
+        echo "LEAKEDBODYb3JsZGhlbGxvd29ybGRoZWxsb3dvcmxkaGVsbG93b3JsZGhlbGxv" >&2
         exit 3
         ;;
     *)
@@ -198,6 +225,7 @@ run_sync() {
     SP_PKI_SYNC_CONSOLE="$case_dir/console" \
     SP_PKI_SYNC_ATTEMPT_TIMEOUT="$attempt_timeout_override" \
     SP_PKI_SYNC_MAX_LINE_CHARS="${SP_TEST_MAX_LINE_CHARS:-$max_line_chars}" \
+    SP_PKI_SYNC_ERROR_TAIL_LINES="${SP_TEST_ERROR_TAIL_LINES:-20}" \
     SP_TEST_NODE_BEHAVIOUR="$behaviour" \
     SP_TEST_NODE_ARGV_LOG="$case_dir/argv.log" \
     SP_TEST_SLOW_COUNTER="$case_dir/slow-counter" \
@@ -333,6 +361,55 @@ grep -q '329abfac\.\.\. 64-char token redacted' "$pino_dir/console" \
 grep -q 'does not match' "$pino_dir/console" \
     || fail "redacting the token also threw away the message around it"
 
+# A per-token head is safe for a digest and catastrophic for a key: a PEM body
+# line is nothing but a token, so 8 characters from each of 25 of them is 200
+# uniformly-sampled characters of the key. The block has to go as a block.
+pem_dir="$test_root/pem"
+make_env "$pem_dir"
+run_sync "$pem_dir" pem && fail "the key-leaking sync exited 0"
+for head in KEYAAAAA KEYBBBBB KEYCCCCC; do
+    ! grep -q "$head" "$pem_dir/console" \
+        || fail "a PEM body line gave up its first characters as a token head ($head)"
+done
+! grep -q 'KEYZZZZZshorttail==' "$pem_dir/console" \
+    || fail "the short final PEM body line reached the console in full"
+! grep -q -- '-----END' "$pem_dir/console" \
+    || fail "the PEM END delimiter reached the console"
+[[ "$(grep -c '<suppressed: PEM block>' "$pem_dir/console")" == "1" ]] \
+    || fail "the PEM block was not announced exactly once"
+# Hex keeps a head - a fingerprint is the SUP-370 diagnosis. Base64 does not:
+# the head of a secret was never diagnostic.
+grep -q '6624582b\.\.\. 64-char token redacted' "$pem_dir/console" \
+    || fail "a hex fingerprint lost its comparable head"
+! grep -q 'aGVsbG93' "$pem_dir/console" \
+    || fail "a base64 token gave up a head"
+grep -q '<56-char token redacted>' "$pem_dir/console" \
+    || fail "a base64 token was not suppressed without a head"
+grep -q 'does not match' "$pem_dir/console" \
+    || fail "redacting the fingerprint threw away the message around it"
+# A marker quoted inside a log message must drop that line only - not open a
+# block and swallow the rest of the tail.
+grep -q 'moving to next server' "$pem_dir/console" \
+    || fail "a quoted PEM marker swallowed the diagnosis that followed the block"
+grep -q 'diagnosis after a quoted marker' "$pem_dir/console" \
+    || fail "a quoted PEM marker opened a block and swallowed the line after it"
+
+# The tail window can open inside a block whose BEGIN has already scrolled out.
+midblock_dir="$test_root/pem-midblock"
+make_env "$midblock_dir"
+SP_TEST_ERROR_TAIL_LINES=5 run_sync "$midblock_dir" pem \
+    && fail "the mid-block sync exited 0"
+for head in KEYBBBBB KEYCCCCC; do
+    ! grep -q "$head" "$midblock_dir/console" \
+        || fail "a window opening inside a PEM block leaked body line $head"
+done
+! grep -q 'KEYZZZZZshorttail==' "$midblock_dir/console" \
+    || fail "a window opening inside a PEM block leaked the short tail line"
+! grep -q -- '-----END' "$midblock_dir/console" \
+    || fail "a window opening inside a PEM block leaked the END delimiter"
+grep -q 'moving to next server' "$midblock_dir/console" \
+    || fail "the line after the block was lost when the window opened mid-block"
+
 # /dev/console on a confidential VM is outside the TEE boundary, and the tail is
 # another repository's debug output: nothing key-shaped may reach it.
 leak_dir="$test_root/leak"
@@ -358,5 +435,9 @@ grep -q 'suppressed' "$leak_dir/console" \
     || fail "suppressed lines left no marker, so the gap is invisible"
 grep -q 'authority rejected the CSR: unknown CA' "$leak_dir/console" \
     || fail "the redaction swallowed the ordinary error message too"
+# A BEGIN with no END inside the window: everything after it is presumed body.
+# Losing the rest of the tail is the right trade against leaking a key.
+! grep -q 'LEAKEDBODY' "$leak_dir/console" \
+    || fail "an unterminated PEM block leaked its body"
 
 echo "pki-authority-sync tests passed"
