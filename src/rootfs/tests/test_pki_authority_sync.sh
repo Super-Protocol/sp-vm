@@ -189,6 +189,18 @@ case "$SP_TEST_NODE_BEHAVIOUR" in
         echo 'trailing diagnosis: not retryable; moving to next server' >&2
         exit 1
         ;;
+    pem-exotic-label)
+        # RFC 7468 allows "-" inside a PEM label. A label the delimiter matcher
+        # rejects does not merely go unlabelled: the block never opens, the body
+        # falls through to the per-line rules, and the short final body line is
+        # below token_min_chars and prints in full.
+        echo '-----BEGIN FOO-BAR PRIVATE KEY-----' >&2
+        echo 'KEYAAAAAb3JsZGhlbGxvd29ybGRoZWxsb3dvcmxkaGVsbG93b3JsZGhlbGxvd29y' >&2
+        echo 'KEYZZZZZshorttail==' >&2
+        echo '-----END FOO-BAR PRIVATE KEY-----' >&2
+        echo 'trailing diagnosis: not retryable; moving to next server' >&2
+        exit 1
+        ;;
     leak)
         # Shapes that must be caught line by line, outside any PEM block, with
         # the ordinary error kept. The unterminated BEGIN comes last on purpose:
@@ -393,6 +405,21 @@ grep -q 'moving to next server' "$pem_dir/console" \
     || fail "a quoted PEM marker swallowed the diagnosis that followed the block"
 grep -q 'diagnosis after a quoted marker' "$pem_dir/console" \
     || fail "a quoted PEM marker opened a block and swallowed the line after it"
+
+# A hyphenated label is still a PEM block.
+exotic_dir="$test_root/pem-exotic-label"
+make_env "$exotic_dir"
+run_sync "$exotic_dir" pem-exotic-label && fail "the exotic-label sync exited 0"
+! grep -q 'KEYZZZZZshorttail==' "$exotic_dir/console" \
+    || fail "a hyphenated PEM label left the block unopened and leaked the short tail line"
+! grep -q 'KEYAAAAA' "$exotic_dir/console" \
+    || fail "a hyphenated PEM label leaked a body line head"
+! grep -q -- '-----END' "$exotic_dir/console" \
+    || fail "a hyphenated PEM label leaked the END delimiter"
+[[ "$(grep -c '<suppressed: PEM block>' "$exotic_dir/console")" == "1" ]] \
+    || fail "a hyphenated PEM label was not announced as a block"
+grep -q 'moving to next server' "$exotic_dir/console" \
+    || fail "the line after a hyphenated-label block was lost"
 
 # The tail window can open inside a block whose BEGIN has already scrolled out.
 midblock_dir="$test_root/pem-midblock"

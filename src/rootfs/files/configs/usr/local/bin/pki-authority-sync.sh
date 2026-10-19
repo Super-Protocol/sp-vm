@@ -168,11 +168,17 @@ console_say() {
 # inside a message: a JSON log line quoting "-----BEGIN CERTIFICATE-----" must
 # not open a block and swallow the rest of the tail. redact() drops such a line
 # on its own.
+#
+# The label class carries "-" because RFC 7468 allows it inside a label. A label
+# the matcher rejects is worse than it sounds: the block never opens, so the body
+# falls through to redact(), where the short final body line is below
+# token_min_chars and prints in full. A leading "-" in a bracket expression is
+# literal.
 is_pem_delimiter() {
-    [[ "${1-}" =~ ^[[:space:]]*-----(BEGIN|END)[[:space:]A-Za-z0-9]*-----[[:space:]]*$ ]]
+    [[ "${1-}" =~ ^[[:space:]]*-----(BEGIN|END)[-[:space:]A-Za-z0-9]*-----[[:space:]]*$ ]]
 }
 is_pem_end() {
-    [[ "${1-}" =~ ^[[:space:]]*-----END[[:space:]A-Za-z0-9]*-----[[:space:]]*$ ]]
+    [[ "${1-}" =~ ^[[:space:]]*-----END[-[:space:]A-Za-z0-9]*-----[[:space:]]*$ ]]
 }
 
 # Redacts the key-shaped TOKENS out of a line and keeps the prose around them:

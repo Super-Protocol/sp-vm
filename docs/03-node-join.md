@@ -225,7 +225,9 @@ tried and the tail of the attempt's own output:
   with no `-----END` inside the window suppresses everything after it — losing
   the rest of the tail is the right trade against leaking a key. A line that
   merely quotes a marker inside a message is dropped on its own and does not
-  open a block;
+  open a block. Labels may contain `-`, as RFC 7468 allows: a label the matcher
+  rejected would leave the block unopened and the short final body line would
+  print in full;
 - the 2000-character line cap is only a bound on how much one line may take from
   the console, **not** a security control — the shape rules above are. It matters
   that it stays well clear of the real lines: `pki-sync-client` logs one
