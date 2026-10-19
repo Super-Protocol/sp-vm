@@ -39,6 +39,10 @@ ExecStart=/usr/local/bin/sp-boot-attempt.sh \
 # swarm-init.service died with JOB_DEPENDENCY when the boot-time attempt failed,
 # and Restart= cannot help a unit whose start job never ran. Reviving it is
 # enough: its own ExecStartPost revives everything behind it.
+#
+# This runs on a seed only. On a worker the ExecCondition above skips the unit,
+# which means this line never runs either - there swarm-init is pulled in by
+# swarm-db.service's Requires=, started by pki-authority-sync's ExecStartPost.
 ExecStartPost=-/usr/bin/systemctl --no-block start swarm-init.service
 
 [Install]

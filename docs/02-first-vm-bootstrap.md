@@ -222,3 +222,22 @@ stays comparable against the authority's.
 When a later attempt succeeds, the unit starts the services whose boot-time
 start jobs died with it (`ExecStartPost`): a failed dependency leaves them with
 no start job at all, and `Restart=` cannot revive a unit that never started.
+
+Each unit starts only the dependents nobody else will revive, so the chain
+cascades: `pki-vm-mode` → `pki-cert-init` and `pki-authority-sync` →
+`swarm-init` → `swarm-db`, `swarm-host-agent`, `swarm-node`, `swarm-services`.
+Exactly one of `pki-cert-init` / `pki-authority-sync` applies to a given node;
+the other is skipped by its `ExecCondition`, and **a condition-skipped unit's
+`ExecStartPost` does not run**. So the cascade takes a different route on each
+role:
+
+- **Seed** (`vm-mode` = `init`): `pki-cert-init` runs and starts `swarm-init`
+  directly. `pki-authority-sync` is the skipped one.
+- **Worker** (`vm-mode` = `normal`): `pki-cert-init` is skipped, so nothing
+  starts `swarm-init` by name. It is pulled in instead by
+  `swarm-db.service`, which `Requires=swarm-init.service` and is started by
+  `pki-authority-sync`'s `ExecStartPost`.
+
+The worker route is indirect and therefore worth knowing about: it is why
+`pki-vm-mode` does not need to name `swarm-init` itself, and it is the line to
+check first if a worker ever recovers its PKI but not its swarm services.

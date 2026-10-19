@@ -36,6 +36,15 @@ ExecStart=/usr/local/bin/sp-boot-attempt.sh \
 # Restart= cannot help a unit whose start job never ran. Each one revives the
 # chain behind it through its own ExecStartPost; the ExecCondition on each makes
 # the one that does not apply to this node a no-op.
+#
+# That no-op is load-bearing in a way worth spelling out. A condition-skipped
+# unit goes inactive with Result=success and its ExecStartPost does NOT run, so
+# on a WORKER (vm-mode=normal) pki-cert-init is skipped and never starts
+# swarm-init. swarm-init comes back only because pki-authority-sync's
+# ExecStartPost starts swarm-db.service, which Requires=swarm-init.service and
+# therefore pulls it in. On a SEED (vm-mode=init) it is the other way round:
+# pki-authority-sync is the skipped one and pki-cert-init starts swarm-init
+# directly. Both paths verified under systemd 255.
 ExecStartPost=-/usr/bin/systemctl --no-block start pki-cert-init.service pki-authority-sync.service
 
 [Install]
