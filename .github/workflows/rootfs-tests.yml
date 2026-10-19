@@ -1,0 +1,63 @@
+name: rootfs tests
+
+# SUP-375: every guard under src/rootfs/tests/ used to run only inside
+# src/Dockerfile, and build-sp-vm.yml is workflow_dispatch-only - so a unit
+# contract could be broken in a PR and nothing said so until someone cut an
+# image by hand. test_provider_config_archive.sh was referenced from nowhere at
+# all. These suites need bash, coreutils and awk and take seconds, so they run
+# where the contracts are actually broken.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to the same PR makes the previous run's verdict irrelevant.
+concurrency:
+  group: rootfs-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rootfs-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the scripts that ship in the rootfs
+        # A shipped script with a syntax error fails for the first time on a
+        # node, in boot, with no SSH - the one place it cannot be debugged.
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r script; do
+            head -n1 "$script" | grep -qE '^#!.*\b(ba)?sh\b' || continue
+            if ! bash -n "$script"; then
+              echo "::error file=$script::bash -n rejected this script"
+              status=1
+            fi
+          done < <(find src/rootfs/files/configs -type f \( -name '*.sh' -o -name 'sp-nvidia-*' \) | sort)
+          exit $status
+
+      - name: Run the rootfs test suites
+        # Discovered by glob on purpose: a guard that has to be added to this
+        # workflow by hand is a guard that will one day not be. Suites run
+        # against the repository tree; the image build runs the same files
+        # again against the installed rootfs.
+        run: |
+          set -uo pipefail
+          status=0
+          shopt -s nullglob
+          suites=(src/rootfs/tests/test_*.sh)
+          (( ${#suites[@]} )) || { echo "::error::no rootfs test suites found"; exit 1; }
+          for suite in "${suites[@]}"; do
+            echo "::group::$suite"
+            if timeout 600 bash "$suite"; then
+              echo "PASS $suite"
+            else
+              echo "::error file=$suite::rootfs suite failed"
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $status
