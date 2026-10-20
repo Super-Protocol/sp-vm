@@ -50,8 +50,19 @@ moment a real artefact went through:
    characters of a real RSA private key, because a PEM body line is nothing but
    a token and the final body line is too short to be one at all.
 
-And the union has already paid for itself a third time — see
-`pki-sync-client-pino.jsonl` below.
+And the union has now paid for itself in **both** directions, which is better
+evidence for the mechanism than any argument for it:
+
+- running `tee-pki`'s `pki-sync-client-pino.jsonl` through this repo's
+  `redact()` found a colon-delimited digest passing through whole — fixed here,
+  see that file below;
+- running this repo's `private-key.pem` and that capture's own digest through
+  the TypeScript tripwire found the symmetric pair, both live there until
+  SUP-376 round 3: the colon-delimited digest (same hole, same constant) and the
+  24-character final PEM body line, which that side cannot suppress as a block
+  because a projected `reason` is one string with no block around it. It matches
+  the padding instead. See
+  `packages/pki-vm-measurements/src/__fixtures__/README.md` in `tee-pki`.
 
 ## The two keys
 

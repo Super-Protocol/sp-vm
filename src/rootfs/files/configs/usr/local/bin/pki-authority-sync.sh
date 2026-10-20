@@ -113,6 +113,14 @@ readonly last_reason_file="${state_dir}/pki-authority-sync.last-reason"
 # level/time/pid/hostname plus the {server, challengeType} child context runs
 # ~140 characters before the message, putting its real error lines at 230-245.
 # A cap anywhere near that drops precisely the lines that diagnose the node.
+#
+# Since delimited_pair_min below, this cap is also load-bearing for COST, not
+# just for buffer share. `{19,}` in bash ERE makes the pathological input far
+# more expensive than the realistic one: measured on this host, a 1997-char
+# unbroken colon-hex line (just under the cap) costs ~1350 ms in redact(),
+# against 3-5 ms for the longest real line in either shared capture (694 and
+# 284 chars). The cap is the only thing bounding that, and this runs on the boot
+# path at RestartSec=60 - so raising it is also raising a boot-path CPU bound.
 readonly max_line_chars="${SP_PKI_SYNC_MAX_LINE_CHARS:-2000}"
 # 40 base64/hex characters in a row is not something a message contains by
 # accident. Only HEX tokens keep a head: hex is the shape a CA fingerprint, an
@@ -139,6 +147,13 @@ readonly token_head_chars="${SP_PKI_SYNC_TOKEN_HEAD_CHARS:-8}"
 # 20 pairs = 160 bits is the floor: above a MAC address (6) and a 4-hex-group
 # IPv6 address, which are diagnostic and must survive, and below any digest or
 # key. Treated as hex, so it keeps a comparable head like a bare hex token.
+#
+# The floor is a BOUND, not a guarantee, and there is a shape under it:
+# `openssl rsa -text` prints key material at 15 pairs per line (measured on
+# private-key.pem), so such a line would pass. It is unreachable from this
+# client, which emits PEM and is caught whole by the marker rule - and the fix
+# is NOT to lower the floor, because everything between 6 and 20 pairs is the
+# diagnostic shapes above. A new producer of that shape needs its own rule.
 readonly delimited_pair_min="${SP_PKI_SYNC_DELIMITED_PAIR_MIN:-20}"
 
 log() { echo "[pki-authority-sync] $*"; }
