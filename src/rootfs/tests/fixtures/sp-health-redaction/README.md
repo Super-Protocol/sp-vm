@@ -28,9 +28,13 @@ both sides while each redactor is pinned only by its own capture.
 So the rule is **the union, not a pick**, and copying in both directions:
 
 ```sh
-# from tee-pki into here
-git -C ../../../../../tee-pki show \
-    origin/feature/SUP-376-node-health-endpoint:packages/pki-vm-measurements/src/__fixtures__/openssl-genpkey-rsa2048.pem
+# from tee-pki into here. Fetch the ref by name: both shared clones are
+# configured with `remote.origin.fetch = +refs/heads/main:refs/remotes/origin/main`,
+# so `origin/<feature-branch>` is stale or absent and `git show` on it either
+# fails or hands you an old copy - which is exactly how these drift.
+git -C ../tee-pki fetch origin feature/SUP-376-node-health-endpoint
+git -C ../tee-pki show \
+    FETCH_HEAD:packages/pki-vm-measurements/src/__fixtures__/openssl-genpkey-rsa2048.pem
 ```
 
 If any of these bytes changes, change it in both repos and fix **both** sha256
