@@ -166,6 +166,24 @@ ADD rootfs/files/configs/usr/local/bin/sp-nvidia-wait-cx7-linkup \
 ADD rootfs/files/configs/usr/local/bin/sp-nvidia-gpu-ready \
     ${OUTPUTDIR}/usr/local/bin/sp-nvidia-gpu-ready
 RUN chmod 0755 ${OUTPUTDIR}/usr/local/bin/sp-nvidia-*
+
+# SUP-376: the /run/sp-health publishing convention. sp-health-publish is the
+# single writer of the sp.unit-health/v1 record format; sp-node-serving-probe is
+# the only positive witness that this node serves, which is what makes the
+# rollup's `serving` verdict reachable at all.
+ADD rootfs/files/configs/usr/local/bin/sp-health-publish \
+    ${OUTPUTDIR}/usr/local/bin/sp-health-publish
+ADD rootfs/files/configs/usr/local/bin/sp-node-serving-probe \
+    ${OUTPUTDIR}/usr/local/bin/sp-node-serving-probe
+RUN chmod 0755 ${OUTPUTDIR}/usr/local/bin/sp-health-publish \
+    ${OUTPUTDIR}/usr/local/bin/sp-node-serving-probe
+ADD rootfs/files/configs/etc/systemd/system/sp-node-serving.service \
+    ${OUTPUTDIR}/etc/systemd/system/sp-node-serving.service
+ADD rootfs/files/configs/etc/systemd/system/sp-node-serving.timer \
+    ${OUTPUTDIR}/etc/systemd/system/sp-node-serving.timer
+RUN mkdir -p ${OUTPUTDIR}/etc/systemd/system/timers.target.wants
+RUN ln -sf /etc/systemd/system/sp-node-serving.timer \
+    ${OUTPUTDIR}/etc/systemd/system/timers.target.wants/sp-node-serving.timer
 RUN mkdir -p ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d \
     ${OUTPUTDIR}/etc/systemd/system/nvidia-cdi-refresh.service.d \
     ${OUTPUTDIR}/etc/systemd/system/nvidia-imex.service.d
@@ -247,6 +265,9 @@ RUN ln -s /etc/systemd/system/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/sy
 RUN ln -s /etc/systemd/system/pki-vm-measurements.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-vm-measurements.service"
 RUN ln -s /etc/systemd/system/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-vm-measurements-healthcheck.timer"
 RUN SP_NVIDIA_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_nvidia_service_ordering.sh
+ADD rootfs/tests/test_health_publishers.sh /buildroot/tests/test_health_publishers.sh
+RUN chmod 0755 /buildroot/tests/test_health_publishers.sh
+RUN SP_HEALTH_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_health_publishers.sh
 
 ADD rootfs/files/configs/etc/multipath.conf.append /buildroot/files/configs/etc/multipath.conf.append
 ADD rootfs/files/configs/etc/sysctl.conf.append /buildroot/files/configs/etc/sysctl.conf.append

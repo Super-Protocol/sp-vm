@@ -1,8 +1,26 @@
 [Unit]
 Description=PKI VM measurements service
-After=network-online.target sp-nvidia-gpu-ready.service
+# SUP-376: deliberately NOT ordered after or dependent on
+# sp-nvidia-gpu-ready.service. :9180 is the only port the fabric and the host
+# orchestrator can reach before a node joins, and this process serves both
+# /healthcheck and /v1/nodeHealth on it - so a health surface that waits for the
+# GPU barrier is a health surface that is absent on exactly the node class it
+# exists for. The barrier exits 1 after SP_NVIDIA_READY_TIMEOUT (1200s) or three
+# failed nvidia-persistenced attempts, and with Requires= that meant: on a GPU
+# node whose GPU never comes ready, this unit never started at all. No :9180, no
+# healthcheck, no node health, permanently.
+#
+# Nothing in the process needs the barrier either. Every getMeasure path reads
+# only /dev/tdx_guest or /dev/sev-guest through @super-protocol/addons-tee;
+# packages/pki-vm-measurements/src/ has no reference to NVIDIA, the GPU, or
+# /run/sp-nvidia/cc-ready, and cc-ready is written by sp-nvidia-enable-cc-ready
+# and read only by the barrier itself. So no route needs gating either.
+#
+# pki-cert-init.service and pki-authority-sync.service keep the barrier: a
+# certificate must not be issued against hardware whose confidential-computing
+# state is not established. Reporting is not issuing.
+After=network-online.target
 Wants=network-online.target
-Requires=sp-nvidia-gpu-ready.service
 
 [Service]
 Type=simple
