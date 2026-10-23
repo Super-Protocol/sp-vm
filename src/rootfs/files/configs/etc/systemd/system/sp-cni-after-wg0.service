@@ -1,0 +1,10 @@
+[Unit]
+Description=Rebuild the flannel overlay if wg0 outlived flannel.1 (SUP-350)
+Documentation=https://github.com/Super-Protocol/sp-vm/blob/main/src/rootfs/docs/kubernetes-cni.md
+# Nothing to do before WireGuard exists; the drop-in on wg-quick@wg0 covers
+# every removal that goes through the unit, this timer covers the rest.
+ConditionPathExists=/sys/class/net/wg0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sp-cni-after-wg0 wg0
