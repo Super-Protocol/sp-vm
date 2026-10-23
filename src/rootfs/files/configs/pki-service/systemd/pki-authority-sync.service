@@ -3,28 +3,38 @@ Description=PKI authority sync client service
 After=network-online.target sp-nvidia-gpu-ready.service pki-vm-mode.service
 Wants=network-online.target pki-vm-mode.service
 Requires=sp-nvidia-gpu-ready.service pki-vm-mode.service
+# SUP-372: retry forever, but never faster than RestartSec.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-TimeoutStartSec=infinity
+# SUP-372: one bounded attempt per start. It used to be TimeoutStartSec=infinity
+# around an `until ...; sleep 60; done` loop, which made an authority that would
+# not sign this node a permanent boot gate: multi-user.target was never reached
+# and no timeout ever fired. This limit covers the whole start phase -
+# ExecStartPre, the script's own 240s cap on the sync call plus up to 10s of
+# SIGKILL grace, and ExecStartPost - which leaves ~50s of headroom. The script
+# must be the one that gives up first: systemd kills the whole cgroup here, and
+# a killed script publishes no verdict.
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=60
 Environment=NODE_ENV=production
 ExecCondition=/bin/bash -c '[[ "$(head -n1 /etc/swarm/swarm-vm-mode 2>/dev/null | tr -d "[:space:]")" == "normal" ]]'
+# A failure here fails the unit before the script runs, so it leaves neither a
+# health file nor a console line - the SUP-372 blind spot, one step earlier. It
+# needs /etc/swarm/swarm-vm-mode to exist, which means config.yaml already
+# parsed, so in practice only a malformed pki_authority block reaches it.
 ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure_helper.py \
     configure-sync-client \
     --config /sp/swarm/config.yaml \
     --output /etc/swarm/sync-client-config.yaml
-ExecStart=/bin/bash -c 'until /usr/bin/node /usr/bin/pki-sync-client sync \
-    --config /etc/super/pki-authority-sync/secrets-config.yaml \
-    --swarm-env /etc/swarm/sync-client-config.yaml \
-    --save-certs-to-dir /etc/super/certs/vm \
-    --save-certs-prefix vm \
-    --network-type-file /etc/swarm/swarm-network-type \
-    --disable-server-identity-check \
-    --log-level debug; do \
-    echo "[pki-authority-sync] remote not ready, retry in 60s"; \
-    sleep 60; \
-done'
+ExecStart=/usr/local/bin/pki-authority-sync.sh
+# A sync that only succeeds after boot has to revive the stack it gated. These
+# three jobs failed with JOB_DEPENDENCY when the boot-time attempt failed, and
+# Restart= cannot help a unit whose start job never ran.
+ExecStartPost=-/usr/bin/systemctl --no-block start swarm-db.service swarm-node.service swarm-services.service
 
 [Install]
 WantedBy=multi-user.target
