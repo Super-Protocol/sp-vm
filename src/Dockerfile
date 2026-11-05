@@ -431,16 +431,13 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
     && printf 'deb http://archive.ubuntu.com/ubuntu/ noble main\n' > /etc/apt/sources.list \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates \
-    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble main universe\n' \
-        "$UBUNTU_SNAPSHOT_ID" \
+    && printf '%s\n' \
+        'deb http://archive.ubuntu.com/ubuntu/ noble main universe' \
+        'deb http://archive.ubuntu.com/ubuntu/ noble-updates main universe' \
+        'deb http://security.ubuntu.com/ubuntu/ noble-security main universe' \
         > /etc/apt/sources.list \
-    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble-updates main universe\n' \
-        "$UBUNTU_SNAPSHOT_ID" \
-        >> /etc/apt/sources.list \
-    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble-security main universe\n' \
-        "$UBUNTU_SNAPSHOT_ID" \
-        >> /etc/apt/sources.list \
-    && printf 'Acquire::Languages "none";\n' > /etc/apt/apt.conf.d/50snapshot \
+    && printf 'APT::Snapshot "%s";\nAPT::Get::Always-Include-Phased-Updates "true";\nAcquire::Languages "none";\n' \
+        "$UBUNTU_SNAPSHOT_ID" > /etc/apt/apt.conf.d/50snapshot \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get update \
     && apt-get install -y --no-install-recommends \

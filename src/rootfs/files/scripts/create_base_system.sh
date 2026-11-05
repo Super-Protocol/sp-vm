@@ -124,6 +124,8 @@ EOF
 
 function create_base_system() {
     log_info "creating base system";
+    local snapshot_mirror="https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT_ID}/";
+    local archive_mirror="http://archive.ubuntu.com/ubuntu/";
     if ! debootstrap \
         "--arch=$TARGET_ARCH" \
         --variant=minbase \
@@ -131,12 +133,27 @@ function create_base_system() {
         --components=main,universe \
         "$VERSION_CODENAME" \
         "$OUTPUTDIR" \
-        "https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT_ID}/"; then
+        "$snapshot_mirror"; then
         if [[ -f "${OUTPUTDIR}/debootstrap/debootstrap.log" ]]; then
             tail -n 100 "${OUTPUTDIR}/debootstrap/debootstrap.log" >&2;
         fi
-        log_fail "failed to create base system";
-        return 1;
+        log_info "snapshot mirror failed, retrying debootstrap from archive.ubuntu.com";
+        rm -rf "$OUTPUTDIR";
+        mkdir -p "$OUTPUTDIR";
+        if ! debootstrap \
+            "--arch=$TARGET_ARCH" \
+            --variant=minbase \
+            "--include=$BASE_PACKAGES" \
+            --components=main,universe \
+            "$VERSION_CODENAME" \
+            "$OUTPUTDIR" \
+            "$archive_mirror"; then
+            if [[ -f "${OUTPUTDIR}/debootstrap/debootstrap.log" ]]; then
+                tail -n 100 "${OUTPUTDIR}/debootstrap/debootstrap.log" >&2;
+            fi
+            log_fail "failed to create base system";
+            return 1;
+        fi
     fi
 
     configure_snapshot_sources;
