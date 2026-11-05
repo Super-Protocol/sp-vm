@@ -51,6 +51,7 @@ EOF
 APT::Snapshot "${UBUNTU_SNAPSHOT_ID}";
 APT::Get::Always-Include-Phased-Updates "true";
 Acquire::Languages "none";
+Acquire::Retries "12";
 EOF
 }
 
@@ -63,11 +64,22 @@ exit 101
 EOF
     chmod 0755 "${OUTPUTDIR}/usr/sbin/policy-rc.d";
 
-    chroot "$OUTPUTDIR" /usr/bin/env \
-        DEBIAN_FRONTEND=noninteractive \
-        LC_ALL=C \
-        TZ=UTC \
-        apt-get update;
+    local attempt;
+    for attempt in 1 2 3 4 5 6; do
+        if chroot "$OUTPUTDIR" /usr/bin/env \
+            DEBIAN_FRONTEND=noninteractive \
+            LC_ALL=C \
+            TZ=UTC \
+            apt-get update -o APT::Update::Error-Mode=any; then
+            break;
+        fi
+        if [[ "$attempt" -eq 6 ]]; then
+            log_fail "apt-get update failed after ${attempt} attempts";
+            return 1;
+        fi
+        log_info "apt-get update failed (attempt ${attempt}), retrying in 15s";
+        sleep 15;
+    done
     chroot "$OUTPUTDIR" /usr/bin/env \
         DEBIAN_FRONTEND=noninteractive \
         LC_ALL=C \
@@ -126,17 +138,31 @@ function create_base_system() {
     log_info "creating base system";
     local snapshot_mirror="https://snapshot.ubuntu.com/ubuntu/${UBUNTU_SNAPSHOT_ID}/";
     local archive_mirror="http://archive.ubuntu.com/ubuntu/";
-    if ! debootstrap \
-        "--arch=$TARGET_ARCH" \
-        --variant=minbase \
-        "--include=$BASE_PACKAGES" \
-        --components=main,universe \
-        "$VERSION_CODENAME" \
-        "$OUTPUTDIR" \
-        "$snapshot_mirror"; then
+    local attempt;
+    local bootstrapped=0;
+    for attempt in 1 2 3 4; do
+        if debootstrap \
+            "--arch=$TARGET_ARCH" \
+            --variant=minbase \
+            "--include=$BASE_PACKAGES" \
+            --components=main,universe \
+            "$VERSION_CODENAME" \
+            "$OUTPUTDIR" \
+            "$snapshot_mirror"; then
+            bootstrapped=1;
+            break;
+        fi
         if [[ -f "${OUTPUTDIR}/debootstrap/debootstrap.log" ]]; then
             tail -n 100 "${OUTPUTDIR}/debootstrap/debootstrap.log" >&2;
         fi
+        if [[ "$attempt" -lt 4 ]]; then
+            log_info "debootstrap from snapshot failed (attempt ${attempt}), retrying in 15s";
+            rm -rf "$OUTPUTDIR";
+            mkdir -p "$OUTPUTDIR";
+            sleep 15;
+        fi
+    done
+    if [[ "$bootstrapped" -ne 1 ]]; then
         log_info "snapshot mirror failed, retrying debootstrap from archive.ubuntu.com";
         rm -rf "$OUTPUTDIR";
         mkdir -p "$OUTPUTDIR";

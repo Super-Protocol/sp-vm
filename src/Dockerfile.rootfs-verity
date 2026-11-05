@@ -12,10 +12,16 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
         'deb http://archive.ubuntu.com/ubuntu/ noble-updates main universe' \
         'deb http://security.ubuntu.com/ubuntu/ noble-security main universe' \
         > /etc/apt/sources.list \
-    && printf 'APT::Snapshot "%s";\nAPT::Get::Always-Include-Phased-Updates "true";\nAcquire::Languages "none";\n' \
+    && printf 'APT::Snapshot "%s";\nAPT::Get::Always-Include-Phased-Updates "true";\nAcquire::Languages "none";\nAcquire::Retries "12";\n' \
         "$UBUNTU_SNAPSHOT_ID" > /etc/apt/apt.conf.d/50snapshot \
     && rm -rf /var/lib/apt/lists/* \
-    && apt-get update \
+    && attempt=1 \
+    && until apt-get update -o APT::Update::Error-Mode=any; do \
+        if [ "$attempt" -ge 6 ]; then exit 1; fi; \
+        echo "apt-get update failed (attempt ${attempt}), retrying in 15s"; \
+        attempt=$((attempt + 1)); \
+        sleep 15; \
+    done \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         cryptsetup-bin dosfstools e2fsprogs faketime gdisk gettext-base \
         grub-pc-bin grub-efi-amd64-bin grub2-common kpartx mtools util-linux \
