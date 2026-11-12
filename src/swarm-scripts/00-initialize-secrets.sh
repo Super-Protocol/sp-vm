@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-CONFIG="/sp/swarm/config.yaml"
-VM_MODE_FILE="/etc/swarm/swarm-vm-mode"
+CONFIG="${CONFIG:-/sp/swarm/config.yaml}"
+VM_MODE_FILE="${VM_MODE_FILE:-/etc/swarm/swarm-vm-mode}"
 
 is_swarm_init_mode() {
   [ -f "$VM_MODE_FILE" ] || return 1
@@ -97,6 +97,20 @@ ensure_global_id_pointer() {
     python3 "$(dirname "$0")/swarm-cli.py" create SwarmIdPointer "global_id" --value "$value" >/dev/null
 }
 
+ensure_rke2_join_token_secret() {
+  if ! is_swarm_init_mode; then
+    echo "INFO: skip rke2 join token initialization, vm_mode is not swarm-init" >&2
+    return 0
+  fi
+
+  # The token that lets a node join the swarm's RKE2 cluster. It used to be a
+  # default baked into swarm-cloud services/rke2/main.py; it is now generated
+  # here, once, and every node reads the replicated row (SUP-652). Hex, not
+  # base64: the plugin writes the value into RKE2's YAML config unquoted, and
+  # `openssl rand -base64` wraps its output across lines.
+  ensure_secret "rke2_join_token" "$(openssl rand -hex 32)"
+}
+
 ensure_swarm_init_cert_secrets() {
   local secret_key
   local prefixed_secret_key
@@ -153,5 +167,6 @@ ensure_secret "auth_service_yaml" "$AUTH_SERVICE_YAML"
 ensure_secret "auth_service_oidc_yaml" "$AUTH_SERVICE_OIDC_YAML"
 ensure_secret "api_introspection_client_id" "$API_INTROSPECTION_CLIENT_ID"
 ensure_secret "api_introspection_client_secret" "$API_INTROSPECTION_CLIENT_SECRET"
+ensure_rke2_join_token_secret
 ensure_swarm_init_cert_secrets
 ensure_secret "evidence_sign_key" "$EVIDENCE_SIGN_KEY"
