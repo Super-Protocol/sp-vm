@@ -46,14 +46,21 @@ trap cleanup EXIT
 export PYTHONPATH="${REFERENCE_VALUES_DIR}${PYTHONPATH:+:$PYTHONPATH}"
 spref() { python3 -m spref "$@"; }
 
+# Everything that is not derived from the artifacts is pinned, which is what
+# the offline signing procedure in reference-values/keys/README.md does.
+generate_into() {
+    spref generate \
+        --build "$SP_VM_BUILD" \
+        --artifact-dir "$SP_VM_ARTIFACT_DIR" \
+        --evidence-dir "${REFERENCE_VALUES_DIR}/evidence" \
+        --out-dir "$1" \
+        --not-before 2026-01-01T00:00:00Z \
+        --not-after 2036-01-01T00:00:00Z \
+        --sp-vm-commit 0000000000000000000000000000000000000000
+}
+
 echo "==> generating reference values for ${SP_VM_BUILD}"
-spref generate \
-    --build "$SP_VM_BUILD" \
-    --artifact-dir "$SP_VM_ARTIFACT_DIR" \
-    --evidence-dir "${REFERENCE_VALUES_DIR}/evidence" \
-    --out-dir "$WORK/first" \
-    --not-before 2026-01-01T00:00:00Z \
-    --not-after 2036-01-01T00:00:00Z
+generate_into "$WORK/first"
 
 MANIFEST="$WORK/first/reference-values.json"
 UNSIGNED="$WORK/first/sp-vm-${SP_VM_BUILD}.corim-unsigned.cbor"
@@ -65,13 +72,7 @@ for file in "$MANIFEST" "$UNSIGNED" "$CORIM_JSON"; do
 done
 
 echo "==> regenerating and comparing (the generator must be deterministic)"
-spref generate \
-    --build "$SP_VM_BUILD" \
-    --artifact-dir "$SP_VM_ARTIFACT_DIR" \
-    --evidence-dir "${REFERENCE_VALUES_DIR}/evidence" \
-    --out-dir "$WORK/second" \
-    --not-before 2026-01-01T00:00:00Z \
-    --not-after 2036-01-01T00:00:00Z >/dev/null
+generate_into "$WORK/second" >/dev/null
 cmp "$MANIFEST" "$WORK/second/reference-values.json"
 cmp "$UNSIGNED" "$WORK/second/sp-vm-${SP_VM_BUILD}.corim-unsigned.cbor"
 cmp "$CORIM_JSON" "$WORK/second/sp-vm-${SP_VM_BUILD}.corim.json"
@@ -93,6 +94,26 @@ if spref verify --corim "$SIGNED" --key "$WORK/other.pub.jwk" >/dev/null 2>&1; t
     echo "FAIL: a CoRIM verified against an unrelated key" >&2
     exit 1
 fi
+
+echo "==> raw RTMR0 is never published as a reference value"
+python3 - "$MANIFEST" "$CORIM_JSON" <<'RTMR0_CHECK'
+import json
+import sys
+
+for path in sys.argv[1:]:
+    document = json.load(open(path, encoding="utf-8"))
+    manifest = document.get("reference_values", document)
+    for platform, section in manifest["platforms"].items():
+        if platform not in ("tdx", "tdx-google"):
+            continue
+        if "rtmr0" in section:
+            raise SystemExit(f"FAIL: {path}: {platform} publishes raw rtmr0")
+        if "rtmr0_normalized" not in section:
+            raise SystemExit(f"FAIL: {path}: {platform} has no normalised rtmr0")
+    if '"rtmr0"' in json.dumps(document):
+        raise SystemExit(f"FAIL: {path}: a raw rtmr0 register is present")
+print("    no raw rtmr0 in the manifest or the CoRIM")
+RTMR0_CHECK
 
 echo "==> the CoRIM decodes with Veraison's own tooling"
 cocli corim display --file "$SIGNED" --show-tags > "$WORK/display.txt"

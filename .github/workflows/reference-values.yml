@@ -40,6 +40,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Resolve the commit of the release tag
+        run: |
+          set -eu
+          # The job runs on the current default branch so that the generator is
+          # the newest one, but the manifest must record the commit the release
+          # was actually built from, not this run's HEAD.
+          git fetch --no-tags --depth 1 origin \
+              "refs/tags/${SP_VM_BUILD}:refs/tags/${SP_VM_BUILD}"
+          COMMIT="$(git rev-parse "refs/tags/${SP_VM_BUILD}^{commit}")"
+          echo "Release ${SP_VM_BUILD} was built from ${COMMIT}"
+          echo "SP_VM_COMMIT=${COMMIT}" >> "$GITHUB_ENV"
+
       - name: Download the release artifacts from Storj
         run: |
           set -eu
@@ -64,6 +76,7 @@ jobs:
           out-dir: reference-values-out
           signing-jwk: ${{ secrets.REFERENCE_VALUES_SIGNING_JWK }}
           public-jwk-path: reference-values/keys/sp-vm-reference-values.pub.jwk
+          sp-vm-commit: ${{ env.SP_VM_COMMIT }}
 
       - name: Upload the Reference Values as a workflow artifact
         uses: actions/upload-artifact@v4
@@ -87,3 +100,4 @@ jobs:
             reference-values-out/reference-values.json
             reference-values-out/sp-vm-${{ inputs.build }}.corim.json
             reference-values-out/sp-vm-${{ inputs.build }}.corim.cbor
+            reference-values-out/sp-vm-${{ inputs.build }}.corim-unsigned.cbor

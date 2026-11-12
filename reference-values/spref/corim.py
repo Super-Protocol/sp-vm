@@ -13,7 +13,7 @@ environment, each identified by `environment.class`:
     ---------------------------------  ------------------------------------------
     sp-vm                              build artifacts and the dm-verity root hash
     sp-vm-sev-snp:<cmdline-profile>    launch-digest, kernel-cmdline, mrenclave
-    sp-vm-tdx                          mrtd, rtmr0, rtmr0-normalized, rtmr1..3, mrenclave
+    sp-vm-tdx                          mrtd, rtmr0-normalized, rtmr1..3, mrenclave
     sp-vm-tdx-google                   as sp-vm-tdx
     sp-vm-tdx-azure                    pcr4-normalized, pcr9-normalized, mrenclave
     sp-vm-sev-snp-azure                as sp-vm-tdx-azure
@@ -127,7 +127,10 @@ def platform_triples(manifest):
                     platform,
                     {
                         "mrtd": _sha384_register(section["mrtd"]),
-                        "rtmr0": _sha384_register(section["rtmr0"]),
+                        # Raw RTMR0 is deliberately not published: it carries the
+                        # dynamic boot events that the normalisation strips, so it
+                        # differs between instances of the same release
+                        # (docs/04-vm-measurements.md, "RTMR0 Normalization").
                         "rtmr0-normalized": _sha384_register(section["rtmr0_normalized"]),
                         "rtmr1": _sha384_register(section["rtmr1"]),
                         "rtmr2": _sha384_register(section["rtmr2"]),

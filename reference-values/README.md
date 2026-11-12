@@ -35,6 +35,7 @@ Attached to the GitHub release of every build:
 | `sp-vm-<build>.corim.cbor`   | the signed CoRIM: a COSE_Sign1 over the CBOR CoRIM |
 | `sp-vm-<build>.corim.json`   | the same CoRIM as JSON, with the reference-values manifest embedded |
 | `reference-values.json`      | the manifest on its own: every value in hex, with its provenance |
+| `sp-vm-<build>.corim-unsigned.cbor` | the same CoRIM before signing, so the signature can be re-created offline from the published artifacts |
 
 The public key the CoRIM is signed with, and the signing procedure, are in
 [`keys/README.md`](keys/README.md).
@@ -45,11 +46,26 @@ The public key the CoRIM is signed with, and the signing procedure, are in
 |---|---|---|
 | `sp-vm`                            | `image`, `image-uncompressed`, `kernel`, `bios`, `bios-amd`, `bios-tdx`, `rootfs-verity-root-hash` | computed from the build output |
 | `sp-vm-sev-snp:<profile>`          | `launch-digest`, `kernel-cmdline`, `mrenclave` | computed from the build output |
-| `sp-vm-tdx`, `sp-vm-tdx-google`    | `mrtd`, `rtmr0`, `rtmr0-normalized`, `rtmr1`, `rtmr2`, `rtmr3`, `mrenclave`; `TDATTRIBUTES` as the measurement's raw value | a verified reference boot |
+| `sp-vm-tdx`, `sp-vm-tdx-google`    | `mrtd`, `rtmr0-normalized`, `rtmr1`, `rtmr2`, `rtmr3`, `mrenclave`; `TDATTRIBUTES` as the measurement's raw value | a verified reference boot |
 | `sp-vm-tdx-azure`, `sp-vm-sev-snp-azure` | `pcr4-normalized`, `pcr9-normalized`, `mrenclave`; the vm-configuration flags as the raw value | a verified reference boot |
 
 `version` of every measurement is the sp-vm build id, so one CoRIM describes
 exactly one release.
+
+Both spellings of the TDX image identity are published: the raw set
+`TDATTRIBUTES`, `mrtd`, `rtmr1`-`rtmr3`, which an Intel Trust Authority
+appraisal policy can match claim by claim, and the normalised `mrenclave` that
+the swarm verifier and Veraison use.
+
+**Raw `RTMR0` is not published, by design.** It accumulates the dynamic boot
+events of one particular VM alongside the firmware-identity events, so it
+differs between instances started from the same release. Only the normalised
+`RTMR0` — the same register replayed over the `EV_EFI_PLATFORM_FIRMWARE_BLOB`
+and `EV_EFI_PLATFORM_FIRMWARE_BLOB2` events alone, per
+`docs/04-vm-measurements.md` §3 — identifies the release, and that is what
+`rtmr0-normalized` carries and what `mrenclave` is computed over. A verifier
+that holds a quote reproduces it from the `RTMR0` event list transmitted with
+the evidence.
 
 **Computed from the build output** means a pure function of the published
 artifacts, reproducible by anyone who rebuilds the image — see
@@ -157,9 +173,13 @@ PYTHONPATH=reference-values python3 -m spref generate \
     --evidence-dir reference-values/evidence \
     --out-dir my-reference-values
 
-# 4. Compare with what Super Protocol signed. The manifest must be identical;
-#    only the CoRIM validity window differs, because it is a timestamp.
-diff my-reference-values/reference-values.json reference-values.json
+# 4. Compare with what Super Protocol signed. Every measured value must be
+#    identical. `sp_vm_commit` is provenance rather than a measurement, and it
+#    is absent unless you pass --sp-vm-commit, so exclude it from the
+#    comparison (or pass --sp-vm-commit "$(git rev-parse HEAD)" in step 3,
+#    which reproduces it exactly when you built from the release tag).
+diff <(jq -S 'del(.sp_vm_commit)' my-reference-values/reference-values.json) \
+     <(jq -S 'del(.sp_vm_commit)' reference-values.json)
 ```
 
 To check only the reproducibility of the build itself, without the reference
@@ -203,9 +223,10 @@ TACRA/TWI epic, not part of this format.
 
 ### Intel Trust Authority
 
-ITA appraisal policies are Rego and pin the token claims directly. Substitute
-the values of the `sp-vm-tdx` environment of the release (ITA policy V2 syntax;
-V2 allows no comments, and the verdict rule must be called `match`):
+ITA appraisal policies are Rego and pin the token claims directly. The raw set
+of the `sp-vm-tdx` environment maps claim for claim onto an ITA policy (ITA
+policy V2 syntax; V2 allows no comments, and the verdict rule must be called
+`match`):
 
 ```rego
 import rego.v1
@@ -220,7 +241,6 @@ match if {
 sp_vm_release if {
     tdx := input.tdx
     tdx.tdx_mrtd == "<mrtd from reference-values.json>"
-    tdx.tdx_rtmr0 == "<rtmr0>"
     tdx.tdx_rtmr1 == "<rtmr1>"
     tdx.tdx_rtmr2 == "<rtmr2>"
     tdx.tdx_rtmr3 == "<rtmr3>"
@@ -232,13 +252,25 @@ tcb_up_to_date if {
 }
 ```
 
+Extract the values straight from the manifest:
+
+```bash
+jq -r '.platforms.tdx | "mrtd  \(.mrtd)", "rtmr1 \(.rtmr1)", "rtmr2 \(.rtmr2)", "rtmr3 \(.rtmr3)"' \
+    reference-values.json
+```
+
 Notes that matter in practice:
 
-* Pin `tdx_rtmr0`, not `rtmr0-normalized`. The normalised value is the
-  Super Protocol construction that drops the dynamic boot events from `RTMR0`;
-  an ITA token carries the raw register, which is what `rtmr0` in the CoRIM is.
-  A relying party that wants the normalisation has to recompute it from the
-  event log, outside ITA.
+* **Do not add a `tdx_rtmr0` condition.** An ITA token reports the raw register,
+  which includes the dynamic boot events of that particular VM, so pinning it
+  to a value captured on one reference boot rejects other valid instances of
+  the same release. `MRTD` plus `RTMR1`-`RTMR3` is the part of the TDX identity
+  that an ITA policy can pin.
+* The normalised `RTMR0` and therefore `mrenclave` cannot be expressed in an
+  ITA policy at all: they are computed from the `RTMR0` event list, which is
+  not an ITA claim. A relying party that wants that stronger check has to
+  replay the event list itself, outside ITA, against `rtmr0-normalized` from
+  the CoRIM — which is what the Super Protocol verification path does.
 * `policy_ids` must be passed with the attestation request (or bound to the API
   key), and a token is issued even when a policy does not match unless
   `PolicyMustMatch` is set — the relying party must check
@@ -247,7 +279,7 @@ Notes that matter in practice:
   cannot be appraised through ITA. For SEV-SNP use a Verifier that accepts the
   launch digest directly (Veraison, or the Super Protocol verification path).
 * ITA's documented policy claim allow-list is narrower than its claim table;
-  `tdx_mrtd`, `tdx_rtmr0`-`tdx_rtmr3`, `tdx_mrsignerseam`, `tdx_is_debuggable`
+  `tdx_mrtd`, `tdx_rtmr1`-`tdx_rtmr3`, `tdx_mrsignerseam`, `tdx_is_debuggable`
   and `attester_tcb_status` are the safe set. Validate anything else with ITA's
   policy validator before relying on it.
 

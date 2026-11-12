@@ -110,9 +110,9 @@ class TdxBundleTest(unittest.TestCase):
         section = evidence.verify_and_normalize("vector.json", bundle)
         self.assertEqual(section["source"], "reference-boot-evidence")
         self.assertEqual(section["mrtd"], bundle["tdx"]["mrtd"])
-        self.assertEqual(section["rtmr0"], bundle["tdx"]["rtmr0"])
-        # The normalised RTMR0 keeps only the two firmware-blob events.
-        self.assertNotEqual(section["rtmr0_normalized"], section["rtmr0"])
+        # The normalised RTMR0 keeps only the two firmware-blob events, so it
+        # differs from the raw register the quote reports.
+        self.assertNotEqual(section["rtmr0_normalized"], bundle["tdx"]["rtmr0"])
         self.assertEqual(
             section["rtmr0_normalized"],
             evidence.rtmr_replay(

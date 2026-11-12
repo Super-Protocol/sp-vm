@@ -1,4 +1,5 @@
 import base64
+import json
 import unittest
 
 from spref import CORIM_PROFILE, corim
@@ -101,11 +102,35 @@ class PlatformTripleTest(unittest.TestCase):
         triple = _only(corim.platform_triples(manifest), "sp-vm-tdx")
         self.assertEqual(
             sorted(_registers(triple)),
-            ["mrenclave", "mrtd", "rtmr0", "rtmr0-normalized", "rtmr1", "rtmr2", "rtmr3"],
+            ["mrenclave", "mrtd", "rtmr0-normalized", "rtmr1", "rtmr2", "rtmr3"],
         )
         raw = triple["measurements"][0]["value"]["raw-value"]
         self.assertEqual(raw["type"], "bytes")
         self.assertEqual(base64.b64decode(raw["value"]).hex(), section["td_attributes"])
+
+    def test_raw_rtmr0_is_never_published(self):
+        # Raw RTMR0 carries instance-dependent boot events, so publishing it as
+        # a reference value would reject valid instances of the same release.
+        for platform in ("tdx", "tdx-google"):
+            bundle = tdx_bundle()
+            bundle["platform"] = platform
+            section = evidence.verify_and_normalize("vector.json", bundle)
+            self.assertNotIn("rtmr0", section)
+
+            manifest = dict(MANIFEST, platforms={platform: section})
+            triple = _only(corim.platform_triples(manifest), f"sp-vm-{platform}")
+            registers = _registers(triple)
+            self.assertNotIn("rtmr0", registers)
+            self.assertIn("rtmr0-normalized", registers)
+
+            raw_rtmr0 = base64.b64encode(
+                bytes.fromhex(bundle["tdx"]["rtmr0"])
+            ).decode()
+            self.assertNotIn(
+                raw_rtmr0,
+                json.dumps(triple),
+                f"{platform}: the raw RTMR0 digest leaked into the CoMID",
+            )
 
     def test_azure_flags_use_the_mrenclave_order(self):
         manifest = dict(MANIFEST)

@@ -203,3 +203,4 @@ jobs:
             reference-values-out/reference-values.json
             reference-values-out/sp-vm-${{ env.SP_VM_IMAGE_VERSION }}.corim.json
             reference-values-out/sp-vm-${{ env.SP_VM_IMAGE_VERSION }}.corim.cbor
+            reference-values-out/sp-vm-${{ env.SP_VM_IMAGE_VERSION }}.corim-unsigned.cbor

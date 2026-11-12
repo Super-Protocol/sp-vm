@@ -60,17 +60,45 @@ openssl ec -pubin -in sp-vm-reference-values.pub.pem -outform DER 2>/dev/null \
 `spref generate` and `spref sign` are separate commands for this reason. The
 generate step is deterministic and needs no key, so the production target is:
 
-1. CI generates `reference-values.json` and the unsigned CoRIM and publishes
-   both as release assets.
-2. The offline machine downloads the unsigned CoRIM, regenerates it from the
-   same release artifacts, compares it byte for byte, signs it and the signed
-   CoRIM is attached to the release.
+1. CI generates `reference-values.json`, `sp-vm-<build>.corim.json` and the
+   unsigned CoRIM and publishes all three as release assets.
+2. The offline machine downloads them, regenerates the unsigned CoRIM from the
+   same release artifacts, compares it byte for byte, and signs only that.
+
+`generate` is deterministic in its measured values, but two fields of the CoRIM
+are not derived from the artifacts and must be fed back in to reproduce the
+same bytes: the **validity window**, which defaults to "now" plus ten years,
+and `sp_vm_commit`. Both are recorded in the published
+`sp-vm-<build>.corim.json`, so the offline regeneration reads them from there:
+
+```bash
+BUILD=build-448-release
+NOT_BEFORE="$(jq -r '.meta.validity["not-before"]' "sp-vm-${BUILD}.corim.json")"
+NOT_AFTER="$(jq -r '.meta.validity["not-after"]'  "sp-vm-${BUILD}.corim.json")"
+COMMIT="$(jq -r '.reference_values.sp_vm_commit // empty' "sp-vm-${BUILD}.corim.json")"
+
+PYTHONPATH=reference-values python3 -m spref generate \
+    --build "$BUILD" --artifact-dir out \
+    --evidence-dir reference-values/evidence \
+    --out-dir offline \
+    --not-before "$NOT_BEFORE" --not-after "$NOT_AFTER" \
+    ${COMMIT:+--sp-vm-commit "$COMMIT"}
+
+# Must be byte-identical to the asset CI published.
+cmp "offline/sp-vm-${BUILD}.corim-unsigned.cbor" "sp-vm-${BUILD}.corim-unsigned.cbor"
+
+PYTHONPATH=reference-values python3 -m spref sign \
+    --in-dir offline --key sp-vm-reference-values.jwk
+```
 
 Until that ceremony is in place, CI signs with the `REFERENCE_VALUES_SIGNING_JWK`
 repository secret and immediately verifies the result against the committed
 public key. The artifact format, the verification procedure and everything a
 customer does are identical in both modes — only the location of the private
-key differs.
+key differs. **When offline signing is adopted, the CI-held key is retired, not
+reused**: a new key is generated in the HSM, its public half is committed as a
+new file, and the old public key stays in place so the releases it signed
+remain verifiable (see "Rotation" below).
 
 ## Rotation
 

@@ -5,7 +5,7 @@ Some reference values cannot be predicted from the build:
 | Platform                       | Values                                   | Source |
 |--------------------------------|------------------------------------------|--------|
 | `sev-snp` (QEMU / bare metal)  | launch digest                            | computed in CI from the build artifacts |
-| `tdx`, `tdx-google`            | `MRTD`, `RTMR0`-`RTMR3`                  | a reference boot |
+| `tdx`, `tdx-google`            | `MRTD`, normalised `RTMR0`, `RTMR1`-`RTMR3` | a reference boot |
 | `tdx-azure`, `sev-snp-azure`   | vTPM `PCR4'`, `PCR9'`, vm-configuration  | a reference boot |
 
 `MRTD` is a function of the TDX firmware alone, but `RTMR1`-`RTMR3` are
@@ -73,7 +73,7 @@ are checked by the unit tests, so they stay valid against the code.
 |-----------------------------|-------------------------------------------------------|
 | `tdx.td_attributes`         | `TDATTRIBUTES` from the quote, 8 bytes of hex          |
 | `tdx.mrtd`                  | `MRTD`, 48 bytes of hex                                |
-| `tdx.rtmr0` ... `tdx.rtmr3` | `RTMR0`-`RTMR3` from the quote, 48 bytes of hex each   |
+| `tdx.rtmr0` ... `tdx.rtmr3` | `RTMR0`-`RTMR3` from the quote, 48 bytes of hex each. Raw `rtmr0` is an input to the checks below and is **not** published as a reference value; only the normalised `RTMR0` derived from it is. |
 | `tdx.rtmr0_event_log`       | the full RTMR0 event list, in order: `{"type": "<TCG event type>", "digest": "<48 bytes of hex>"}` |
 
 The event list must contain at least one `EV_EFI_PLATFORM_FIRMWARE_BLOB` or

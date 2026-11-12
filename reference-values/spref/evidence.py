@@ -219,7 +219,9 @@ def _tdx(path, bundle):
         {
             "td_attributes": td_attributes.hex(),
             "mrtd": mrtd.hex(),
-            "rtmr0": rtmr[0].hex(),
+            # Raw RTMR0 is an input to the checks above, not a reference value:
+            # it includes boot events that vary between instances of the same
+            # release. Only the normalised register is published.
             "rtmr0_normalized": rtmr0_normalized.hex(),
             "rtmr1": rtmr[1].hex(),
             "rtmr2": rtmr[2].hex(),
