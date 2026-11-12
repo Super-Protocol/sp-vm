@@ -292,6 +292,67 @@ def patch_template(template: dict, network_type: str) -> dict:
     return template
 
 
+def validate_cert_lifetimes(template: dict) -> None:
+    """Reject a chain in which a certificate outlives the certificate that signs it.
+
+    Everything in this template is generated in one pass on the bootstrap node, so a
+    certificate's configured lifetime is also its signer's *remaining* lifetime at the
+    moment of signing. A subordinate certificate that lives longer than its signer is
+    therefore guaranteed to be orphaned before it expires: a verifier walking the chain
+    rejects it on the expired issuer without ever looking at the leaf.
+    """
+    certificates = template.get("certificates")
+    if not isinstance(certificates, list):
+        raise ValueError("Invalid template: 'certificates' must be a list")
+
+    lifetimes: dict[str, int] = {}
+    signers: dict[str, str] = {}
+
+    for index, cert in enumerate(certificates):
+        if not isinstance(cert, dict):
+            raise ValueError(f"Invalid template: 'certificates[{index}]' must be a mapping")
+
+        cert_id = cert.get("id")
+        if not isinstance(cert_id, str) or not cert_id.strip():
+            raise ValueError(
+                f"Invalid template: 'certificates[{index}].id' must be a non-empty string"
+            )
+        if cert_id in lifetimes:
+            raise ValueError(f"Invalid template: duplicate certificate id '{cert_id}'")
+
+        cert_params = cert.get("certParams")
+        if not isinstance(cert_params, dict):
+            raise ValueError(f"Invalid template: '{cert_id}.certParams' must be a mapping")
+
+        lifetime = cert_params.get("lifetimeDays")
+        if isinstance(lifetime, bool) or not isinstance(lifetime, int) or lifetime < 1:
+            raise ValueError(
+                f"Invalid template: '{cert_id}.certParams.lifetimeDays' must be a positive integer"
+            )
+        lifetimes[cert_id] = lifetime
+
+        signer = cert.get("signer")
+        if signer is None:
+            continue
+        if not isinstance(signer, str) or not signer.strip():
+            raise ValueError(
+                f"Invalid template: '{cert_id}.signer' must be a non-empty string when present"
+            )
+        signers[cert_id] = signer
+
+    for cert_id, signer in signers.items():
+        if signer not in lifetimes:
+            raise ValueError(
+                f"Invalid template: '{cert_id}' is signed by unknown certificate '{signer}'"
+            )
+        if lifetimes[cert_id] > lifetimes[signer]:
+            raise ValueError(
+                f"Invalid template: '{cert_id}' lives {lifetimes[cert_id]} days but its signer "
+                f"'{signer}' lives {lifetimes[signer]} days; a certificate must not outlive "
+                f"its issuer"
+            )
+
+
 def has_non_empty_value(value, field_name: str, value_type: type) -> bool:
     if value is None:
         return False
@@ -496,6 +557,9 @@ def run_configure(template_path: Path, output_path: Path):
         if not isinstance(template_data, dict):
             raise ValueError("Invalid template: root must be a mapping")
 
+        validate_cert_lifetimes(template_data)
+        log("INFO", "Certificate lifetimes are consistent with their issuers")
+
         network_type = detect_network_type()
         log("INFO", f"Detected networkType={network_type}")
 
@@ -511,6 +575,29 @@ def run_configure(template_path: Path, output_path: Path):
         return 0
     except Exception as error:
         log("ERROR", f"Failed to render cert-gen config: {error}")
+        return 1
+
+
+def run_validate_template(template_path: Path) -> int:
+    """Check the template's lifetime hierarchy without touching the host.
+
+    `run_configure` runs the same check at bootstrap. Exposing it as its own command is
+    what lets CI reject a template that would only fail once a cloud is already booting.
+    """
+    if not template_path.exists():
+        log("ERROR", f"Template file does not exist: {template_path}")
+        return 1
+
+    try:
+        template_data = yaml.safe_load(template_path.read_text(encoding="utf-8"))
+        if not isinstance(template_data, dict):
+            raise ValueError("Invalid template: root must be a mapping")
+
+        validate_cert_lifetimes(template_data)
+        log("INFO", f"Certificate lifetimes in {template_path} are consistent with their issuers")
+        return 0
+    except Exception as error:
+        log("ERROR", f"Template validation failed: {error}")
         return 1
 
 
@@ -575,6 +662,16 @@ def main():
     configure_parser.add_argument("--template", required=True, help="Path to cert-gen config template")
     configure_parser.add_argument("--output", required=True, help="Path to rendered cert-gen config")
 
+    validate_template_parser = subparsers.add_parser(
+        "validate-template",
+        help="Check that no certificate in the cert-gen template outlives its signer",
+    )
+    validate_template_parser.add_argument(
+        "--template",
+        required=True,
+        help="Path to cert-gen config template",
+    )
+
     configure_sync_client_parser = subparsers.add_parser(
         "configure-sync-client",
         help="Render PKI sync-client swarm-env config",
@@ -609,6 +706,9 @@ def main():
 
     if args.command == "configure":
         return run_configure(Path(args.template), Path(args.output))
+
+    if args.command == "validate-template":
+        return run_validate_template(Path(args.template))
 
     if args.command == "configure-sync-client":
         return run_configure_sync_client(Path(args.config), Path(args.output))

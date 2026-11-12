@@ -153,3 +153,7 @@ scripts/**/provider_config/
 
 # Generated documentation
 docs/**/*.pdf
+
+# Python bytecode from the pki-service helper tests
+__pycache__/
+*.py[cod]
