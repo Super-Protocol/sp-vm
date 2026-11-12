@@ -153,3 +153,7 @@ scripts/**/provider_config/
 
 # Generated documentation
 docs/**/*.pdf
+
+# Python bytecode (reference-values generator)
+__pycache__/
+*.py[cod]

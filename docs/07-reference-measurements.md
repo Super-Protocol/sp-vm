@@ -33,3 +33,25 @@ unavailable.
 The Intel TDX and AMD SEV-SNP `mrEnclave` calculation algorithms are
 described in the [VM measurements chapter](04-vm-measurements.md), and the
 Azure confidential VM algorithm in [chapter 8](08-azure-attestation.md).
+
+## External Reference Values
+
+The registry above is specific to the Super Protocol attestation protocol: it
+answers "is this `mrEnclave` approved" and nothing else, and reading it means
+trusting the Super Protocol signing key.
+
+Every release therefore also publishes its measurements in a standard,
+machine-readable form: a **CoRIM** (Concise Reference Integrity Manifest, IETF
+RATS; CBOR, COSE_Sign1-signed) attached to the GitHub release of the build,
+signed with a dedicated Reference-Values key that is separate from the PKI. It
+carries the raw hardware measurements — TDX `MRTD` and `RTMR0`-`RTMR3`, the
+SEV-SNP launch digest, the Azure vTPM `PCR4` and `PCR9` — the digests of the
+build artifacts and the dm-verity root hash of the rootfs, together with the
+`mrEnclave` values of the registry, so a relying party can appraise an sp-vm VM
+with its own Verifier (Intel Trust Authority, Veraison) and can reproduce the
+values from a rebuild of the image.
+
+The format, the signing key, the verification procedure and the
+"rebuild and measure yourself" instructions are documented in
+[`reference-values/README.md`](https://github.com/Super-Protocol/sp-vm/blob/main/reference-values/README.md)
+of the sp-vm repository.
