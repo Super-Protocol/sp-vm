@@ -145,11 +145,29 @@ What the script changes in each node's copy of the template:
 | `swarm_db.node_name` | node name | node name |
 | `swarm_db.advertise_addr` | removed | removed |
 | `swarm_db.join_addresses` | `[]` | `<ip>:7946` of every node already in the cluster |
+| `swarm_db.bootstrap` | `true` | `false` |
 | `pki_authority.caBundle` | removed | the cluster CA |
 | `pki_authority.servers` | removed | `<ip>:9443` of every node already in the cluster |
 | `swarm_domain`, `pki_domain` | from the specification, if set there | same |
 
 The script does not touch `networkID`; it only checks that it is set.
+
+**The bootstrap node's copy becomes a join copy.** A node in `init` mode
+creates a root CA and a swarm key and keeps neither — the state disk is
+reformatted on every boot. Booting the bootstrap node a second time in `init`
+mode would therefore create a *second*, unrelated PKI and a second swarm key,
+and it could not rejoin the cluster it created. So as soon as another node
+serves the cluster CA, `up`, `add` and `refresh-configs` re-render the
+bootstrap node's `provider_config` as a join config — peers and CA of the other
+nodes, `swarm_db.bootstrap: false` — and re-upload it with `--no-restart`. Its
+next boot enrols like any other node and the original CA survives.
+
+Two consequences worth knowing:
+
+- a one-node cluster cannot survive a reboot of its only node, and the script
+  logs that it could not promote the config;
+- after deleting nodes, run `refresh-configs` so the remaining configs point at
+  nodes that still exist.
 
 ### `swarm/openresty.yaml`
 
@@ -570,7 +588,7 @@ How to read it:
 | Measurement API does not answer | the VM did not boot, or the provider_config did not arrive (wrong template, expired blob) |
 | Measurement API answers, PKI silent, release build | the `mrEnclave` was not accepted. Check the registry; with `--skip-registry` the script did not wait for it |
 | Measurement API answers, PKI silent, node had been running | it rebooted (Azure service healing) and its provider_config archive was gone, so it booted blank. Check `CONFIG` in `status`, then `refresh-provider-config` that node — `--no-restart` is wrong here, it has to reboot to pick the archive up |
-| PKI serves a different CA | the node came up as a bootstrap: its config has empty `join_addresses`, `caBundle` or `servers` |
+| PKI serves a different CA | the node came up as a bootstrap: its config has empty `join_addresses`, `caBundle` and `servers`. On the bootstrap node this means its config was never promoted to a join config — see above; run `refresh-configs` before rebooting it |
 | all nodes `ok`, the UI does not come up | the cluster is still converging, or the nodes are too small; see `status` and the sizes above |
 
 Then fix the cause and run the same command again (`up` or `add`), or delete

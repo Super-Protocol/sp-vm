@@ -1,0 +1,52 @@
+name: guest script tests
+
+# The image is built by a manually dispatched workflow on a self-hosted runner,
+# so nothing in this repository runs on a pull request. The scripts under
+# src/rootfs/files/configs and scripts/azure decide a node's PKI mode on every
+# boot, and getting that wrong partitions or forks a swarm (SUP-655) — a fault
+# that is only visible after rebooting a real VM. Their unit tests get a runner
+# rather than relying on someone remembering to run them by hand.
+on:
+  pull_request:
+    paths:
+      - 'src/rootfs/files/configs/pki-service/**'
+      - 'src/rootfs/tests/**'
+      - 'scripts/azure/cluster.sh'
+      - 'scripts/azure/cluster_config.py'
+      - '.github/workflows/guest-script-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/rootfs/files/configs/pki-service/**'
+      - 'src/rootfs/tests/**'
+      - 'scripts/azure/cluster.sh'
+      - 'scripts/azure/cluster_config.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guest-script-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unittest:
+    name: unittest (guest scripts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install what the scripts import at module scope
+        # The guest image ships pyyaml; a runner does not.
+        run: pip install --disable-pip-version-check pyyaml
+
+      - name: Run the tests
+        run: python -m unittest discover -s src/rootfs/tests -p 'test_*.py' -v
+
+      - name: The cluster launcher parses
+        run: bash -n scripts/azure/cluster.sh
