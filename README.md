@@ -381,9 +381,12 @@ and one cluster can mix them. `state_disk_size: 0` uses the VM's built-in disk
 The template is a normal `provider_config`: `swarm/config.yaml` with
 `pki_authority.networkID`, the domains and the service tags, plus
 `swarm/openresty.yaml`. The script fills in the node-specific fields for each
-node: `swarm_db.node_name`, and on join nodes `join_addresses`,
-`pki_authority.servers` and `pki_authority.caBundle`. `advertise_addr` is
-removed; every VM detects its own public address.
+node: `swarm_db.node_name`, `swarm_db.bootstrap`, and on join nodes
+`join_addresses`, `pki_authority.servers` and `pki_authority.caBundle`.
+`advertise_addr` is removed; every VM detects its own public address. Once a
+second node serves the cluster CA, the bootstrap node's copy is re-rendered as
+a join copy and re-uploaded, so that node can reboot without creating a second
+PKI — see [the cluster guide](scripts/azure/CLUSTER_EN.md).
 
 **Node names** are generated, never set by hand:
 `<cluster>-node-<N>-<4 random characters>`, e.g. `azure-test-node-2-k7q2`. `N`

@@ -51,6 +51,7 @@ API_INTROSPECTION_CLIENT_SECRET_PATH="/sp/swarm/api-introspection-client-secret"
 [ -f "$API_INTROSPECTION_CLIENT_SECRET_PATH" ] && API_INTROSPECTION_CLIENT_SECRET=$(cat "$API_INTROSPECTION_CLIENT_SECRET_PATH")
 
 SWARM_INIT_CERTS_DIR=${SWARM_INIT_CERTS_DIR:-/etc/super/certs/swarm-init}
+SWARM_KEY_FILE=${SWARM_KEY_FILE:-/etc/swarm/swarm.key}
 EVIDENCE_SIGN_KEY=""
 
 SWARM_INIT_CERT_SECRET_KEYS=(
@@ -104,6 +105,7 @@ ensure_swarm_init_cert_secrets() {
   local cert_path
   local secret_value
   local pki_auth_token
+  local swarm_key
 
   if ! is_swarm_init_mode; then
     echo "INFO: skip pki cert secrets initialization, vm_mode is not swarm-init" >&2
@@ -112,6 +114,19 @@ ensure_swarm_init_cert_secrets() {
 
   pki_auth_token="$(openssl rand -base64 64)"
   ensure_secret "pki_auth_token" "$pki_auth_token"
+
+  # The swarm key is generated in this node's /etc/swarm/swarm.key, which the
+  # next boot wipes along with the rest of the state disk. Store it with the
+  # rest of the PKI material so the PKI Authority serves the swarm's own key
+  # from shared state wherever it runs, instead of whatever its local file
+  # happens to hold (SUP-655).
+  if [ -s "$SWARM_KEY_FILE" ]; then
+    swarm_key="$(tr -d '[:space:]' < "$SWARM_KEY_FILE")"
+    ensure_secret "pki_swarm_key" "$swarm_key"
+  else
+    echo "ERROR: required swarm key file is missing or empty: $SWARM_KEY_FILE" >&2
+    return 1
+  fi
 
   for secret_key in "${SWARM_INIT_CERT_SECRET_KEYS[@]}"; do
     cert_file="${secret_key}.pem"
