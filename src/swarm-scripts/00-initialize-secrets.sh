@@ -69,19 +69,42 @@ SWARM_INIT_CERT_SECRET_KEYS=(
   "subroot_evidence_lite_key"
 )
 
+secret_exists() {
+  local key="$1"
+
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" get SwarmSecrets "$key" >/dev/null 2>&1
+}
+
 ensure_secret() {
   local key="$1"
   local value="$2"
   [ -n "$value" ] || return 0
 
-  if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" get SwarmSecrets "$key" >/dev/null 2>&1; then
+  if secret_exists "$key"; then
     echo "SwarmSecret '$key' already exists, skipping creation."
     return 0
   fi
 
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
     python3 "$(dirname "$0")/swarm-cli.py" create SwarmSecrets "$key" --value "$value" >/dev/null
+}
+
+# Like ensure_secret, but the value is minted only when the swarm does not
+# already hold one. This script runs on every boot of the swarm-init node, so
+# generating first and leaving it to the write to decide costs the swarm its
+# key the moment a guard fails open — which is how the RKE2 join token ended
+# up rotating under a running cluster (SUP-700).
+ensure_generated_secret() {
+  local key="$1"
+  shift
+
+  if secret_exists "$key"; then
+    echo "SwarmSecret '$key' already exists, skipping generation."
+    return 0
+  fi
+
+  ensure_secret "$key" "$("$@")"
 }
 
 ensure_global_id_pointer() {
@@ -109,7 +132,11 @@ ensure_rke2_join_token_secret() {
   # here, once, and every node reads the replicated row (SUP-652). Hex, not
   # base64: the plugin writes the value into RKE2's YAML config unquoted, and
   # `openssl rand -base64` wraps its output across lines.
-  ensure_secret "rke2_join_token" "$(openssl rand -hex 32)"
+  #
+  # Once is literal: a cluster's etcd bootstrap data is sealed with the token it
+  # was created with, so replacing the row leaves the running nodes healthy and
+  # every node that joins afterwards rejected (SUP-700).
+  ensure_generated_secret "rke2_join_token" openssl rand -hex 32
 }
 
 ensure_swarm_init_cert_secrets() {
@@ -118,7 +145,6 @@ ensure_swarm_init_cert_secrets() {
   local cert_file
   local cert_path
   local secret_value
-  local pki_auth_token
   local swarm_key
 
   if ! is_swarm_init_mode; then
@@ -126,8 +152,7 @@ ensure_swarm_init_cert_secrets() {
     return 0
   fi
 
-  pki_auth_token="$(openssl rand -base64 64)"
-  ensure_secret "pki_auth_token" "$pki_auth_token"
+  ensure_generated_secret "pki_auth_token" openssl rand -base64 64
 
   # The swarm key is generated in this node's /etc/swarm/swarm.key, which the
   # next boot wipes along with the rest of the state disk. Store it with the

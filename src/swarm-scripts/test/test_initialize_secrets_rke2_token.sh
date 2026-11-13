@@ -6,6 +6,13 @@
 # comes up — so the three cases that decide whether it gets written are worth a
 # test: swarm-init mode writes it, any other mode does not, and a swarm that
 # already has one keeps it.
+#
+# "Once" is also about what this script does NOT do: it reruns on every boot of
+# the swarm-init node, and a rerun that mints a fresh token locks every future
+# node out of a cluster that is otherwise healthy (SUP-700). The last cases
+# check that an existing secret stops the generator from running at all. That
+# the write itself also refuses to overwrite is pinned separately, against the
+# real CLI, in test_swarm_cli_secrets.py — this test stubs the CLI out.
 
 set -euo pipefail
 
@@ -67,11 +74,26 @@ exec /usr/bin/python3 "$@"
 STUB
 chmod +x "$test_root/stub/python3"
 
+# Record every `openssl` call so a test can assert that a secret the swarm
+# already holds is never even regenerated.
+cat > "$test_root/stub/openssl" <<'STUB'
+#!/usr/bin/env bash
+set -euo pipefail
+echo "openssl $*" >> "$SP_TEST_CALL_LOG"
+exec /usr/bin/openssl "$@"
+STUB
+chmod +x "$test_root/stub/openssl"
+
 # $1: vm mode written to the mode file, $2: ids SwarmDB already holds.
-# Echoes the path of the recorded swarm-cli call log.
+# Sets `log` to the path of the recorded swarm-cli call log.
+#
+# Deliberately not a function that echoes its result: bash suspends errexit
+# inside the `$(...)` of an assignment, so a script under test that died
+# half-way would read here as a script that simply wrote nothing. Returning
+# through a variable keeps `set -e` live and the exit status checked.
 run_script() {
     local vm_mode="$1" existing="${2:-}"
-    local run_dir certs_dir call_log
+    local run_dir certs_dir call_log status
     run_dir="$(mktemp -d "$test_root/run.XXXXXXXX")"
     certs_dir="$run_dir/certs"
     call_log="$run_dir/calls.log"
@@ -82,17 +104,23 @@ run_script() {
     for key in "${CERT_SECRET_KEYS[@]}"; do
         printf -- '-----BEGIN TEST %s-----\n' "$key" > "$certs_dir/$key.pem"
     done
+    # pki-cert-init leaves the swarm key here; the script stores it alongside
+    # the rest of the PKI material (SUP-655) and fails the boot without it.
+    printf 'test-swarm-key\n' > "$test_root/etc/swarm/swarm.key"
     : > "$call_log"
 
+    status=0
     PATH="$test_root/stub:$PATH" \
     CONFIG="$test_root/sp/swarm/config.yaml" \
     VM_MODE_FILE="$test_root/etc/swarm/swarm-vm-mode" \
     SWARM_INIT_CERTS_DIR="$certs_dir" \
+    SWARM_KEY_FILE="$test_root/etc/swarm/swarm.key" \
     SP_TEST_CALL_LOG="$call_log" \
     SP_TEST_EXISTING_SECRETS="$existing" \
-        bash "$under_test" >/dev/null
+        bash "$under_test" >/dev/null || status=$?
+    [[ "$status" -eq 0 ]] || fail "00-initialize-secrets.sh exited $status in vm mode '$vm_mode'"
 
-    printf '%s\n' "$call_log"
+    log="$call_log"
 }
 
 created_token() {
@@ -101,26 +129,41 @@ created_token() {
 
 # 1. swarm-init mode generates the token, and generates it as a single-line,
 #    64-character hex string — the plugin writes it into YAML unquoted.
-log="$(run_script init)"
+run_script init
 token="$(created_token "$log")"
 [[ -n "$token" ]] || fail "swarm-init mode did not create the rke2_join_token secret"
 [[ "$(created_token "$log" | wc -l)" -eq 1 ]] || fail "rke2_join_token was created more than once"
 [[ "$token" =~ ^[0-9a-f]{64}$ ]] || fail "rke2_join_token is not 32 random bytes of hex: '$token'"
 
 # ... and a second swarm-init node does not reuse the first one's value.
-second="$(created_token "$(run_script init)")"
+run_script init
+second="$(created_token "$log")"
 [[ "$second" != "$token" ]] || fail "rke2_join_token is not random: two runs produced '$token'"
 
 # 2. Any other vm mode leaves the token alone: a joining node reads the
 #    replicated row instead of racing the init node with a second value.
-log="$(run_script join)"
+run_script join
 [[ -z "$(created_token "$log")" ]] || fail "non-init mode created an rke2_join_token secret"
 grep -q 'create SwarmSecrets base_domain' "$log" || fail "non-init mode skipped the plain secrets too"
 
 # 3. A swarm that already holds the token keeps it — reruns must not rotate a
-#    live cluster's join token out from under it.
-log="$(run_script init rke2_join_token)"
+#    live cluster's join token out from under it. The cluster's etcd bootstrap
+#    data is sealed with the original, so a rotated row leaves the running
+#    nodes healthy and rejects every node that joins afterwards (SUP-700).
+run_script init rke2_join_token
 [[ -z "$(created_token "$log")" ]] || fail "an existing rke2_join_token secret was overwritten"
 grep -q 'get SwarmSecrets rke2_join_token' "$log" || fail "the existing secret was never looked up"
+! grep -q 'openssl rand -hex 32' "$log" || fail "a token was generated although the swarm already holds one"
+
+# 4. The same holds for the other secret this script mints from scratch: the
+#    PKI auth token is what the authority accepts certificate requests with.
+run_script init "rke2_join_token pki_auth_token"
+! grep -q 'create SwarmSecrets pki_auth_token' "$log" || fail "an existing pki_auth_token secret was overwritten"
+! grep -q 'openssl rand -base64 64' "$log" || fail "a pki_auth_token was generated although the swarm already holds one"
+
+# ... and when it is absent it is still minted, so the guard cannot pass by
+#     simply never generating anything.
+run_script init
+grep -q 'create SwarmSecrets pki_auth_token' "$log" || fail "a swarm without a pki_auth_token did not get one"
 
 echo "PASS: $(basename "${BASH_SOURCE[0]}")"
