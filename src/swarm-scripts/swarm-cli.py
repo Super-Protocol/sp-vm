@@ -454,10 +454,59 @@ def get_swarm_id_pointer(args: argparse.Namespace, db: dict, engine: Engine) -> 
   print(json.dumps(dict(row)))
 
 
+def swarm_secret_exists(engine: Engine, secret_id: str) -> bool:
+  """Does this SwarmSecret row exist? Raises on a failed query — never guesses."""
+  sql = "SELECT id FROM SwarmSecrets WHERE id = :id LIMIT 1"
+  with engine.connect() as conn:
+    return conn.execute(text(sql), {"id": secret_id}).first() is not None
+
+
+def get_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  """
+  Report whether a SwarmSecret exists.
+  - Exit code 0: it exists, its id is printed as JSON.
+  - Exit code 1: not found.
+  - Exit code 2: query failed.
+
+  The value is withheld unless --show-value is passed: callers of this command
+  are guards and shell scripts whose output lands in logs, and the rows here
+  hold join tokens and private keys.
+  """
+  secret_id = args.id or args.positional_id
+  if not secret_id:
+    print("SwarmSecrets get requires id (positional or --id).", file=sys.stderr)
+    sys.exit(2)
+
+  columns = "id, value" if args.show_value else "id"
+  sql = f"SELECT {columns} FROM SwarmSecrets WHERE id = :id LIMIT 1"
+  try:
+    with engine.connect() as conn:
+      row = conn.execute(text(sql), {"id": secret_id}).mappings().first()
+  except Exception as exc:
+    print(f"MySQL query failed: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+  if row is None:
+    sys.exit(1)
+
+  print(json.dumps(dict(row)))
+
+
 def create_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> None:
   """
-  Insert or keep a SwarmSecret.
-  Semantics are like INSERT IGNORE: we do not overwrite existing secrets.
+  Create a SwarmSecret, or leave the existing one alone.
+
+  The existing row is protected by an explicit SELECT, not by the INSERT. MySQL
+  would keep it through `ON DUPLICATE KEY UPDATE value = value`, but SwarmDB
+  resolves every insert as a last-writer-wins upsert, so that idiom overwrites
+  here (SUP-700). These rows are generated once and then depended on — the RKE2
+  join token is sealed into the cluster's etcd bootstrap data, the PKI auth
+  token is handed out to every node — so overwriting one on a re-run strands
+  the swarm.
+
+  The SELECT and the INSERT are not atomic. That is sound for the callers that
+  exist: 00-initialize-secrets.sh runs on one node, in swarm-init mode, one boot
+  at a time.
   """
   id_value = args.id or args.positional_id
   value = args.value
@@ -465,6 +514,14 @@ def create_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> 
   if not id_value or value is None:
     print("SwarmSecrets requires id (positional or --id) and --value.", file=sys.stderr)
     sys.exit(1)
+
+  try:
+    if swarm_secret_exists(engine, id_value):
+      print(f"SwarmSecrets '{id_value}' already exists, left unchanged.")
+      return
+  except Exception as exc:
+    print(f"MySQL query failed: {exc}", file=sys.stderr)
+    sys.exit(2)
 
   insert_sql = (
     "INSERT INTO SwarmSecrets (id, value)\n"
@@ -477,7 +534,7 @@ def create_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> 
     "value": value,
   }
   run_sql(engine, insert_sql, params)
-  print(f"SwarmSecrets '{id_value}' upserted (existing values preserved).")
+  print(f"SwarmSecrets '{id_value}' created.")
 
 
 def get_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) -> None:
@@ -609,6 +666,12 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
 
   # SwarmSecrets options
   parser.add_argument("--value")
+  parser.add_argument(
+    "--show-value",
+    dest="show_value",
+    action="store_true",
+    help="With `get SwarmSecrets`, print the secret value as well as its id",
+  )
 
   ns = parser.parse_args(argv)
   # If a positional id was provided, prefer it unless --id was set
@@ -648,6 +711,8 @@ def main(argv: List[str]) -> None:
     create_swarm_secrets(args, db, engine)
   elif key == "create:SwarmIdPointer":
     create_swarm_id_pointer(args, db, engine)
+  elif key == "get:SwarmSecrets":
+    get_swarm_secrets(args, db, engine)
   elif key == "get:SwarmIdPointer":
     get_swarm_id_pointer(args, db, engine)
   elif key == "get:ClusterPolicies":

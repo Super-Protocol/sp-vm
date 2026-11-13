@@ -72,13 +72,26 @@ SWARM_INIT_CERT_SECRET_KEYS=(
 ensure_secret() {
   local key="$1"
   local value="$2"
+  local rc=0
   [ -n "$value" ] || return 0
 
-  if DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
-    python3 "$(dirname "$0")/swarm-cli.py" get SwarmSecrets "$key" >/dev/null 2>&1; then
-    echo "SwarmSecret '$key' already exists, skipping creation."
-    return 0
-  fi
+  # Exit 0 is "exists", 1 is "absent", anything else is "the query failed" — and
+  # those are not the same answer. Treating a failed query as "absent" is what
+  # would rotate a live secret (SUP-700), so this script stops instead.
+  DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
+    python3 "$(dirname "$0")/swarm-cli.py" get SwarmSecrets "$key" >/dev/null || rc=$?
+
+  case "$rc" in
+    0)
+      echo "SwarmSecret '$key' already exists, skipping creation."
+      return 0
+      ;;
+    1) ;;
+    *)
+      echo "ERROR: cannot tell whether SwarmSecret '$key' exists (swarm-cli exit $rc); refusing to create it" >&2
+      return 1
+      ;;
+  esac
 
   DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_USER="$DB_USER" DB_NAME="$DB_NAME" \
     python3 "$(dirname "$0")/swarm-cli.py" create SwarmSecrets "$key" --value "$value" >/dev/null

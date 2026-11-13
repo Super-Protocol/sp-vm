@@ -42,8 +42,10 @@ powerdns_api_key: pdns-key
 YAML
 
 # Stand in for `python3`: `python3 -c ...` is the script's YAML reader and has to
-# keep working, while `python3 .../swarm-cli.py ...` is the SwarmDB write we want
-# to observe. SP_TEST_EXISTING_SECRETS lists the ids SwarmDB already holds.
+# keep working, while `python3 .../swarm-cli.py ...` is the SwarmDB call we want
+# to observe. SP_TEST_EXISTING_SECRETS lists the ids SwarmDB already holds;
+# SP_TEST_GET_EXIT, when set, makes every `get` fail with that code instead,
+# standing in for an unreachable or broken SwarmDB.
 cat > "$test_root/stub/python3" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -55,6 +57,7 @@ case "${1:-}" in
         shift
         echo "$*" >> "$SP_TEST_CALL_LOG"
         if [[ "${1:-}" == "get" ]]; then
+            [[ -n "${SP_TEST_GET_EXIT:-}" ]] && exit "$SP_TEST_GET_EXIT"
             for existing in ${SP_TEST_EXISTING_SECRETS:-}; do
                 [[ "${3:-}" == "$existing" ]] && exit 0
             done
@@ -67,10 +70,12 @@ exec /usr/bin/python3 "$@"
 STUB
 chmod +x "$test_root/stub/python3"
 
-# $1: vm mode written to the mode file, $2: ids SwarmDB already holds.
-# Echoes the path of the recorded swarm-cli call log.
+# $1: vm mode written to the mode file, $2: ids SwarmDB already holds,
+# $3: exit code every `get` should fail with (empty for the normal lookup).
+# Echoes the path of the recorded swarm-cli call log; the script's exit code is
+# written next to it and read back with last_rc.
 run_script() {
-    local vm_mode="$1" existing="${2:-}"
+    local vm_mode="$1" existing="${2:-}" get_exit="${3:-}"
     local run_dir certs_dir call_log
     run_dir="$(mktemp -d "$test_root/run.XXXXXXXX")"
     certs_dir="$run_dir/certs"
@@ -84,15 +89,23 @@ run_script() {
     done
     : > "$call_log"
 
+    local rc=0
     PATH="$test_root/stub:$PATH" \
     CONFIG="$test_root/sp/swarm/config.yaml" \
     VM_MODE_FILE="$test_root/etc/swarm/swarm-vm-mode" \
     SWARM_INIT_CERTS_DIR="$certs_dir" \
     SP_TEST_CALL_LOG="$call_log" \
     SP_TEST_EXISTING_SECRETS="$existing" \
-        bash "$under_test" >/dev/null
+    SP_TEST_GET_EXIT="$get_exit" \
+        bash "$under_test" >/dev/null 2>&1 || rc=$?
 
+    printf '%s\n' "$rc" > "$run_dir/rc"
     printf '%s\n' "$call_log"
+}
+
+# Exit code of the run that produced this call log.
+last_rc() {
+    cat "${1%/*}/rc"
 }
 
 created_token() {
@@ -122,5 +135,15 @@ grep -q 'create SwarmSecrets base_domain' "$log" || fail "non-init mode skipped 
 log="$(run_script init rke2_join_token)"
 [[ -z "$(created_token "$log")" ]] || fail "an existing rke2_join_token secret was overwritten"
 grep -q 'get SwarmSecrets rke2_join_token' "$log" || fail "the existing secret was never looked up"
+
+# 4. A SwarmDB that cannot answer "does this row exist?" is not a SwarmDB that
+#    says "no". Guessing there is what overwrites a live secret (SUP-700), so
+#    the script stops without creating anything.
+log="$(run_script init "" 2)"
+[[ "$(last_rc "$log")" -ne 0 ]] || fail "a failed existence lookup did not stop the script"
+if grep -q '^create SwarmSecrets' "$log"; then
+    fail "a secret was created while the existence lookup was failing"
+fi
+grep -q '^get SwarmSecrets' "$log" || fail "the existence lookup was never attempted"
 
 echo "PASS: $(basename "${BASH_SOURCE[0]}")"
