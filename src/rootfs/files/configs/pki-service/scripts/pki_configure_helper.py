@@ -287,9 +287,9 @@ def read_nvtrust(config_data: dict) -> dict | None:
     if not isinstance(raw, dict):
         raise ValueError("Invalid config: 'nvtrust' must be a mapping")
 
-    verifier = raw.get("verifier", "remote")
-    if verifier not in ("remote", "local"):
-        raise ValueError("Invalid config: nvtrust.verifier must be 'remote' or 'local'")
+    verifier = raw.get("verifier", "nras")
+    if verifier not in ("nras", "proxy"):
+        raise ValueError("Invalid config: nvtrust.verifier must be 'nras' or 'proxy'")
 
     rendered = {"verifier": verifier}
     for key in ("rimUrl", "ocspUrl"):
@@ -543,7 +543,7 @@ def run_configure(template_path: Path, output_path: Path):
         nvtrust = None
         if swarm_config_path.exists():
             nvtrust = read_nvtrust(load_swarm_config(swarm_config_path))
-        log("INFO", f"NVIDIA verifier={nvtrust['verifier'] if nvtrust else 'remote'}")
+        log("INFO", f"NVIDIA verifier={nvtrust['verifier'] if nvtrust else 'nras'}")
 
         rendered_data = patch_template(template_data, network_type, nvtrust)
 
