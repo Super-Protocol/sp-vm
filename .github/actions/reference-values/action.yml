@@ -45,6 +45,11 @@ runs:
         go-version: "1.22"
         cache: false
 
+    - name: Set up Python for the reference-values tooling
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
     - name: Install the reference-values tooling
       shell: bash
       run: |
