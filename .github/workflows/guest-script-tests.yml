@@ -5,7 +5,9 @@ name: guest script tests
 # src/rootfs/files/configs and scripts/azure decide a node's PKI mode on every
 # boot, and getting that wrong partitions or forks a swarm (SUP-655) — a fault
 # that is only visible after rebooting a real VM. Their unit tests get a runner
-# rather than relying on someone remembering to run them by hand.
+# rather than relying on someone remembering to run them by hand. The same
+# scripts also fix the lifetime of every certificate a swarm will ever hold, and
+# nothing renews the chain (SUP-653), so the lifetime guard runs here too.
 on:
   pull_request:
     paths:
@@ -47,6 +49,27 @@ jobs:
 
       - name: Run the tests
         run: python -m unittest discover -s src/rootfs/tests -p 'test_*.py' -v
+
+      - name: No certificate in the shipped template outlives its signer
+        # The same check pki-cert-init.service runs before generating a chain. Keep it
+        # as its own step so a template-only regression names itself in the log.
+        run: |
+          python3 src/rootfs/files/configs/pki-service/scripts/pki_configure_helper.py \
+            validate-template \
+            --template src/rootfs/files/configs/pki-service/conf/cert-gen-config-template.yaml
+
+      - name: The helper compiles with warnings fatal
+        # The helper only ever runs inside a guest, where a SyntaxWarning shows up as a
+        # failed boot. Make it fail here instead.
+        run: |
+          python - <<'PY'
+          import warnings
+          warnings.simplefilter("error")
+          path = "src/rootfs/files/configs/pki-service/scripts/pki_configure_helper.py"
+          with open(path) as f:
+              compile(f.read(), path, "exec")
+          print("compiles clean, warnings fatal")
+          PY
 
       - name: The cluster launcher parses
         run: bash -n scripts/azure/cluster.sh

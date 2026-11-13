@@ -154,6 +154,6 @@ scripts/**/provider_config/
 # Generated documentation
 docs/**/*.pdf
 
-# Python bytecode (reference-values generator)
+# Python bytecode (reference-values generator, guest script tests)
 __pycache__/
 *.py[cod]
