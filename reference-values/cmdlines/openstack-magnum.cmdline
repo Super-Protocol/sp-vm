@@ -1,0 +1,3 @@
+# spvm_cloud.py on the OpenStack demonstration host (cloud-demo.superprotocol.dev).
+# This is the profile the published mrEnclave of build-448-release was signed for.
+root=LABEL=rootfs console=ttyS0 systemd.log_level=trace systemd.log_target=log rootfs_verity.scheme=dm-verity rootfs_verity.hash={rootfs_verity_hash} sp-debug=true build={build} pci=realloc,nocrs

@@ -22,6 +22,14 @@ docker buildx build -t sp-vm --allow security.insecure src --output type=local,d
 
 The build artifacts will be located in the $(pwd)/out directory.
 
+## Reference Values
+
+Every release publishes signed, standard Reference Values (a COSE_Sign1-signed
+CoRIM plus a human-readable manifest) next to the image, so that a relying
+party can appraise an sp-vm VM with its own Verifier and reproduce the
+measurements from a rebuild. See
+[`reference-values/README.md`](reference-values/README.md).
+
 ## Low-level components
 
 The kernel packages, the kernel image, and the three OVMF images are built
