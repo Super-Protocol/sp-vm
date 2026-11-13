@@ -119,16 +119,25 @@ GPU evidence collection, binding, and verification are described in detail in
 ## VM Mode Selection
 
 The VM mode is derived from three groups of fields in
-`/sp/swarm/config.yaml`:
+`/sp/swarm/config.yaml`, plus the optional declaration `swarm_db.bootstrap`:
 
-| `swarm_db.join_addresses` | `pki_authority.caBundle` | `pki_authority.servers` | Result |
-|---|---|---|---|
-| empty | empty | empty | `init`: first VM |
-| populated | populated | populated | `normal`: joining VM |
-| any partial combination | | | configuration error |
+| `swarm_db.join_addresses` | `pki_authority.caBundle` | `pki_authority.servers` | `swarm_db.bootstrap` | Result |
+|---|---|---|---|---|
+| empty | empty | empty | `true` or absent | `init`: creates a new Swarm |
+| empty | empty | empty | `false` | configuration error |
+| populated | populated | populated | any value | `normal`: joining VM |
+| any partial combination | | | | configuration error |
 
 The result is stored in `/etc/swarm/swarm-vm-mode` and selects one of two
 mutually exclusive paths:
 
 - `init` initializes a new Swarm cluster;
 - `normal` joins the VM to an existing Swarm network.
+
+Knowledge of an existing Swarm takes precedence over the bootstrap role:
+when the three field groups are populated the mode is `normal` even with
+`swarm_db.bootstrap: true`. This is what lets the VM that created a Swarm
+reboot without creating a second one — see [Rebooting the first
+VM](02-first-vm-bootstrap.md#rebooting-the-first-vm). `swarm_db.bootstrap:
+false` makes the refusal explicit: a joining VM that loses its peers and CA
+fails loudly instead of silently bootstrapping a Swarm of its own.

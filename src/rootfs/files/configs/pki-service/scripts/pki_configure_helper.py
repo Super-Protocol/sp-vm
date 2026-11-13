@@ -370,7 +370,28 @@ def has_non_empty_value(value, field_name: str, value_type: type) -> bool:
     return len(value) > 0
 
 
+def read_optional_bool(value, field_name: str) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    raise ValueError(f"Invalid config: '{field_name}' must be a boolean or null")
+
+
 def detect_swarm_pki_state(config_data: dict) -> str:
+    """Decide whether this boot creates a swarm or enrols into an existing one.
+
+    `init` creates a new root CA, a new certificate chain and a new swarm key.
+    Nothing it writes survives a reboot — the state disk is reformatted on every
+    boot (src/initramfs/files/init.sh:243-252) — so a node that comes up in
+    `init` mode a second time generates a *second* chain and a *second* swarm
+    key and can no longer reach the swarm it created (SUP-655).
+
+    The decision therefore gives knowledge of an existing swarm precedence over
+    the bootstrap role: once the operator has written that swarm's peers and CA
+    into this node's provider config, the node enrols like any other node, no
+    matter that it was the one that bootstrapped it.
+    """
     swarm_db = config_data.get("swarm_db") or {}
     if not isinstance(swarm_db, dict):
         raise ValueError("Invalid config: 'swarm_db' must be a mapping")
@@ -395,18 +416,43 @@ def detect_swarm_pki_state(config_data: dict) -> str:
         "pki_authority.servers",
         list,
     )
-
-    if not has_join_addresses and not has_ca_bundle and not has_servers:
-        return "init"
+    may_bootstrap = read_optional_bool(swarm_db.get("bootstrap"), "swarm_db.bootstrap")
 
     if has_join_addresses and has_ca_bundle and has_servers:
+        if may_bootstrap:
+            log(
+                "INFO",
+                "'swarm_db.bootstrap' is set and this config names an existing swarm: "
+                "enrolling in 'normal' mode, the chain and the swarm key are not regenerated",
+            )
         return "normal"
 
-    raise ValueError(
-        "Inconsistent /sp/swarm/config.yaml: 'swarm_db.join_addresses', "
-        "'pki_authority.caBundle' and 'pki_authority.servers' must be either all empty "
-        "or all non-empty"
-    )
+    if has_join_addresses or has_ca_bundle or has_servers:
+        raise ValueError(
+            "Inconsistent /sp/swarm/config.yaml: 'swarm_db.join_addresses', "
+            "'pki_authority.caBundle' and 'pki_authority.servers' must be either all empty "
+            "or all non-empty"
+        )
+
+    if may_bootstrap is False:
+        raise ValueError(
+            "Refusing to create a swarm: 'swarm_db.bootstrap' is false and "
+            "'/sp/swarm/config.yaml' names no swarm to join. Either set "
+            "'swarm_db.join_addresses', 'pki_authority.caBundle' and "
+            "'pki_authority.servers' to the swarm this node belongs to, or set "
+            "'swarm_db.bootstrap: true' to create a new one."
+        )
+
+    if may_bootstrap is None:
+        log(
+            "WARN",
+            "'/sp/swarm/config.yaml' names no swarm to join and does not declare "
+            "'swarm_db.bootstrap'; assuming this node creates a new swarm. Declare "
+            "'swarm_db.bootstrap: true' explicitly — on a node that has already "
+            "bootstrapped a swarm this mode generates a second, unrelated chain",
+        )
+
+    return "init"
 
 
 def ensure_mapping(value, field_name: str, *, allow_empty: bool = True) -> dict:

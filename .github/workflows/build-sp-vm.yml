@@ -100,6 +100,14 @@ jobs:
               --build-arg "SP_VM_BUILD_TYPE=${{ inputs.build-type }}" \
               --build-arg "S3_BUCKET=$S3_BUCKET";
 
+      - name: Publish Reference Values (CoRIM)
+        uses: ./.github/actions/reference-values
+        with:
+          build: ${{ env.SP_VM_IMAGE_VERSION }}
+          artifact-dir: out
+          out-dir: reference-values-out
+          signing-jwk: ${{ secrets.REFERENCE_VALUES_SIGNING_JWK }}
+
       - name: Upload files to Storj
         if: ${{ inputs.upload-to-storj }}
         working-directory: out
@@ -192,3 +200,7 @@ jobs:
           prerelease: true
           files: |
             out/vm.json
+            reference-values-out/reference-values.json
+            reference-values-out/sp-vm-${{ env.SP_VM_IMAGE_VERSION }}.corim.json
+            reference-values-out/sp-vm-${{ env.SP_VM_IMAGE_VERSION }}.corim.cbor
+            reference-values-out/sp-vm-${{ env.SP_VM_IMAGE_VERSION }}.corim-unsigned.cbor

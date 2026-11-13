@@ -29,6 +29,12 @@ pki_authority:
 All three fields must be empty simultaneously. The mode detector then writes
 `init` to `/etc/swarm/swarm-vm-mode`.
 
+`swarm_db.bootstrap: true` declares that this VM is allowed to create a Swarm.
+It is optional for compatibility with configurations written before it existed,
+and `swarm_db.bootstrap: false` turns the empty combination above into a
+configuration error. See `detect_swarm_pki_state` in
+`src/rootfs/files/configs/pki-service/scripts/pki_configure_helper.py`.
+
 ## Sequence
 
 ![Bootstrap sequence](assets/first-vm-bootstrap.svg)
@@ -142,11 +148,13 @@ After local SwarmDB starts, the bootstrap procedure stores:
 
 - root and subroot certificates;
 - their private keys;
-- the `swarm key`;
+- the `swarm key`, as `pki_swarm_key`;
 - the evidence-signing key.
 
-PKI material is stored as `SwarmSecrets`. After a successful import,
-`/etc/super/certs/swarm-init` is removed.
+PKI material is stored as `SwarmSecrets`
+(`src/swarm-scripts/00-initialize-secrets.sh:101-158`). Existing rows are never
+overwritten. After a successful import, `/etc/super/certs/swarm-init` is
+removed.
 
 ## 6. Starting the PKI Authority
 
@@ -171,6 +179,46 @@ and root CA retrieval are described in
 After startup, the PKI Authority on the first VM becomes the enrollment point
 for new nodes. Its addresses and CA bundle must be passed to joining VMs
 together with the existing SwarmDB addresses.
+
+## Rebooting the First VM
+
+Nothing the `init` path writes survives a reboot. The encrypted state disk is
+reformatted with a fresh random key on *every* boot
+(`src/initramfs/files/init.sh:243-252`), so `/etc/swarm/swarm.key`,
+`/etc/super/certs/swarm-init/` and the node's certificate in
+`/etc/super/certs/vm/` are all gone when the VM comes back.
+
+The provider configuration is the only durable input a VM has, and it is what
+decides the mode. A first VM whose configuration still selects `init` therefore
+bootstraps a *second*, unrelated Swarm on its own hardware:
+`pki-cert-init.service` runs again
+(`src/rootfs/files/configs/pki-service/systemd/pki-cert-init.service:11-21`),
+`generate_swarm_key` creates a new `swarm key` because the file is missing
+(`pki_configure_helper.py:587-611`), and `pki-cert-generator generate-chain`
+creates a new root, new subroots and a new VM certificate. The consequences:
+
+- its SwarmDB uses a gossip encryption key no other member has, so it cannot
+  rejoin the ring it created, and nothing can bootstrap through it either;
+- its node certificate is signed by a subroot no other member trusts;
+- a PKI Authority running on it would hand the new `swarm key` to every
+  joining VM while the existing members keep the old one.
+
+**Before the first VM is rebooted, its provider configuration must name the
+Swarm it created** — `swarm_db.join_addresses`, `pki_authority.caBundle` and
+`pki_authority.servers` of the other members. With those present the mode is
+`normal` regardless of `swarm_db.bootstrap`, so the VM enrols like any other
+node: it keeps the original chain, pulls the original `swarm key` from a PKI
+Authority and rejoins the ring.
+
+`scripts/azure/cluster.sh` does this automatically. As soon as a second node
+serves the cluster CA, `promote_bootstrap_config` re-renders the first VM's
+provider configuration as a join configuration and re-uploads it; `cluster.sh
+refresh-configs` keeps it so. On other platforms the operator performs the same
+edit.
+
+A single-node Swarm has no second member to enrol from, so its one VM cannot be
+rebooted without losing the Swarm. `cluster.sh` says so when it cannot promote
+the configuration.
 
 ## Bootstrap Result
 

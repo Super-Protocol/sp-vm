@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-CONFIG="/sp/swarm/config.yaml"
-VM_MODE_FILE="/etc/swarm/swarm-vm-mode"
+CONFIG="${CONFIG:-/sp/swarm/config.yaml}"
+VM_MODE_FILE="${VM_MODE_FILE:-/etc/swarm/swarm-vm-mode}"
 
 is_swarm_init_mode() {
   [ -f "$VM_MODE_FILE" ] || return 1
@@ -51,6 +51,7 @@ API_INTROSPECTION_CLIENT_SECRET_PATH="/sp/swarm/api-introspection-client-secret"
 [ -f "$API_INTROSPECTION_CLIENT_SECRET_PATH" ] && API_INTROSPECTION_CLIENT_SECRET=$(cat "$API_INTROSPECTION_CLIENT_SECRET_PATH")
 
 SWARM_INIT_CERTS_DIR=${SWARM_INIT_CERTS_DIR:-/etc/super/certs/swarm-init}
+SWARM_KEY_FILE=${SWARM_KEY_FILE:-/etc/swarm/swarm.key}
 EVIDENCE_SIGN_KEY=""
 
 SWARM_INIT_CERT_SECRET_KEYS=(
@@ -97,6 +98,20 @@ ensure_global_id_pointer() {
     python3 "$(dirname "$0")/swarm-cli.py" create SwarmIdPointer "global_id" --value "$value" >/dev/null
 }
 
+ensure_rke2_join_token_secret() {
+  if ! is_swarm_init_mode; then
+    echo "INFO: skip rke2 join token initialization, vm_mode is not swarm-init" >&2
+    return 0
+  fi
+
+  # The token that lets a node join the swarm's RKE2 cluster. It used to be a
+  # default baked into swarm-cloud services/rke2/main.py; it is now generated
+  # here, once, and every node reads the replicated row (SUP-652). Hex, not
+  # base64: the plugin writes the value into RKE2's YAML config unquoted, and
+  # `openssl rand -base64` wraps its output across lines.
+  ensure_secret "rke2_join_token" "$(openssl rand -hex 32)"
+}
+
 ensure_swarm_init_cert_secrets() {
   local secret_key
   local prefixed_secret_key
@@ -104,6 +119,7 @@ ensure_swarm_init_cert_secrets() {
   local cert_path
   local secret_value
   local pki_auth_token
+  local swarm_key
 
   if ! is_swarm_init_mode; then
     echo "INFO: skip pki cert secrets initialization, vm_mode is not swarm-init" >&2
@@ -112,6 +128,19 @@ ensure_swarm_init_cert_secrets() {
 
   pki_auth_token="$(openssl rand -base64 64)"
   ensure_secret "pki_auth_token" "$pki_auth_token"
+
+  # The swarm key is generated in this node's /etc/swarm/swarm.key, which the
+  # next boot wipes along with the rest of the state disk. Store it with the
+  # rest of the PKI material so the PKI Authority serves the swarm's own key
+  # from shared state wherever it runs, instead of whatever its local file
+  # happens to hold (SUP-655).
+  if [ -s "$SWARM_KEY_FILE" ]; then
+    swarm_key="$(tr -d '[:space:]' < "$SWARM_KEY_FILE")"
+    ensure_secret "pki_swarm_key" "$swarm_key"
+  else
+    echo "ERROR: required swarm key file is missing or empty: $SWARM_KEY_FILE" >&2
+    return 1
+  fi
 
   for secret_key in "${SWARM_INIT_CERT_SECRET_KEYS[@]}"; do
     cert_file="${secret_key}.pem"
@@ -153,5 +182,6 @@ ensure_secret "auth_service_yaml" "$AUTH_SERVICE_YAML"
 ensure_secret "auth_service_oidc_yaml" "$AUTH_SERVICE_OIDC_YAML"
 ensure_secret "api_introspection_client_id" "$API_INTROSPECTION_CLIENT_ID"
 ensure_secret "api_introspection_client_secret" "$API_INTROSPECTION_CLIENT_SECRET"
+ensure_rke2_join_token_secret
 ensure_swarm_init_cert_secrets
 ensure_secret "evidence_sign_key" "$EVIDENCE_SIGN_KEY"
