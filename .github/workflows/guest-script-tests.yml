@@ -8,11 +8,17 @@ name: guest script tests
 # rather than relying on someone remembering to run them by hand. The same
 # scripts also fix the lifetime of every certificate a swarm will ever hold, and
 # nothing renews the chain (SUP-653), so the lifetime guard runs here too.
+#
+# src/swarm-scripts runs on the same boot and decides the swarm's long-lived
+# secrets. Writing one of them twice rotates a key the swarm is already using
+# (SUP-700), which only shows up as a node that can no longer join — so those
+# tests get a runner as well.
 on:
   pull_request:
     paths:
       - 'src/rootfs/files/configs/pki-service/**'
       - 'src/rootfs/tests/**'
+      - 'src/swarm-scripts/**'
       - 'scripts/azure/cluster.sh'
       - 'scripts/azure/cluster_config.py'
       - '.github/workflows/guest-script-tests.yml'
@@ -21,6 +27,7 @@ on:
     paths:
       - 'src/rootfs/files/configs/pki-service/**'
       - 'src/rootfs/tests/**'
+      - 'src/swarm-scripts/**'
       - 'scripts/azure/cluster.sh'
       - 'scripts/azure/cluster_config.py'
 
@@ -73,3 +80,25 @@ jobs:
 
       - name: The cluster launcher parses
         run: bash -n scripts/azure/cluster.sh
+
+  swarm-scripts:
+    name: unittest (swarm bootstrap scripts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install what swarm-cli.py imports at module scope
+        # The guest image ships these; a runner does not. pysqlite backs the
+        # throwaway database the CLI tests run against.
+        run: pip install --disable-pip-version-check sqlalchemy pymysql
+
+      - name: swarm-cli keeps the secrets a swarm already holds
+        run: python -m unittest discover -s src/swarm-scripts/test -p 'test_*.py' -v
+
+      - name: The bootstrap script mints each secret once
+        run: bash src/swarm-scripts/test/test_initialize_secrets_rke2_token.sh

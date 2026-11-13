@@ -94,6 +94,34 @@ def run_sql(engine: Engine, sql: str, params: dict | None = None) -> None:
     print(f"MySQL execution failed: {exc}", file=sys.stderr)
     sys.exit(1)
 
+def insert_keyed_value_if_absent(engine: Engine, table: str, id_value: str, value: str, label: str) -> None:
+  """
+  Insert an (id, value) row, keeping whatever the table already holds.
+
+  SwarmDB speaks the MySQL wire protocol but does not implement MySQL's
+  conflict idioms: both `INSERT IGNORE` and `ON DUPLICATE KEY UPDATE
+  value = value` land there as a last-writer-wins upsert. Relying on either
+  rotated the RKE2 join token on every boot of the swarm-init node and locked
+  a live cluster out of ever growing again (SUP-700). Read the row first and
+  skip the write instead, so the "do not overwrite" semantics hold on the
+  platform these rows actually live on.
+
+  `table` is a literal from this module, never user input.
+  """
+  select_sql = f"SELECT id FROM {table} WHERE id = :id LIMIT 1"
+  insert_sql = f"INSERT INTO {table} (id, value) VALUES (:id, :value)"
+  try:
+    with engine.begin() as conn:
+      existing = conn.execute(text(select_sql), {"id": id_value}).first()
+      if existing is not None:
+        print(f"{label} '{id_value}' already exists, existing value preserved.")
+        return
+      conn.execute(text(insert_sql), {"id": id_value, "value": value})
+  except Exception as exc:
+    print(f"MySQL execution failed: {exc}", file=sys.stderr)
+    sys.exit(1)
+  print(f"{label} '{id_value}' created.")
+
 def create_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) -> None:
   id_value = args.id or ""
   if not id_value:
@@ -404,8 +432,7 @@ def get_cluster_policy_preference_rules(args: argparse.Namespace, db: dict, engi
 
 def create_swarm_id_pointer(args: argparse.Namespace, db: dict, engine: Engine) -> None:
   """
-  Insert or keep a SwarmIdPointer.
-  Semantics are like INSERT IGNORE: we do not overwrite existing pointers.
+  Insert or keep a SwarmIdPointer: an existing pointer is never overwritten.
   """
   id_value = args.id or args.positional_id
   value = args.value
@@ -414,18 +441,7 @@ def create_swarm_id_pointer(args: argparse.Namespace, db: dict, engine: Engine) 
     print("SwarmIdPointer requires id (positional or --id) and --value.", file=sys.stderr)
     sys.exit(1)
 
-  insert_sql = (
-    "INSERT INTO SwarmIdPointer (id, value)\n"
-    "VALUES (:id, :value)\n"
-    "ON DUPLICATE KEY UPDATE\n"
-    "  value = value;\n"
-  )
-  params = {
-    "id": id_value,
-    "value": value,
-  }
-  run_sql(engine, insert_sql, params)
-  print(f"SwarmIdPointer '{id_value}' upserted (existing values preserved).")
+  insert_keyed_value_if_absent(engine, "SwarmIdPointer", id_value, value, "SwarmIdPointer")
 
 
 def get_swarm_id_pointer(args: argparse.Namespace, db: dict, engine: Engine) -> None:
@@ -456,8 +472,11 @@ def get_swarm_id_pointer(args: argparse.Namespace, db: dict, engine: Engine) -> 
 
 def create_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> None:
   """
-  Insert or keep a SwarmSecret.
-  Semantics are like INSERT IGNORE: we do not overwrite existing secrets.
+  Insert or keep a SwarmSecret: an existing secret is never overwritten.
+
+  Every caller of this command is a bootstrap script that runs again on every
+  boot, and some of them pass freshly generated material (`openssl rand`), so
+  overwriting here rotates a key the swarm is already using (SUP-700).
   """
   id_value = args.id or args.positional_id
   value = args.value
@@ -466,18 +485,37 @@ def create_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> 
     print("SwarmSecrets requires id (positional or --id) and --value.", file=sys.stderr)
     sys.exit(1)
 
-  insert_sql = (
-    "INSERT INTO SwarmSecrets (id, value)\n"
-    "VALUES (:id, :value)\n"
-    "ON DUPLICATE KEY UPDATE\n"
-    "  value = value;\n"
-  )
-  params = {
-    "id": id_value,
-    "value": value,
-  }
-  run_sql(engine, insert_sql, params)
-  print(f"SwarmSecrets '{id_value}' upserted (existing values preserved).")
+  insert_keyed_value_if_absent(engine, "SwarmSecrets", id_value, value, "SwarmSecrets")
+
+
+def get_swarm_secrets(args: argparse.Namespace, db: dict, engine: Engine) -> None:
+  """
+  Check whether a SwarmSecret exists.
+  - Exit code 0: secret exists, its id is printed to stdout.
+  - Exit code 1: secret not found.
+  - Exit code 2: query failed.
+
+  The value is deliberately withheld. The only caller is the existence guard
+  in 00-initialize-secrets.sh, and a CLI that echoes secrets to stdout puts
+  them in the journal of every boot that runs with `set -x`.
+  """
+  secret_id = args.id or args.positional_id
+  if not secret_id:
+    print("SwarmSecrets get requires id (positional or --id).", file=sys.stderr)
+    sys.exit(2)
+
+  sql = "SELECT id FROM SwarmSecrets WHERE id = :id LIMIT 1"
+  try:
+    with engine.connect() as conn:
+      row = conn.execute(text(sql), {"id": secret_id}).mappings().first()
+  except Exception as exc:
+    print(f"MySQL query failed: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+  if row is None:
+    sys.exit(1)
+
+  print(json.dumps(dict(row)))
 
 
 def get_cluster_policies(args: argparse.Namespace, db: dict, engine: Engine) -> None:
@@ -557,6 +595,29 @@ def get_cluster_services(args: argparse.Namespace, db: dict, engine: Engine) -> 
     sys.exit(1)
 
   print(json.dumps(dict(row)))
+
+
+# Every command this CLI answers, keyed by "<action>:<entity>". Keeping it as
+# data rather than an if/elif chain is what lets a test assert that each
+# command the bootstrap scripts issue is actually wired up: `get SwarmSecrets`
+# was not, so the existence guard it backs silently failed open (SUP-700).
+COMMANDS = {
+  "create:ClusterPolicies": create_cluster_policies,
+  "create:ClusterServices": create_cluster_services,
+  "create:SwarmSecrets": create_swarm_secrets,
+  "get:SwarmSecrets": get_swarm_secrets,
+  "create:SwarmIdPointer": create_swarm_id_pointer,
+  "get:SwarmIdPointer": get_swarm_id_pointer,
+  "get:ClusterPolicies": get_cluster_policies,
+  "get:ClusterServices": get_cluster_services,
+  "create:ClusterPolicyAffinityRules": create_cluster_policy_affinity_rules,
+  "get:ClusterPolicyAffinityRules": get_cluster_policy_affinity_rules,
+  "create:ClusterPolicyMeasurementRules": create_cluster_policy_measurement_rules,
+  "get:ClusterPolicyMeasurementRules": get_cluster_policy_measurement_rules,
+  "create:ClusterPolicyPreferenceRules": create_cluster_policy_preference_rules,
+  "get:ClusterPolicyPreferenceRules": get_cluster_policy_preference_rules,
+}
+
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
   parser = argparse.ArgumentParser(
@@ -640,35 +701,12 @@ def main(argv: List[str]) -> None:
   args = parse_args(argv)
   key = f"{args.action}:{args.entity}"
 
-  if key == "create:ClusterPolicies":
-    create_cluster_policies(args, db, engine)
-  elif key == "create:ClusterServices":
-    create_cluster_services(args, db, engine)
-  elif key == "create:SwarmSecrets":
-    create_swarm_secrets(args, db, engine)
-  elif key == "create:SwarmIdPointer":
-    create_swarm_id_pointer(args, db, engine)
-  elif key == "get:SwarmIdPointer":
-    get_swarm_id_pointer(args, db, engine)
-  elif key == "get:ClusterPolicies":
-    get_cluster_policies(args, db, engine)
-  elif key == "get:ClusterServices":
-    get_cluster_services(args, db, engine)
-  elif key == "create:ClusterPolicyAffinityRules":
-    create_cluster_policy_affinity_rules(args, db, engine)
-  elif key == "get:ClusterPolicyAffinityRules":
-    get_cluster_policy_affinity_rules(args, db, engine)
-  elif key == "create:ClusterPolicyMeasurementRules":
-    create_cluster_policy_measurement_rules(args, db, engine)
-  elif key == "get:ClusterPolicyMeasurementRules":
-    get_cluster_policy_measurement_rules(args, db, engine)
-  elif key == "create:ClusterPolicyPreferenceRules":
-    create_cluster_policy_preference_rules(args, db, engine)
-  elif key == "get:ClusterPolicyPreferenceRules":
-    get_cluster_policy_preference_rules(args, db, engine)
-  else:
+  handler = COMMANDS.get(key)
+  if handler is None:
     print(f"Unsupported command: {args.action} {args.entity}", file=sys.stderr)
     sys.exit(1)
+
+  handler(args, db, engine)
 
 if __name__ == "__main__":
   main(sys.argv[1:])
