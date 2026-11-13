@@ -280,7 +280,38 @@ def detect_network_type() -> str:
     return network_type
 
 
-def patch_template(template: dict, network_type: str) -> dict:
+def read_nvtrust(config_data: dict) -> dict | None:
+    raw = config_data.get("nvtrust")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid config: 'nvtrust' must be a mapping")
+
+    verifier = raw.get("verifier", "nras")
+    if verifier not in ("nras", "proxy"):
+        raise ValueError("Invalid config: nvtrust.verifier must be 'nras' or 'proxy'")
+
+    rendered = {"verifier": verifier}
+    for key in ("rimUrl", "ocspUrl"):
+        value = raw.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Invalid config: nvtrust.{key} must be a non-empty string")
+        rendered[key] = value.strip()
+    return rendered
+
+
+def load_swarm_config(config_path: Path) -> dict:
+    if not config_path.exists():
+        raise ValueError(f"Swarm config does not exist: {config_path}")
+    config_data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(config_data, dict):
+        raise ValueError("Invalid config: root must be a mapping")
+    return config_data
+
+
+def patch_template(template: dict, network_type: str, nvtrust: dict | None = None) -> dict:
     certificates = template.get("certificates")
     if not isinstance(certificates, list):
         raise ValueError("Invalid template: 'certificates' must be a list")
@@ -288,6 +319,11 @@ def patch_template(template: dict, network_type: str) -> dict:
     for cert in certificates:
         if isinstance(cert, dict) and cert.get("certRole") == "root":
             cert["networkType"] = network_type
+
+    if nvtrust is None:
+        template.pop("nvtrust", None)
+    else:
+        template["nvtrust"] = nvtrust
 
     return template
 
@@ -501,7 +537,11 @@ def build_sync_client_pki_authority(config_data: dict) -> dict:
 
     rendered_pki_authority = dict(pki_authority)
     rendered_pki_authority["servers"] = merged_servers
-    return {"pki_authority": rendered_pki_authority}
+    rendered = {"pki_authority": rendered_pki_authority}
+    nvtrust = read_nvtrust(config_data)
+    if nvtrust is not None:
+        rendered["nvtrust"] = nvtrust
+    return rendered
 
 
 def run_get_vm_mode(config_path: Path, output_path: Path) -> int:
@@ -545,7 +585,13 @@ def run_configure(template_path: Path, output_path: Path):
         network_type = detect_network_type()
         log("INFO", f"Detected networkType={network_type}")
 
-        rendered_data = patch_template(template_data, network_type)
+        swarm_config_path = Path("/sp/swarm/config.yaml")
+        nvtrust = None
+        if swarm_config_path.exists():
+            nvtrust = read_nvtrust(load_swarm_config(swarm_config_path))
+        log("INFO", f"NVIDIA verifier={nvtrust['verifier'] if nvtrust else 'nras'}")
+
+        rendered_data = patch_template(template_data, network_type, nvtrust)
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
