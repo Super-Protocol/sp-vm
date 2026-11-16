@@ -130,9 +130,15 @@ GPUs are present, GPU attestation is skipped. Otherwise:
 1. a cryptographically random 32-byte nonce is generated and represented by
    64 hexadecimal characters;
 2. the NVIDIA SDK collects GPU evidence;
-3. evidence is sent to the remote GPU verifier;
+3. evidence is checked by the verifier selected in the swarm config;
 4. the request uses `ppcieMode=false`;
 5. an NVIDIA token is returned.
+
+`nvtrust.verifier` selects the check. `nras` sends the evidence to NVIDIA's remote
+service. `proxy` keeps the raw evidence and the PKI authority checks it. Both
+`rimUrl` and `ocspUrl` may be omitted; the SDK then uses NVIDIA's RIM and OCSP
+services. Setting only one of the two URLs is rejected when the VM config is
+built. Without an `nvtrust` section the verifier stays `nras`.
 
 ## Binding to the CPU TEE
 

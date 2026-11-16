@@ -292,13 +292,19 @@ def read_nvtrust(config_data: dict) -> dict | None:
         raise ValueError("Invalid config: nvtrust.verifier must be 'nras' or 'proxy'")
 
     rendered = {"verifier": verifier}
+    urls = {}
     for key in ("rimUrl", "ocspUrl"):
         value = raw.get(key)
         if value is None:
             continue
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Invalid config: nvtrust.{key} must be a non-empty string")
-        rendered[key] = value.strip()
+        urls[key] = value.strip()
+    if urls and set(urls) != {"rimUrl", "ocspUrl"}:
+        raise ValueError(
+            "Invalid config: nvtrust.rimUrl and nvtrust.ocspUrl must both be set"
+        )
+    rendered.update(urls)
     return rendered
 
 
