@@ -278,5 +278,42 @@ class RunValidateTemplateTest(unittest.TestCase):
             self.assertEqual(helper.run_validate_template(Path(tmp) / "absent.yaml"), 1)
 
 
+class ReadNvtrustTest(unittest.TestCase):
+    def test_absent_section(self):
+        self.assertIsNone(helper.read_nvtrust({}))
+
+    def test_proxy_with_urls(self):
+        rendered = helper.read_nvtrust({
+            "nvtrust": {
+                "verifier": "proxy",
+                "rimUrl": " https://rim.example ",
+                "ocspUrl": "https://ocsp.example",
+            }
+        })
+        self.assertEqual(rendered["verifier"], "proxy")
+        self.assertEqual(rendered["rimUrl"], "https://rim.example")
+        self.assertEqual(rendered["ocspUrl"], "https://ocsp.example")
+
+    def test_local_is_rejected(self):
+        with self.assertRaises(ValueError):
+            helper.read_nvtrust({"nvtrust": {"verifier": "local"}})
+
+    def test_non_string_url_is_rejected(self):
+        with self.assertRaises(ValueError):
+            helper.read_nvtrust({
+                "nvtrust": {
+                    "verifier": "proxy",
+                    "rimUrl": 12,
+                    "ocspUrl": "https://ocsp.example",
+                }
+            })
+
+    def test_patch_template_passes_the_section_through(self):
+        template = {"certificates": [{"certRole": "root"}], "nvtrust": {"timeout": 120000}}
+        patched = helper.patch_template(template, "untrusted", {"verifier": "nras"})
+        self.assertEqual(patched["nvtrust"], {"verifier": "nras"})
+        self.assertEqual(patched["certificates"][0]["networkType"], "untrusted")
+
+
 if __name__ == "__main__":
     unittest.main()
