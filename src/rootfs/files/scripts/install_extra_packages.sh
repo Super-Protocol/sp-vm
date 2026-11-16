@@ -25,8 +25,6 @@ UBUNTU_PACKAGES=(
     netcat-openbsd
     dnsutils
     curl
-    # OpenResty bind-mounts host hexdump into the container for dehydrated.
-    bsdextrautils
     nano
     ncurses-term
     podman
