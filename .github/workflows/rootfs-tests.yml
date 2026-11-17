@@ -17,6 +17,10 @@ concurrency:
   group: rootfs-tests-${{ github.ref }}
   cancel-in-progress: true
 
+# The job only checks the tree out and runs shell suites against it.
+permissions:
+  contents: read
+
 jobs:
   rootfs-tests:
     runs-on: ubuntu-latest
