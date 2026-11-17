@@ -417,3 +417,33 @@ require or want it. A dependency would silence the probe in exactly the state it
 exists to describe. For the same reason `pki-vm-measurements`, which serves
 `:9180`, no longer depends on the GPU readiness barrier — see
 [the barrier's own section](05-nvidia-gpu-attestation.md#why-9180-is-not-behind-the-barrier).
+
+### What a consumer may do with the rollup
+
+The surface is asymmetric, and every reader keeps the same asymmetry:
+
+| verdict | what a consumer does |
+|---|---|
+| `blocked` | **stop waiting now.** A gate has failed on a cause no retry can fix, and only the publisher that hit it can say so. Fix the cause it names, or replace the node |
+| `degraded` | keep waiting inside your own timeout, and surface it |
+| `booting` | keep waiting; this is the ordinary case |
+| `serving` | nothing, by itself. It is positive evidence at *this node's* layer, not at yours |
+| `unknown` | nothing. It is the absence of information, not a weaker `serving` — and no answer on `:9180` at all is also `unknown`, which is the expected state for up to ~20 min on a GPU node |
+
+So the rollup can end a wait but never complete one: **a wait succeeds only on
+positive evidence at the consumer's own layer, and node health is the common
+veto and the diagnosis channel.** Reading `serving` as a substitute for the
+probe a consumer actually makes, or `unknown` as a fallback when that probe
+cannot be made, is the original defect moved one layer up.
+
+`scripts/azure/cluster.sh` is the first reader and the one SUP-370 was filed
+against: `wait_measure`, `wait_bootstrap_pki` and `wait_joined` each read the
+rollup every poll, end the wait at once on `blocked` with the published
+`reason_class`, `summary` and both measurements, and keep every probe they
+already made. `status` shows the rollup in a `HEALTH` column.
+`src/rootfs/tests/test_cluster_node_health.sh` pins both halves against a stub
+endpoint — the abort, and that nothing else ends a wait.
+
+The endpoint answers **200 on every verdict**, so `curl --fail` tells a consumer
+that the endpoint is gone, not that the node is unhealthy. Those are different
+facts and no reader may collapse them.
