@@ -3,15 +3,40 @@ Description=Swarm Initialization (download binaries, configure services, seed sw
 After=network-online.target pki-cert-init.service
 Wants=network-online.target
 Requires=pki-cert-init.service
+# SUP-375: retry forever, but never faster than RestartSec.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-TimeoutStartSec=infinity
-ExecStart=/bin/bash -c 'until /bin/bash /usr/local/bin/swarm-init.sh; do \
-	echo "[swarm-init] failed, retry in 10s"; \
-	sleep 10; \
-done'
+# SUP-375: one bounded attempt per start. This used to be
+# TimeoutStartSec=infinity around an `until swarm-init.sh; do sleep 10; done`
+# loop, which made egress a permanent boot gate: swarm-init.sh downloads release
+# assets from GitHub, so a filtered route, a GitHub outage or a transient DNS
+# failure at the wrong moment kept multi-user.target unreached forever while
+# :9180 went on answering 200 - SUP-370 reached through this unit instead of
+# pki-authority-sync, and with no misconfiguration needed.
+#
+# The limit covers the whole start phase - the runner's 600s cap on the attempt
+# plus up to 10s of SIGKILL grace, and ExecStartPost - which leaves ~50s of
+# headroom. The runner must be the one that gives up first: systemd kills the
+# whole cgroup here, and a killed script publishes no verdict.
+TimeoutStartSec=660
+Restart=on-failure
+RestartSec=30
+ExecStart=/usr/local/bin/sp-boot-attempt.sh \
+    --unit swarm-init.service \
+    --timeout 600 \
+    --action "swarm initialization (release downloads from GitHub)" \
+    --impact "This node has no swarm binaries and no /etc/swarm/*.env, so" \
+    --impact "swarm-host-agent, swarm-db, swarm-node and swarm-services stay down." \
+    --detail "full log:  /var/log/swarm-init.log" \
+    --detail "config:    /sp/swarm/config.yaml (tags.* and github.token)" \
+    -- /bin/bash /usr/local/bin/swarm-init.sh
+# An initialization that only succeeds after boot has to revive the stack it
+# gated. These start jobs died with JOB_DEPENDENCY when the boot-time attempt
+# failed, and Restart= cannot help a unit whose start job never ran.
+ExecStartPost=-/usr/bin/systemctl --no-block start swarm-db.service swarm-host-agent.service swarm-node.service swarm-services.service
 StandardOutput=append:/var/log/swarm-init.log
 StandardError=append:/var/log/swarm-init.log
 

@@ -3,22 +3,47 @@ Description=PKI certificate initialization service
 After=sp-nvidia-gpu-ready.service pccs.service pki-vm-mode.service
 Wants=pki-vm-mode.service
 Requires=sp-nvidia-gpu-ready.service pccs.service pki-vm-mode.service
+# SUP-375: retry forever, but never faster than RestartSec.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-TimeoutStartSec=infinity
+# SUP-375: one bounded attempt per start. This used to be
+# TimeoutStartSec=infinity around an `until pki-cert-generator generate-chain
+# ...; do sleep 60; done` loop - the seed-side twin of pki-authority-sync. A
+# seed that could not build its chain held multi-user.target forever and took
+# swarm-init and everything behind it with it (SUP-370/SUP-372).
+#
+# The limit covers the whole start phase - the runner's 240s cap on the attempt
+# plus up to 10s of SIGKILL grace, and ExecStartPost - which leaves ~50s of
+# headroom. The runner must be the one that gives up first: systemd kills the
+# whole cgroup here, and a killed script publishes no verdict.
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=60
 ExecCondition=/bin/bash -c '[[ "$(head -n1 /etc/swarm/swarm-vm-mode 2>/dev/null | tr -d "[:space:]")" == "init" ]]'
-ExecStartPre=/usr/bin/python3 /usr/local/bin/pki-authority/pki_configure_helper.py \
-    configure \
-    --template /etc/super/pki-cert-generator/cert-gen-config-template.yaml \
-    --output /etc/super/pki-cert-generator/cert-gen-config.yaml
-ExecStart=/bin/bash -c 'until /usr/bin/pki-cert-generator generate-chain \
-    -c /etc/super/pki-cert-generator/cert-gen-config.yaml \
-    --log-level debug; do \
-    echo "[pki-cert-init] generation failed, retry in 60s"; \
-    sleep 60; \
-done'
+# The `configure` step used to be an ExecStartPre, which is the one place a
+# failure leaves nothing behind on a -release guest: the unit fails before
+# ExecStart runs, so no console block and no health file. It is folded into
+# pki-cert-init.sh so a malformed template is as visible as a refused chain.
+ExecStart=/usr/local/bin/sp-boot-attempt.sh \
+    --unit pki-cert-init.service \
+    --timeout 240 \
+    --action "PKI chain generation for this seed" \
+    --impact "This seed has no PKI chain, so swarm-init and the whole stack" \
+    --impact "behind it never start and the cloud serves nothing." \
+    --detail "config:    /etc/super/pki-cert-generator/cert-gen-config.yaml" \
+    --detail "template:  /etc/super/pki-cert-generator/cert-gen-config-template.yaml" \
+    -- /usr/local/bin/pki-cert-init.sh
+# swarm-init.service died with JOB_DEPENDENCY when the boot-time attempt failed,
+# and Restart= cannot help a unit whose start job never ran. Reviving it is
+# enough: its own ExecStartPost revives everything behind it.
+#
+# This runs on a seed only. On a worker the ExecCondition above skips the unit,
+# which means this line never runs either - there swarm-init is pulled in by
+# swarm-db.service's Requires=, started by pki-authority-sync's ExecStartPost.
+ExecStartPost=-/usr/bin/systemctl --no-block start swarm-init.service
 
 [Install]
 WantedBy=multi-user.target

@@ -193,7 +193,8 @@ attempts (`timeout`, `exit-<code>`, `signal`, `missing-client`,
 `http-403-unvalidated`, `http-<code>-refused`), which is what a health
 aggregator should match on — `reason` embeds the elapsed seconds and moves every
 attempt. `/run` is tmpfs, so a reboot cannot leave a node looking synced before
-it has synced again.
+it has synced again. The units on the bootstrap path are bounded the same
+way — see [When Bootstrap Fails](02-first-vm-bootstrap.md#when-bootstrap-fails).
 
 The other three fields exist because a reader **outside** the guest has to act
 on them:
