@@ -1,0 +1,16 @@
+[Unit]
+Description=SP node-serving health probe timer
+
+[Timer]
+# 30s, matching pki-vm-measurements-healthcheck.timer - the other thing on this
+# node that polls a local port - and comfortably under any host-side poll
+# period. Two bounded loopback curls every 30s costs nothing, and the interval
+# is what sets the record's ttl_sec (twice it, 60s): the ttl of a repeating
+# publisher bounds the GAP BETWEEN WRITES, not the length of one attempt.
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=1s
+Unit=sp-node-serving.service
+
+[Install]
+WantedBy=timers.target

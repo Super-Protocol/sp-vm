@@ -1,0 +1,17 @@
+[Unit]
+Description=SP node-serving health probe
+Documentation=https://github.com/Super-Protocol/sp-vm/blob/main/docs/03-node-join.md
+# After, but deliberately NOT Requires/Wants: this probe exists precisely to
+# report that the node is not serving, so it has to run when swarm-node is
+# down, failed, or has never started. A dependency would silence it in exactly
+# the state it is here to describe (SUP-376).
+After=swarm-node.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sp-node-serving-probe
+# Both probes are bounded at 5s each; this is only a backstop against a
+# loopback connection that neither answers nor resets. It must stay well under
+# the timer's interval, or a hung probe would push the record past its ttl_sec
+# and make a serving node read as stale.
+TimeoutStartSec=20

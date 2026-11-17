@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic flannel overlay check after a wg0 removal (SUP-350)
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=60
+AccuracySec=10
+Unit=sp-cni-after-wg0.service
+
+[Install]
+WantedBy=timers.target

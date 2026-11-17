@@ -2,7 +2,12 @@
 Description=SP NVIDIA GPU readiness barrier
 Wants=nvidia-fabricmanager.service nvidia-persistenced.service
 After=nvidia-fabricmanager.service nvidia-persistenced.service
-Before=pki-cert-init.service pki-authority-sync.service pki-vm-measurements.service nvidia-cdi-refresh.service nvidia-imex.service
+# pki-vm-measurements.service is deliberately absent: it serves :9180, the only
+# port the fabric and the host orchestrator can reach before a node joins, and
+# the health surface must not sit behind the thing it reports on (SUP-376). This
+# unit exits 1 when the GPU never comes ready, which with the old ordering meant
+# no :9180 at all on precisely the node class node health exists for.
+Before=pki-cert-init.service pki-authority-sync.service nvidia-cdi-refresh.service nvidia-imex.service
 
 [Service]
 Type=oneshot
