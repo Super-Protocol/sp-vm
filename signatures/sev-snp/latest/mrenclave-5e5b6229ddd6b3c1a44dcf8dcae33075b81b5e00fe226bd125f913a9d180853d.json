@@ -1,0 +1,7 @@
+{
+  "mrenclave": "5e5b6229ddd6b3c1a44dcf8dcae33075b81b5e00fe226bd125f913a9d180853d",
+  "signature": "RzgY33kkFRIS5TqmUNnQvK43RuaVX3ciCH3NOBHg3jLzYoBpj93iAvxbnd25aFZGG/uNi+AbbifmGAvOyfBzswswbtcG7zi04+Ha0QKqBejfFWrhRAD6mbYaX7hl4lXKkLPbueU7GYaoEGgjJnWiVxyVESxGUjp7qxOaL3KMngm7tfPYfsVl4xtwWScuyUk8BNV9c8Xj9A4hIkZ5lOmFh7nUlKmoCWQexDzMtnUokdciV866P5tszendWSBN1Fc4wgPV2qN6pmiWxSU4wu5vcZHiAG6vMikA/6+jODLpS9p2KYu1KOfbawZSP375M8tg9lffBkXvcpPlxHrX2dLXcywv1DbslPckc4obDT81WXN+JHQzrv02rhP6nAKRXEZfW9oraGTDBQm52C0Pw95OdVgoTjkYvzkRQrGjZhGhMN2PEQLI+pjzXcMwMCTt51eLbVrbZU6fjXl/qE1YYnULCMB8qfNEHFPcy6/VRgXpRJR6thKo8iq5ihJGuQ6GWko7",
+  "build": "build-477-release",
+  "description": "SUP-826: build-477-release, non-debug kernel cmdline",
+  "creationDate": "2026-11-17T16:21:25.733Z"
+}
