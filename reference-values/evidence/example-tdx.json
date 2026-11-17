@@ -1,0 +1,35 @@
+{
+  "build": "build-000-example",
+  "collected_at": "2026-10-22T16:58:55Z",
+  "collected_on": "EXAMPLE ONLY - not a real sp-vm reference boot",
+  "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "mrenclave": "1691fe0d5c2ef8e583e2ef22ff9d8b7686b40464789269d6b5f02de372c0d041",
+  "platform": "tdx",
+  "schema": "https://superprotocol.com/schemas/sp-vm-reference-evidence/1",
+  "tdx": {
+    "mrtd": "898dbafbc5577344ae112dbfbb312b4000f0882bec1a783fa2283d2678b8ecc50b7d5f139f1cfec4c050851a8de27513",
+    "rtmr0": "7c60d5af0bdd6e8b1c69a7d14f1ef090e058f1eca2467e95a3bf792fee07cc13830275742183d20d4f7680ba38587b7b",
+    "rtmr0_event_log": [
+      {
+        "digest": "94c636c2292d5f9cfd862fabee6796fe2ab84771289177e89eb750357ce77327945082c6a406c89961906748b5f3dbed",
+        "type": "EV_EFI_PLATFORM_FIRMWARE_BLOB2"
+      },
+      {
+        "digest": "564367ebdcfa551240f04457fa7fc2897ae1961a930e50410d9d490f81bf80d6d1feca8a52120da01804b23564ef6bef",
+        "type": "EV_EFI_PLATFORM_FIRMWARE_BLOB2"
+      },
+      {
+        "digest": "40fdadda3dd89339249f85f4810bb72dda423a8da177ea651c7c49fe5f14e1e5bfb1a0e087e9e93ffe07d650afbcfecf",
+        "type": "EV_EFI_HANDOFF_TABLES2"
+      },
+      {
+        "digest": "96fc49dd0b260bdc3790b82f481280481f250edc7aa9cf6134d05747109b6c5eed8bb36a0f1e428ce8cbd88a658ff4a2",
+        "type": "EV_SEPARATOR"
+      }
+    ],
+    "rtmr1": "ca76d546e07fb60edc16f1527b711716d6b52de11216aa0a924716dcee5de30cbbeb44d799d4d3c7c45f71de3f36f335",
+    "rtmr2": "132345f7953f792119a38408b1464562ba1d069e941508933e387d5319e7ecdc78a6806c96e18db3234869e863943314",
+    "rtmr3": "fef241e0f4219bbe7399af3c2ed0ca3d9c5a8536875759784d39343e11e70b34f7a44305c2fa44f6df4e108e2c361fe1",
+    "td_attributes": "0000001000000000"
+  }
+}

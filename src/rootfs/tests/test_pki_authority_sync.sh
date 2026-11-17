@@ -4,6 +4,12 @@
 # here is a regression guard for one of the three defects of the old unit - an
 # unbounded TimeoutStartSec, a retry loop inside ExecStart, and a failure that
 # left no trace a -release guest could show.
+#
+# SUP-376 adds the other half: the trace is now a published record that leaves
+# the guest on an unauthenticated port, so this suite also pins the
+# `sp.unit-health/v1` format, the terminal classification of the secrets 403,
+# and the rule the endpoint's whole single-redactor argument rests on - that
+# `reason` is composed by this publisher and never captured from the client.
 
 set -uo pipefail
 
@@ -21,6 +27,20 @@ fi
 unit="$unit_dir/pki-authority-sync.service"
 sync_script="$bin_dir/pki-authority-sync.sh"
 
+# Shared with the tee-pki endpoint's redaction tripwire, byte for byte. See
+# fixtures/sp-health-redaction/README.md: a real openssl genpkey key and a real
+# captured pki-sync-client log, because both SUP-372 redaction bugs were
+# invisible to a hand-written line.
+fixtures_dir="${SP_PKI_SYNC_TEST_FIXTURES:-$script_dir/fixtures/sp-health-redaction}"
+# Two captures and two keys, one pair from each repo, the UNION rather than a
+# pick: each carries a leak shape the other lacks, and both suites assert
+# against both. See fixtures/sp-health-redaction/README.md.
+real_key="$fixtures_dir/private-key.pem"
+real_403_log="$fixtures_dir/pki-sync-client-403.jsonl"
+peer_key="$fixtures_dir/openssl-genpkey-rsa2048.pem"
+peer_log="$fixtures_dir/pki-sync-client-pino.jsonl"
+real_keys=("$real_key" "$peer_key")
+
 test_root="$(mktemp -d -t sp-pki-authority-sync.XXXXXXXX)"
 trap 'rm -rf "$test_root"' EXIT
 
@@ -31,6 +51,36 @@ fail() {
 
 unit_value() {
     sed -n "s/^$1=//p" "$unit" | tail -n1
+}
+
+json_field() {
+    sed -n "s/^[[:space:]]*\"$2\": \"\{0,1\}\([^\",]*\)\"\{0,1\},\{0,1\}$/\1/p" "$1" | tail -n1
+}
+
+# The one property both repositories assert on the same two artefacts: nothing
+# matching the token pattern and no PEM marker reaches the surface.
+assert_no_key_material() {
+    local file="$1" what="$2" body key
+    ! grep -q -- '-----BEGIN' "$file" || fail "$what: a PEM BEGIN marker reached it"
+    ! grep -q -- '-----END' "$file" || fail "$what: a PEM END marker reached it"
+    ! grep -qE '[A-Za-z0-9+/=]{40,}' "$file" \
+        || fail "$what: a 40+ char base64/hex run reached it"
+    # Hex with a separator every two characters has no 40-char run in it at
+    # all, which is the shape the tee-pki capture exposed.
+    ! grep -qE '([0-9A-Fa-f]{2}[: ]){19,}[0-9A-Fa-f]{2}' "$file" \
+        || fail "$what: a 20+ pair delimited hex run reached it"
+    for key in "${real_keys[@]}"; do
+        while IFS= read -r body; do
+            [[ -n "$body" ]] || continue
+            case "$body" in -----*) continue ;; esac
+            ! grep -qF "$body" "$file" \
+                || fail "$what: a PEM body line of $(basename "$key") reached it whole"
+            # SUP-372's second bug: an 8-character head per redacted token is
+            # 200 uniformly-sampled characters of a 26-line key.
+            ! grep -qF "${body:0:8}" "$file" \
+                || fail "$what: a PEM body line of $(basename "$key") gave up its first 8 characters"
+        done <"$key"
+    done
 }
 
 # --- the unit must fail on its own instead of holding the boot transaction ---
@@ -201,6 +251,83 @@ case "$SP_TEST_NODE_BEHAVIOUR" in
         echo 'trailing diagnosis: not retryable; moving to next server' >&2
         exit 1
         ;;
+    secrets-403)
+        # The real thing, replayed from the captured fixture: pino on stdout,
+        # the CLI's own last word on stderr, exit 1 (cli.ts:33-34). This is the
+        # SUP-370 shape - the authority issued a certificate with
+        # validated=false and POST /api/v1/secrets/get then refused it.
+        cat "$SP_TEST_REAL_403_LOG"
+        echo 'Sync failed: Failed to sync from all servers' >&2
+        exit 1
+        ;;
+    fixtures)
+        # Both shared artefacts in one attempt, key FIRST so the whole of the
+        # captured log is still inside the tail window after the block closes:
+        # the diagnosis must survive, the key must not.
+        cat "$SP_TEST_REAL_KEY" >&2
+        cat "$SP_TEST_REAL_403_LOG"
+        echo 'Sync failed: Failed to sync from all servers' >&2
+        exit 1
+        ;;
+    http-4xx-*)
+        # One behaviour, many codes: the terminal set is an explicit list, so
+        # every member and every near-miss has to be exercised by code.
+        code="${SP_TEST_NODE_BEHAVIOUR##http-4xx-}"
+        echo "{\"level\":50,\"msg\":\"Failed attempt 1/1 for sync server: Request failed with status code ${code}. Reason: http-status:${code}\"}"
+        echo "{\"level\":50,\"msg\":\"Error is not retryable for sync server; moving to next server. Reason: http-status:${code}\"}"
+        exit 1
+        ;;
+    peer-capture)
+        # The tee-pki half of the shared fixture: a real run of the real client
+        # against a real authority, on the `untrusted` challenge. Its long
+        # lines carry colon-separated SHA-256 fingerprints, which have no
+        # 40-character run in them and so were invisible to the original shape
+        # rule. It is also the NON-firing input - every diagnostic line in it
+        # must survive, which is the half SUP-372's first regression broke.
+        cat "$SP_TEST_PEER_LOG"
+        echo 'Sync failed: Failed to sync from all servers' >&2
+        exit 1
+        ;;
+    peer-fixtures)
+        # The peer key through the same path, so neither repo's key is the only
+        # one either redactor has ever seen.
+        cat "$SP_TEST_PEER_KEY" >&2
+        cat "$SP_TEST_PEER_LOG"
+        exit 1
+        ;;
+    shapes)
+        # Shapes that must SURVIVE: a MAC address, a 4-hex-group IPv6 address,
+        # a host:port and a UUID are all diagnostic and all contain colons or
+        # hex. The delimited-hex rule has to sit above them.
+        echo 'link up on 52:54:00:12:34:56 after 3s' >&2
+        echo 'peer address 2001:0db8:85a3:0000:0000:8a2e:0370:7334 unreachable' >&2
+        echo 'authority 10.77.0.4:9443 refused; node id 550e8400-e29b-41d4-a716-446655440000' >&2
+        # ...and two that must not: a colon fingerprint and an xxd-spaced run.
+        echo 'fingerprint 17:F2:A7:7C:75:9D:F0:84:9D:4D:47:7D:58:A3:1A:07:48:E7:A2:57:26:84:CB:7F:6A:08:79:1B:8A:1E:44:CC does not match' >&2
+        echo 'hexdump de ad be ef de ad be ef de ad be ef de ad be ef de ad be ef de ad be ef trailing' >&2
+        exit 1
+        ;;
+    http-500)
+        # 500 is not in RETRYABLE_HTTP_STATUS_CODES either, so the client logs
+        # the same non-retryable verdict - but a server fault can be fixed
+        # without touching this node, so it must NOT end anyone's wait.
+        echo '{"level":50,"msg":"Error is not retryable for sync server; moving to next server. Reason: http-status:500"}'
+        exit 1
+        ;;
+    http-429)
+        # Defensive: 429 IS retryable today, so the client never pairs it with
+        # this verdict. If that ever changes, the rate limit must not become a
+        # terminal refusal.
+        echo '{"level":50,"msg":"Error is not retryable for sync server; moving to next server. Reason: http-status:429"}'
+        exit 1
+        ;;
+    network-code)
+        # The parser must take the status from http-status: only. A network
+        # code is the SUP-370 counter-example: it looks identical at this layer
+        # and the next restart may well succeed.
+        echo '{"level":50,"msg":"Error is not retryable for sync server; moving to next server. Reason: network-code:EHOSTUNREACH"}'
+        exit 1
+        ;;
     leak)
         # Shapes that must be caught line by line, outside any PEM block, with
         # the ordinary error kept. The unterminated BEGIN comes last on purpose:
@@ -241,6 +368,10 @@ run_sync() {
     SP_TEST_NODE_BEHAVIOUR="$behaviour" \
     SP_TEST_NODE_ARGV_LOG="$case_dir/argv.log" \
     SP_TEST_SLOW_COUNTER="$case_dir/slow-counter" \
+    SP_TEST_REAL_KEY="$real_key" \
+    SP_TEST_REAL_403_LOG="$real_403_log" \
+    SP_TEST_PEER_KEY="$peer_key" \
+    SP_TEST_PEER_LOG="$peer_log" \
         "$sync_script" >"$case_dir/stdout" 2>"$case_dir/stderr"
 }
 
@@ -466,5 +597,280 @@ grep -q 'authority rejected the CSR: unknown CA' "$leak_dir/console" \
 # Losing the rest of the tail is the right trade against leaking a key.
 ! grep -q 'LEAKEDBODY' "$leak_dir/console" \
     || fail "an unterminated PEM block leaked its body"
+
+# ===========================================================================
+# SUP-376: the record is now a published surface, not just a local breadcrumb
+# ===========================================================================
+
+# --- the sp.unit-health/v1 fields ------------------------------------------
+# The three added fields each exist because a reader OUTSIDE the guest has to
+# act on them, so each is pinned here rather than left to the endpoint.
+
+schema_dir="$test_root/schema"
+make_env "$schema_dir"
+schema_json="$schema_dir/state/pki-authority-sync.json"
+
+run_sync "$schema_dir" reject && fail "the schema-case sync exited 0"
+[[ "$(json_field "$schema_json" schema)" == "sp.unit-health/v1" ]] \
+    || fail "the record does not name its schema: $(cat "$schema_json")"
+[[ "$(json_field "$schema_json" gate)" == "true" ]] \
+    || fail "a unit without which the node cannot serve must publish gate: true"
+# ttl_sec exists so that `attempting` left behind by a SIGKILLed publisher is
+# read as stale rather than as "still booting" for 25 hours.
+ttl_sec="$(json_field "$schema_json" ttl_sec)"
+[[ "$ttl_sec" =~ ^[0-9]+$ ]] || fail "ttl_sec is not a number: '${ttl_sec:-<unset>}'"
+(( ttl_sec > attempt_timeout )) \
+    || fail "ttl_sec ${ttl_sec} is not clear of the ${attempt_timeout}s attempt it bounds: a live attempt would read as stale"
+(( ttl_sec <= attempt_timeout * 4 )) \
+    || fail "ttl_sec ${ttl_sec} is far longer than the attempt it bounds; a dead publisher stays 'fresh' for too long"
+
+# A failure the next restart may clear is NOT terminal - that distinction is
+# the whole point of the field.
+[[ "$(json_field "$schema_json" terminal)" == "false" ]] \
+    || fail "a plain non-zero exit was published as terminal"
+[[ "$(json_field "$schema_json" state)" == "failed" ]] \
+    || fail "the schema case did not fail"
+
+# An in-flight attempt must never claim a wait can end either.
+run_sync "$schema_dir" hang 1 && fail "the hanging schema sync exited 0"
+[[ "$(json_field "$schema_json" terminal)" == "false" ]] \
+    || fail "a timeout was published as terminal; an authority can come back"
+
+# A missing client cannot be fixed by restarting: the image is signed.
+missing_json="$missing_dir/state/pki-authority-sync.json"
+[[ "$(json_field "$missing_json" terminal)" == "true" ]] \
+    || fail "a client missing from a signed image was not published as terminal"
+[[ "$(json_field "$missing_json" reason_class)" == "missing-client" ]] \
+    || fail "the missing client lost its reason class"
+
+# --- the secrets 403, from the real captured log ---------------------------
+# Finding 2 of the contract: this fact is computed inside the guest today and
+# destroyed one layer before it is published. Only the publisher can tell a 403
+# from an ECONNREFUSED, so the endpoint cannot recover it.
+
+for fixture in "$real_key" "$real_403_log" "$peer_key" "$peer_log"; do
+    [[ -s "$fixture" ]] || fail "shared fixture $(basename "$fixture") is missing or empty"
+done
+# Guard the fixtures themselves: if either capture ever shrinks back below the
+# cap that dropped every real line in SUP-372, this suite stops proving
+# anything, silently.
+for capture in "$real_403_log" "$peer_log"; do
+    longest_fixture_line="$(awk '{ if (length > m) m = length } END { print m + 0 }' "$capture")"
+    (( longest_fixture_line >= 230 )) \
+        || fail "$(basename "$capture") longest line is ${longest_fixture_line} chars; the fixture no longer has the real shape"
+done
+# And guard what makes the UNION worth having rather than a pick: each capture
+# must still carry the shape the other lacks. The tee-pki capture is the only
+# source of delimited hex; ours is the only one that reaches the 403 classifier.
+grep -qE '([0-9A-Fa-f]{2}:){19,}[0-9A-Fa-f]{2}' "$peer_log" \
+    || fail "the tee-pki capture no longer carries a colon-separated fingerprint - the shape it exists to cover"
+grep -q 'Reason: http-status:403' "$real_403_log" \
+    || fail "the sp-vm capture no longer carries the 403 verdict it exists to cover"
+for key in "${real_keys[@]}"; do
+    [[ "$(grep -c . "$key")" -ge 20 ]] \
+        || fail "$(basename "$key") is too short to be a real RSA key"
+done
+
+terminal_dir="$test_root/secrets-403"
+make_env "$terminal_dir"
+terminal_json="$terminal_dir/state/pki-authority-sync.json"
+run_sync "$terminal_dir" secrets-403 && fail "the 403 sync exited 0"
+[[ "$(json_field "$terminal_json" reason_class)" == "http-403-unvalidated" ]] \
+    || fail "the secrets 403 was published as '$(json_field "$terminal_json" reason_class)', not http-403-unvalidated"
+[[ "$(json_field "$terminal_json" terminal)" == "true" ]] \
+    || fail "the secrets 403 was not published as terminal: no retry of it can ever succeed"
+[[ "$(json_field "$terminal_json" state)" == "failed" ]] \
+    || fail "the secrets 403 did not fail the unit"
+# The console must end the operator's wait rather than extend it.
+grep -q 'This failure is TERMINAL' "$terminal_dir/console" \
+    || fail "a terminal failure still told the console that systemd would retry"
+! grep -q 'boot is no longer blocked' "$terminal_dir/console" \
+    || fail "a terminal failure printed the non-terminal reassurance"
+# And the throttle key stays the stable class, not the rendered reason.
+[[ "$(cat "$terminal_dir/state/pki-authority-sync.last-reason")" == "http-403-unvalidated" ]] \
+    || fail "the terminal class is not the throttle key"
+
+# Everything that is NOT a refusal of this node must stay non-terminal: a
+# terminal verdict told to stop a wait is only useful if it is never wrong.
+for case_name in http-500 http-429 network-code; do
+    nonterm_dir="$test_root/nonterminal-$case_name"
+    make_env "$nonterm_dir"
+    run_sync "$nonterm_dir" "$case_name" && fail "the $case_name sync exited 0"
+    nonterm_json="$nonterm_dir/state/pki-authority-sync.json"
+    [[ "$(json_field "$nonterm_json" terminal)" == "false" ]] \
+        || fail "$case_name was published as terminal, which would stop a wait that should continue"
+    [[ "$(json_field "$nonterm_json" reason_class)" == "exit-1" ]] \
+        || fail "$case_name was classified as '$(json_field "$nonterm_json" reason_class)'"
+done
+
+# The terminal 4xx set is an explicit list, not a range, so every member and
+# every near-miss is exercised by code rather than by the comment next to it.
+#
+# In: a refusal of THIS NODE - a malformed, unauthenticated or unvalidated
+# client certificate is a property the node carries to every authority in the
+# list, so trying the next one cannot help.
+for code in 400 401 403 422; do
+    term_dir="$test_root/terminal-$code"
+    make_env "$term_dir"
+    run_sync "$term_dir" "http-4xx-$code" && fail "the $code sync exited 0"
+    term_json="$term_dir/state/pki-authority-sync.json"
+    [[ "$(json_field "$term_json" terminal)" == "true" ]] \
+        || fail "HTTP $code was not published as terminal"
+    if (( code == 403 )); then
+        # 403 keeps its precedence and its own class: it is the SUP-370 shape,
+        # a certificate the authority issued and then would not accept.
+        [[ "$(json_field "$term_json" reason_class)" == "http-403-unvalidated" ]] \
+            || fail "403 lost its specific class to the generic one"
+    else
+        [[ "$(json_field "$term_json" reason_class)" == "http-${code}-refused" ]] \
+            || fail "HTTP $code lost its status code: $(json_field "$term_json" reason_class)"
+    fi
+done
+
+# Out, and this is the correction that matters: a 404 from an authority that
+# predates the route is a CLUSTER property, not a node property. Version skew
+# is routine, and publishing terminal: true for it would tell an operator to
+# replace a healthy node - the one mistake this field must never make. 405, 409
+# and 410 are the same story, and 451 stands in for "a 4xx nobody has thought
+# about yet", which must default to retryable.
+for code in 404 405 409 410 451; do
+    skew_dir="$test_root/nonterminal-$code"
+    make_env "$skew_dir"
+    run_sync "$skew_dir" "http-4xx-$code" && fail "the $code sync exited 0"
+    skew_json="$skew_dir/state/pki-authority-sync.json"
+    [[ "$(json_field "$skew_json" terminal)" == "false" ]] \
+        || fail "HTTP $code was published as terminal: a cluster-side fault would be reported as a dead node"
+    [[ "$(json_field "$skew_json" reason_class)" == "exit-1" ]] \
+        || fail "HTTP $code was classified as '$(json_field "$skew_json" reason_class)'"
+done
+
+# --- reason is COMPOSED, never CAPTURED ------------------------------------
+# This is the rule the endpoint's single-redactor argument rests on, so it is
+# enforced here rather than left true by observation.
+
+# Statically: the moment a call site interpolates a command substitution,
+# captured third-party text is one `$(tail ...)` away from the record.
+if grep -nE '^[[:space:]]*write_state ' "$sync_script" | grep -q '\$('; then
+    fail "a write_state call interpolates a command substitution: $(grep -nE '^[[:space:]]*write_state ' "$sync_script" | grep '\$(')"
+fi
+
+# At runtime: every record this suite produced must carry a reason and a class
+# from the publisher's own closed set, whatever the client printed.
+reason_templates=(
+    '^sync attempt [0-9]+ in progress$'
+    '^synced with the authority on attempt [0-9]+ after [0-9]+s$'
+    '^attempt [0-9]+ terminated by signal before it finished$'
+    '^sync client [^ ]+ is missing from this image$'
+    '^the authority did not complete the sync within [0-9]+s$'
+    '^the authority issued a certificate it will not accept \(secrets 403\)$'
+    '^the authority refused this node with HTTP [0-9]{3}$'
+    '^pki-sync-client exited with code [0-9]+ after [0-9]+s$'
+)
+class_template='^(attempting|ok|signal|missing-client|timeout|exit-[0-9]+|http-403-unvalidated|http-[0-9]{3}-refused)$'
+
+records=0
+while IFS= read -r record; do
+    records=$((records + 1))
+    record_reason="$(json_field "$record" reason)"
+    record_class="$(json_field "$record" reason_class)"
+    [[ "$record_class" =~ $class_template ]] \
+        || fail "$record: reason_class '$record_class' is outside the publisher's closed set"
+    matched=0
+    for template in "${reason_templates[@]}"; do
+        [[ "$record_reason" =~ $template ]] && { matched=1; break; }
+    done
+    (( matched )) \
+        || fail "$record: reason '$record_reason' is not one of the publisher's templates - something captured reached the record"
+done < <(find "$test_root" -name pki-authority-sync.json)
+(( records >= 10 )) || fail "only $records records were checked for composed reasons"
+
+# --- the shared fixtures, end to end --------------------------------------
+# A real key and a real captured log through the real script. The identical
+# artefacts and the identical assertion live on the tee-pki side.
+
+shared_dir="$test_root/shared-fixtures"
+make_env "$shared_dir"
+shared_json="$shared_dir/state/pki-authority-sync.json"
+SP_TEST_ERROR_TAIL_LINES=60 run_sync "$shared_dir" fixtures \
+    && fail "the shared-fixture sync exited 0"
+
+assert_no_key_material "$shared_dir/console" "the console"
+assert_no_key_material "$shared_json" "the published record"
+# The record is the surface that leaves the guest: no third-party text at all.
+! grep -q 'Request failed with status code' "$shared_json" \
+    || fail "the client's own message reached the published record"
+! grep -q 'swarm-node-2\|10.77.0' "$shared_json" \
+    || fail "the client's log context reached the published record"
+[[ "$(json_field "$shared_json" reason_class)" == "http-403-unvalidated" ]] \
+    || fail "the shared fixture was not classified from the real captured log"
+[[ "$(json_field "$shared_json" terminal)" == "true" ]] \
+    || fail "the shared fixture was not published as terminal"
+
+# ...and the captured text is exactly where SUP-372 put it: the console tail
+# and the attempt log, which never leave the node.
+grep -q 'Reason: http-status:403' "$shared_dir/console" \
+    || fail "the redaction swallowed the one line that diagnoses the 403"
+grep -q 'moving to next server' "$shared_dir/console" \
+    || fail "the key block swallowed the diagnosis that followed it"
+grep -q -- '-----BEGIN PRIVATE KEY-----' "$shared_dir/state/pki-authority-sync.log" \
+    || fail "the attempt log lost the raw client output it exists to keep"
+[[ "$(grep -c '<suppressed: PEM block>' "$shared_dir/console")" == "1" ]] \
+    || fail "the real key block was not announced exactly once"
+
+# --- the same assertions through the tee-pki half of the union -------------
+# Two repos, two captures, two keys, the same property asserted on all of it.
+# A pick rather than a union would leave each redactor pinned only by its own
+# capture, which is how §4 reads as satisfied while nothing is actually shared.
+
+peer_dir="$test_root/peer-fixtures"
+make_env "$peer_dir"
+SP_TEST_ERROR_TAIL_LINES=60 run_sync "$peer_dir" peer-fixtures \
+    && fail "the peer-fixture sync exited 0"
+assert_no_key_material "$peer_dir/console" "the console, on the peer key"
+assert_no_key_material "$peer_dir/state/pki-authority-sync.json" "the published record, on the peer key"
+
+# The peer capture is the NON-firing input: it is a successful run of the real
+# client, and every diagnostic line in it has to survive. SUP-372's first
+# regression was an over-broad rule that dropped exactly these.
+peer_log_dir="$test_root/peer-capture"
+make_env "$peer_log_dir"
+SP_TEST_ERROR_TAIL_LINES=40 run_sync "$peer_log_dir" peer-capture \
+    && fail "the peer-capture sync exited 0"
+assert_no_key_material "$peer_log_dir/console" "the console, on the peer capture"
+for survivor in \
+    'Root certificate network type' \
+    'connect ECONNREFUSED' \
+    'Successfully synced from server' \
+    'CN=SuperProtocol TEE Root CA'; do
+    grep -qF "$survivor" "$peer_log_dir/console" \
+        || fail "the redaction dropped a diagnostic line of the peer capture: '$survivor'"
+done
+# ...and the shape the union exposed: 32 colon-separated hex pairs have no
+# 40-character run in them, so the original rule passed them through whole.
+! grep -qF '17:F2:A7:7C:75:9D:F0:84' "$peer_log_dir/console" \
+    || fail "a colon-separated fingerprint reached the console whole"
+grep -qF '17:F2:A7... 95-char token redacted' "$peer_log_dir/console" \
+    || fail "the delimited-hex token kept no comparable head"
+
+# The delimited-hex rule has to sit ABOVE the shapes that are diagnostic and
+# must survive it. A MAC address is 6 pairs and an IPv6 address is 4-hex
+# groups, so neither can be mistaken for a 20-pair run.
+shape_dir="$test_root/shapes"
+make_env "$shape_dir"
+run_sync "$shape_dir" shapes && fail "the shapes sync exited 0"
+for survivor in \
+    '52:54:00:12:34:56' \
+    '2001:0db8:85a3:0000:0000:8a2e:0370:7334' \
+    '10.77.0.4:9443' \
+    '550e8400-e29b-41d4-a716-446655440000'; do
+    grep -qF "$survivor" "$shape_dir/console" \
+        || fail "the delimited-hex rule swallowed a diagnostic shape: '$survivor'"
+done
+! grep -qF '17:F2:A7:7C:75:9D:F0:84:9D' "$shape_dir/console" \
+    || fail "a colon fingerprint survived among the diagnostic shapes"
+! grep -qF 'de ad be ef de ad be ef' "$shape_dir/console" \
+    || fail "an xxd-spaced hex run reached the console"
+grep -qF 'does not match' "$shape_dir/console" \
+    || fail "redacting the delimited token threw away the message around it"
 
 echo "pki-authority-sync tests passed"

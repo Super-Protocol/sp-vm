@@ -1,0 +1,50 @@
+name: Reference Values tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "reference-values/**"
+      - ".github/actions/reference-values/**"
+      - ".github/workflows/reference-values*.yml"
+  pull_request:
+    paths:
+      - "reference-values/**"
+      - ".github/actions/reference-values/**"
+      - ".github/workflows/reference-values*.yml"
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: reference-values
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          set -eu
+          python3 -m pip install --quiet cryptography pyflakes
+          python3 -m pip install --quiet -r requirements.txt
+
+      - name: pyflakes
+        run: python3 -m pyflakes spref tests
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -t . -v
+
+      # The end-to-end pipeline (generate -> sign -> verify against the real
+      # sev-snp-measure and Veraison cocli) needs a genuine sp-vm build output,
+      # because the SEV-SNP launch digest is computed from OVMF_AMD.fd and
+      # vmlinuz. It runs on every image build through
+      # .github/actions/reference-values, and can be run by hand with
+      # reference-values/tests/check_reference_values_e2e.sh.
+

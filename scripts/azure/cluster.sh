@@ -80,6 +80,7 @@ CLUSTER=""
 STATE_DIR=""
 RELEASE=""
 TEMPLATE=""
+RENDER_OUT=""
 SWARM_DOMAIN_OVERRIDE=""
 PKI_DOMAIN_OVERRIDE=""
 RELEASE_MODE=0
@@ -330,10 +331,11 @@ EOF
 ### Launch #####################################################################
 
 # Renders the node's provider_config into the state directory; prints its
-# swarm_domain. Extra arguments go to `cluster_config.py render`.
+# swarm_domain. Extra arguments go to `cluster_config.py render`. Set RENDER_OUT
+# to render somewhere else than the node's own directory.
 render_node() {
   local name="$1" role="$2"; shift 2
-  local args=(render --template "$TEMPLATE" --out "${STATE_DIR}/nodes/${name}"
+  local args=(render --template "$TEMPLATE" --out "${RENDER_OUT:-${STATE_DIR}/nodes/${name}}"
     --node-name "$name" --role "$role")
   [[ -z "$SWARM_DOMAIN_OVERRIDE" ]] || args+=(--swarm-domain "$SWARM_DOMAIN_OVERRIDE")
   [[ -z "$PKI_DOMAIN_OVERRIDE" ]] || args+=(--pki-domain "$PKI_DOMAIN_OVERRIDE")
@@ -444,6 +446,64 @@ bootstrap_node() {
   fi
   mv "${STATE_DIR}/ca.pem.new" "${STATE_DIR}/ca.pem"
   log "${name}: cluster CA saved to ${STATE_DIR}/ca.pem"
+}
+
+# The bootstrap node creates the chain and the swarm key in `init` mode and
+# keeps neither: the state disk is reformatted on every boot. Booting it a
+# second time in `init` mode would generate a second, unrelated chain and a
+# second swarm key, so it could not rejoin the swarm it created (SUP-655).
+# Once a second node serves the cluster CA, the bootstrap node's stored
+# provider_config is therefore re-rendered as a join config and re-uploaded:
+# its next boot enrols like any other node and the original chain survives.
+promote_bootstrap_config() {
+  local group name index role release bootstrap_name="" bootstrap_group=""
+  local peers=() peer_args=() peer template staging
+
+  while IFS=$'\t' read -r group name index role release; do
+    [[ "$role" == "bootstrap" ]] || continue
+    bootstrap_name="$name"; bootstrap_group="$group"
+    break
+  done < <(cluster_groups)
+  [[ -n "$bootstrap_name" ]] || return 0
+
+  template="${STATE_DIR}/nodes/${bootstrap_name}"
+  [[ -d "$template" ]] || { log "${bootstrap_name}: no rendered provider_config here, cannot promote it to a join config"; return 0; }
+  [[ -f "${STATE_DIR}/ca.pem" ]] || return 0
+  [[ -d "$TEMPLATE" ]] || { log "${bootstrap_name}: provider_config template ${TEMPLATE:-(unset)} is gone, cannot promote its config to a join config"; return 0; }
+
+  mapfile -t peers < <(live_peers "$bootstrap_name")
+  if [[ ${#peers[@]} -eq 0 ]]; then
+    log "${bootstrap_name}: no other node serves the cluster CA; it stays a bootstrap config and cannot survive a reboot"
+    return 0
+  fi
+  for peer in "${peers[@]}"; do peer_args+=(--peer "$peer"); done
+
+  staging="${STATE_DIR}/nodes/.${bootstrap_name}.promote"
+  rm -rf "$staging"
+  # Not a `RENDER_OUT=... render_node` prefix: an assignment in front of a
+  # function call outlives the call in bash, and every later render would land
+  # in the staging directory.
+  RENDER_OUT="$staging"
+  render_node "$bootstrap_name" join "${peer_args[@]}" --ca "${STATE_DIR}/ca.pem" >/dev/null \
+    || { rm -rf "$staging"; die "${bootstrap_name}: rendering its join config failed"; }
+  RENDER_OUT=""
+
+  # swarm/config.yaml is the only file the rendering changes per node, so it is
+  # what decides whether anything has to be uploaded again.
+  if [[ "$(cat "${template}/swarm/config.yaml" 2>/dev/null)" \
+     == "$(cat "${staging}/swarm/config.yaml")" ]]; then
+    rm -rf "$staging"
+    return 0
+  fi
+
+  rm -rf "$template"
+  mv "$staging" "$template"
+  log "${bootstrap_name}: provider_config now joins through ${peers[*]}; re-uploading it"
+  # The cluster itself is fine either way, so a failed upload is not fatal: the
+  # promoted config stays here and the next refresh-configs uploads it.
+  "$LAUNCHER" --vm "$bootstrap_name" --vm-resource-group "$bootstrap_group" \
+    --provider-config "$template" --refresh-provider-config --no-restart \
+    || log "WARNING: ${bootstrap_name}: re-uploading the join config failed; it cannot survive a reboot until 'refresh-configs' succeeds"
 }
 
 # join_node <node json> <index> <name or empty>
@@ -628,6 +688,8 @@ cmd_up() {
     fi
   done
 
+  promote_bootstrap_config
+
   local ui_ok=0
   if [[ "$wait_ui_flag" -eq 1 ]]; then
     wait_ui "$(cat "${STATE_DIR}/swarm_domain" 2>/dev/null || true)" || ui_ok=1
@@ -727,6 +789,7 @@ cmd_add() {
     add_one
   done
   rm -f "$PENDING_FILE"
+  promote_bootstrap_config
   status_table
 }
 
@@ -876,6 +939,10 @@ cmd_refresh_configs() {
 
   groups="$(cluster_groups)"
   [[ -n "$groups" ]] || die "Cluster ${CLUSTER}: no resource groups"
+
+  # Does nothing when the bootstrap node's archive is already a join config.
+  [[ -f "${STATE_DIR}/spec.json" ]] && load_settings
+  promote_bootstrap_config
 
   while IFS=$'\t' read -r group name index role release; do
     [[ -n "$name" ]] || continue

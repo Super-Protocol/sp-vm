@@ -14,9 +14,15 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
         'deb http://archive.ubuntu.com/ubuntu/ noble-updates main universe' \
         'deb http://security.ubuntu.com/ubuntu/ noble-security main universe' \
         > /etc/apt/sources.list \
-    && printf 'APT::Snapshot "%s";\nAPT::Get::Always-Include-Phased-Updates "true";\nAcquire::Languages "none";\n' \
+    && printf 'APT::Snapshot "%s";\nAPT::Get::Always-Include-Phased-Updates "true";\nAcquire::Languages "none";\nAcquire::Retries "12";\n' \
         "$UBUNTU_SNAPSHOT_ID" > /etc/apt/apt.conf.d/50snapshot \
-    && apt-get update \
+    && attempt=1 \
+    && until apt-get update -o APT::Update::Error-Mode=any; do \
+        if [ "$attempt" -ge 6 ]; then exit 1; fi; \
+        echo "apt-get update failed (attempt ${attempt}), retrying in 15s"; \
+        attempt=$((attempt + 1)); \
+        sleep 15; \
+    done \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         wget gcc make build-essential debootstrap gettext \
     && apt-get clean \
@@ -259,6 +265,9 @@ RUN ln -s /etc/systemd/system/pki-vm-measurements.service "${OUTPUTDIR}/etc/syst
 RUN ln -s /etc/systemd/system/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-vm-measurements-healthcheck.timer"
 RUN SP_NVIDIA_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_nvidia_service_ordering.sh
 ADD rootfs/tests/test_pki_authority_sync.sh /buildroot/tests/test_pki_authority_sync.sh
+# Real artefacts, shared byte-for-byte with the tee-pki endpoint's redaction
+# tripwire: a hand-written line is not acceptable evidence here (SUP-376 §5).
+ADD rootfs/tests/fixtures/sp-health-redaction /buildroot/tests/fixtures/sp-health-redaction
 RUN chmod 0755 /buildroot/tests/test_pki_authority_sync.sh
 RUN SP_PKI_SYNC_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_pki_authority_sync.sh
 ADD rootfs/tests/test_sp_boot_attempt.sh /buildroot/tests/test_sp_boot_attempt.sh
@@ -456,18 +465,21 @@ RUN rm -f /etc/apt/sources.list.d/ubuntu.sources \
     && printf 'deb http://archive.ubuntu.com/ubuntu/ noble main\n' > /etc/apt/sources.list \
     && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates \
-    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble main universe\n' \
-        "$UBUNTU_SNAPSHOT_ID" \
+    && printf '%s\n' \
+        'deb http://archive.ubuntu.com/ubuntu/ noble main universe' \
+        'deb http://archive.ubuntu.com/ubuntu/ noble-updates main universe' \
+        'deb http://security.ubuntu.com/ubuntu/ noble-security main universe' \
         > /etc/apt/sources.list \
-    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble-updates main universe\n' \
-        "$UBUNTU_SNAPSHOT_ID" \
-        >> /etc/apt/sources.list \
-    && printf 'deb https://snapshot.ubuntu.com/ubuntu/%s/ noble-security main universe\n' \
-        "$UBUNTU_SNAPSHOT_ID" \
-        >> /etc/apt/sources.list \
-    && printf 'Acquire::Languages "none";\n' > /etc/apt/apt.conf.d/50snapshot \
+    && printf 'APT::Snapshot "%s";\nAPT::Get::Always-Include-Phased-Updates "true";\nAcquire::Languages "none";\nAcquire::Retries "12";\n' \
+        "$UBUNTU_SNAPSHOT_ID" > /etc/apt/apt.conf.d/50snapshot \
     && rm -rf /var/lib/apt/lists/* \
-    && apt-get update \
+    && attempt=1 \
+    && until apt-get update -o APT::Update::Error-Mode=any; do \
+        if [ "$attempt" -ge 6 ]; then exit 1; fi; \
+        echo "apt-get update failed (attempt ${attempt}), retrying in 15s"; \
+        attempt=$((attempt + 1)); \
+        sleep 15; \
+    done \
     && apt-get install -y --no-install-recommends \
         cryptsetup-bin dosfstools e2fsprogs faketime gdisk gettext-base \
         grub-pc-bin grub-efi-amd64-bin grub2-common kpartx mtools util-linux \

@@ -32,6 +32,7 @@ File: `src/swarm-scripts/swarm-cli.py`
 - For deploying new applications and services via Swarm you **must use `swarm-cli.py`**.
 - If some functionality is missing, **extend `swarm-cli.py`** instead of adding ad‑hoc SQL scripts or custom logic in other places.
 - This keeps a single contract for working with `swarm-db` and prevents drift in record formats.
+- **`swarm-db` speaks the MySQL wire protocol but does not implement MySQL's conflict idioms.** `INSERT IGNORE` and `ON DUPLICATE KEY UPDATE value = value` are both last-writer-wins upserts there: they overwrite the stored row instead of keeping it. To keep an existing row, `SELECT` first and skip the write — that is what `insert_keyed_value_if_absent` in `swarm-cli.py` does for `SwarmSecrets` and `SwarmIdPointer`. Getting this wrong rotated the RKE2 join token on every boot of the swarm-init node and left a healthy cluster unable to accept another node (SUP-700).
 
 Typical commands (illustrative, may differ from your exact wrappers):
 
