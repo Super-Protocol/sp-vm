@@ -184,10 +184,14 @@ def cmd_render(args):
 
     # detect_swarm_pki_state() (pki_configure_helper.py) accepts only two
     # shapes: all three fields empty (init) or all three set (normal).
+    # swarm_db.bootstrap says which of the two an empty shape means: a node
+    # rendered as a join node refuses to create a swarm of its own if its peers
+    # and CA ever go missing, instead of silently forking one (SUP-655).
     if args.role == "bootstrap":
         if args.peer or args.ca:
             fail("a bootstrap node takes no --peer and no --ca")
         swarm_db["join_addresses"] = []
+        swarm_db["bootstrap"] = True
         pki.pop("caBundle", None)
         pki.pop("servers", None)
     else:
@@ -196,6 +200,7 @@ def cmd_render(args):
         with open(args.ca, encoding="utf-8") as f:
             ca = f.read().strip()
         swarm_db["join_addresses"] = [f"{ip}:{GOSSIP_PORT}" for ip in args.peer]
+        swarm_db["bootstrap"] = False
         pki["caBundle"] = ca + "\n"
         pki["servers"] = [f"{ip}:{PKI_PORT}" for ip in args.peer]
 

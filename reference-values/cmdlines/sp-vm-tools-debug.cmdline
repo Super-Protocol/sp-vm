@@ -1,0 +1,2 @@
+# sp-vm-tools/scripts/start_super_protocol.sh, VM_MODE=sev-snp, DEBUG_MODE=true
+root=LABEL=rootfs rootfs_verity.scheme=dm-verity rootfs_verity.hash={rootfs_verity_hash} build={build} pci=realloc,nocrs console=ttyS0 systemd.log_level=trace systemd.log_target=log

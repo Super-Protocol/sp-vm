@@ -1,0 +1,4 @@
+# Reference implementation of the AMD SEV-SNP launch measurement
+# (https://github.com/virtee/sev-snp-measure). Pinned: the launch digest is a
+# published reference value, so the tool that computes it must not drift.
+sev-snp-measure==0.0.11

@@ -1,0 +1,41 @@
+{
+  "azure": {
+    "event_log": [
+      {
+        "digest": "26551f01474a9f3ca95fca764566dff1eff72c7f16b4b50a3e2a933310d35aeb",
+        "pcr": 4,
+        "type": "EV_NO_ACTION"
+      },
+      {
+        "digest": "04e666aa09809daf691a99cc7bf2d57ba09bac171966a71812ffd049d7c96bb1",
+        "pcr": 4,
+        "type": "EV_EFI_BOOT_SERVICES_APPLICATION"
+      },
+      {
+        "data": "00000000",
+        "digest": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119",
+        "pcr": 4,
+        "type": "EV_SEPARATOR"
+      },
+      {
+        "digest": "6256d62f9c97e24aeaa430ba5a68d81dd339678a5e2627d86e6202a989ec0e0d",
+        "pcr": 9,
+        "type": "EV_EFI_VARIABLE_BOOT"
+      }
+    ],
+    "vm_configuration": {
+      "console-enabled": true,
+      "filtered-vpci-devices-allowed": true,
+      "interactive-console-enabled": false,
+      "secure-boot": true,
+      "tpm-enabled": false
+    }
+  },
+  "build": "build-000-example",
+  "collected_at": "2026-10-22T16:58:55Z",
+  "collected_on": "EXAMPLE ONLY - not a real sp-vm reference boot",
+  "evidence_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "mrenclave": "95d3d0de2973476558b6489333a48126c5c32d0eb06111f06196252b7dacf450",
+  "platform": "tdx-azure",
+  "schema": "https://superprotocol.com/schemas/sp-vm-reference-evidence/1"
+}
