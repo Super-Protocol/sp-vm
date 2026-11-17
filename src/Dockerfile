@@ -172,6 +172,24 @@ ADD rootfs/files/configs/usr/local/bin/sp-nvidia-wait-cx7-linkup \
 ADD rootfs/files/configs/usr/local/bin/sp-nvidia-gpu-ready \
     ${OUTPUTDIR}/usr/local/bin/sp-nvidia-gpu-ready
 RUN chmod 0755 ${OUTPUTDIR}/usr/local/bin/sp-nvidia-*
+
+# SUP-376: the /run/sp-health publishing convention. sp-health-publish is the
+# single writer of the sp.unit-health/v1 record format; sp-node-serving-probe is
+# the only positive witness that this node serves, which is what makes the
+# rollup's `serving` verdict reachable at all.
+ADD rootfs/files/configs/usr/local/bin/sp-health-publish \
+    ${OUTPUTDIR}/usr/local/bin/sp-health-publish
+ADD rootfs/files/configs/usr/local/bin/sp-node-serving-probe \
+    ${OUTPUTDIR}/usr/local/bin/sp-node-serving-probe
+RUN chmod 0755 ${OUTPUTDIR}/usr/local/bin/sp-health-publish \
+    ${OUTPUTDIR}/usr/local/bin/sp-node-serving-probe
+ADD rootfs/files/configs/etc/systemd/system/sp-node-serving.service \
+    ${OUTPUTDIR}/etc/systemd/system/sp-node-serving.service
+ADD rootfs/files/configs/etc/systemd/system/sp-node-serving.timer \
+    ${OUTPUTDIR}/etc/systemd/system/sp-node-serving.timer
+RUN mkdir -p ${OUTPUTDIR}/etc/systemd/system/timers.target.wants
+RUN ln -sf /etc/systemd/system/sp-node-serving.timer \
+    ${OUTPUTDIR}/etc/systemd/system/timers.target.wants/sp-node-serving.timer
 RUN mkdir -p ${OUTPUTDIR}/etc/systemd/system/nvidia-fabricmanager.service.d \
     ${OUTPUTDIR}/etc/systemd/system/nvidia-cdi-refresh.service.d \
     ${OUTPUTDIR}/etc/systemd/system/nvidia-imex.service.d
@@ -224,6 +242,25 @@ RUN mkdir -p "${OUTPUTDIR}/etc/apt/apt.conf.d"
 ADD rootfs/files/configs/etc/apt/apt.conf.d/99-sp-configure-podman-cni \
     ${OUTPUTDIR}/etc/apt/apt.conf.d/99-sp-configure-podman-cni
 
+# flannel overlay recovery after a wg0 removal (SUP-350/SUP-355): deleting wg0
+# cascade-deletes flannel.1 and flanneld never rebuilds it.
+ADD rootfs/files/configs/usr/local/bin/sp-cni-after-wg0 \
+    ${OUTPUTDIR}/usr/local/bin/sp-cni-after-wg0
+RUN chmod 0755 ${OUTPUTDIR}/usr/local/bin/sp-cni-after-wg0
+RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/wg-quick@wg0.service.d"
+ADD rootfs/files/configs/etc/systemd/system/wg-quick@wg0.service.d/10-cni-recovery.conf \
+    ${OUTPUTDIR}/etc/systemd/system/wg-quick@wg0.service.d/10-cni-recovery.conf
+ADD rootfs/files/configs/etc/systemd/system/sp-cni-after-wg0.service \
+    ${OUTPUTDIR}/etc/systemd/system/sp-cni-after-wg0.service
+ADD rootfs/files/configs/etc/systemd/system/sp-cni-after-wg0.timer \
+    ${OUTPUTDIR}/etc/systemd/system/sp-cni-after-wg0.timer
+RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/timers.target.wants"
+RUN ln -sf /etc/systemd/system/sp-cni-after-wg0.timer \
+    "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/sp-cni-after-wg0.timer"
+ADD rootfs/tests/test_cni_after_wg0.sh /buildroot/tests/test_cni_after_wg0.sh
+RUN chmod 0755 /buildroot/tests/test_cni_after_wg0.sh
+RUN SP_CNI_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_cni_after_wg0.sh
+
 # copy iscsi configs, cause this partition will be remounted with empty dir
 RUN mkdir -p "${OUTPUTDIR}/etc/iscsi"
 RUN cp -r "${OUTPUTDIR}/etc/iscsi/" "${OUTPUTDIR}/etc/super/etc/";
@@ -255,6 +292,10 @@ RUN ln -s /etc/systemd/system/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/sy
 RUN ln -s /etc/systemd/system/pki-vm-measurements.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-vm-measurements.service"
 RUN ln -s /etc/systemd/system/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system/timers.target.wants/pki-vm-measurements-healthcheck.timer"
 RUN SP_NVIDIA_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_nvidia_service_ordering.sh
+ADD rootfs/tests/test_health_publishers.sh /buildroot/tests/test_health_publishers.sh
+RUN chmod 0755 /buildroot/tests/test_health_publishers.sh
+RUN SP_HEALTH_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_health_publishers.sh
+
 ADD rootfs/tests/test_pki_authority_sync.sh /buildroot/tests/test_pki_authority_sync.sh
 # Real artefacts, shared byte-for-byte with the tee-pki endpoint's redaction
 # tripwire: a hand-written line is not acceptable evidence here (SUP-376 §5).
