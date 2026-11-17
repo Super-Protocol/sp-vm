@@ -42,6 +42,13 @@ A node re-downloads that archive on every boot, so an unreachable archive means
 the next reboot (Azure service healing reboots VMs on host failure) loses the
 node silently. `status` shows this as CONFIG=GONE/EXPIRED.
 
+Node health: every wait below also reads the guest's node-health rollup on
+:9180 (/api/v1/nodeHealth). A node that reports `blocked` has a cause no retry
+can fix, so the wait ends at once with that cause printed instead of running
+out --node-timeout; `degraded` and `unknown` keep waiting. `status` shows the
+same rollup in the HEALTH column. The rollup never ends a wait successfully --
+each wait still needs its own probe to pass.
+
 Common:
   --node-timeout <seconds>  How long a node may take to boot and join; default 1800
   --skip-registry           Do not wait for mrEnclave in the trusted registry
@@ -84,6 +91,14 @@ RENDER_OUT=""
 SWARM_DOMAIN_OVERRIDE=""
 PKI_DOMAIN_OVERRIDE=""
 RELEASE_MODE=0
+
+# The last node-health rollup read by read_node_health, in the shape every
+# consumer of it needs: the verdict, why, and the two measurements.
+HEALTH_STATE=""
+HEALTH_REASON_CLASS=""
+HEALTH_RECEIVED_HEX=""
+HEALTH_EXPECTED_HEX=""
+HEALTH_SUMMARY=""
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 die() { printf '[%s] ERROR: %s\n' "$(date +%H:%M:%S)" "$*" >&2; exit 1; }
@@ -147,6 +162,53 @@ get_measure() {
 
 gossip_open() {
   timeout 3 bash -c ">/dev/tcp/$1/${GOSSIP_PORT}" 2>/dev/null
+}
+
+# The node-health rollup, from the same port as the Measurement API. Sets
+# HEALTH_STATE, HEALTH_REASON_CLASS, HEALTH_RECEIVED_HEX, HEALTH_EXPECTED_HEX
+# and HEALTH_SUMMARY from tee-pki's sp.node-health/v1 document.
+#
+# This is not a probe like the ones above: it is a veto and a diagnosis
+# channel, and never positive evidence that anything works. Three things it
+# must therefore not do, each of which is the defect it exists to fix,
+# reproduced one layer up:
+#
+#   - treat silence as healthy. No answer on :9180, an unparseable body, a
+#     schema this script does not know and a state word it does not know are
+#     all `unknown` - and `unknown` is not a weaker `serving`, it is the
+#     absence of information;
+#   - read `curl --fail` as a verdict. The endpoint answers 200 on every
+#     state, so a curl failure means the endpoint is gone, which is a
+#     different fact from an unhealthy node and is never collapsed into one
+#     here;
+#   - trust the strings. :9180 is plain HTTP, unauthenticated, accepted from
+#     any source (hardening-vm.sh), and these values are printed straight to
+#     an operator's terminal: the two measurements have to look like
+#     measurements, and the prose is reduced to printable ASCII and clipped.
+read_node_health() {
+  local body verdict
+  HEALTH_STATE="unknown" HEALTH_REASON_CLASS="-" HEALTH_RECEIVED_HEX="-"
+  HEALTH_EXPECTED_HEX="-" HEALTH_SUMMARY="-"
+  body="$(curl -fsS --connect-timeout 5 --max-time 20 \
+    "http://$1:${MEASURE_PORT}/api/v1/nodeHealth" 2>/dev/null)" || return 0
+  verdict="$(jq -er '
+      def clean: tostring | gsub("[^\u0020-\u007e]"; "?") | .[0:200]
+        | if . == "" then "-" else . end;
+      def hexonly: tostring
+        | if test("^[0-9a-fA-F]{1,128}$") then ascii_downcase else "-" end;
+      select(.schema == "sp.node-health/v1")
+      | (.state | tostring) as $state
+      | [ (if (["serving","booting","degraded","blocked","unknown"] | index($state)) != null
+             then $state else "unknown" end),
+          (.reason_class // "" | clean),
+          (.attestation.received_id_hex // "" | hexonly),
+          (.attestation.expected_id_hex // "" | hexonly),
+          (.summary // "" | clean) ]
+      | @tsv' <<<"$body" 2>/dev/null)" || return 0
+  # Summary last: it is the only free-form field, so nothing else can be
+  # displaced by what it contains.
+  IFS=$'\t' read -r HEALTH_STATE HEALTH_REASON_CLASS HEALTH_RECEIVED_HEX \
+    HEALTH_EXPECTED_HEX HEALTH_SUMMARY <<<"$verdict"
 }
 
 ca_matches() {
@@ -244,9 +306,29 @@ record_mrenclave() {
 
 ### Waits ######################################################################
 
+# Reads the node-health rollup and ends the caller's wait when it says
+# `blocked` - a cause the publisher that knows has classified as one no retry
+# can fix. SUP-370 was 25 hours of waiting on exactly that, and ending it is
+# the whole reason this script reads the endpoint at all.
+#
+# Only `blocked` ends a wait, and ending it is all this can do: a wait still
+# succeeds only on positive evidence at its own layer. `degraded` keeps
+# waiting inside the existing --node-timeout and surfaces in the progress
+# line, `booting` is the ordinary case, and `unknown` carries no information
+# at all - neither a reason to stop nor a reason to believe anything works.
+#
+# Leaves HEALTH_* set, so the caller's progress line can report the state
+# without asking the node twice.
+abort_if_blocked() {
+  local name="$1" ip="$2" waiting_for="$3"
+  read_node_health "$ip"
+  [[ "$HEALTH_STATE" == blocked ]] || return 0
+  node_failed "$name" "$ip" "${waiting_for}, and it reports that no retry will change that"
+}
+
 # Sets MEASURE_TYPE and MEASURE_HEX.
 wait_measure() {
-  local name="$1" ip="$2" deadline="$3" out
+  local name="$1" ip="$2" deadline="$3" out last=0
   log "${name}: waiting for the Measurement API on ${ip}:${MEASURE_PORT}"
   while (( SECONDS < deadline )); do
     if out="$(get_measure "$ip")"; then
@@ -255,6 +337,11 @@ wait_measure() {
       log "${name}: ${MEASURE_TYPE} mrEnclave ${MEASURE_HEX}"
       record_mrenclave "$name" "$MEASURE_TYPE" "$MEASURE_HEX"
       return 0
+    fi
+    abort_if_blocked "$name" "$ip" "the Measurement API did not answer"
+    if (( SECONDS - last >= 120 )); then
+      log "${name}: measure=down health=${HEALTH_STATE}"
+      last=$SECONDS
     fi
     sleep "$POLL_SECONDS"
   done
@@ -274,8 +361,9 @@ wait_bootstrap_pki() {
       log "${name}: PKI serves the CA, gossip is open"
       return 0
     fi
+    abort_if_blocked "$name" "$ip" "PKI or gossip did not come up"
     if (( SECONDS - last >= 120 )); then
-      log "${name}: pki=${pki} gossip=${gossip}"
+      log "${name}: pki=${pki} gossip=${gossip} health=${HEALTH_STATE}"
       last=$SECONDS
     fi
     sleep "$POLL_SECONDS"
@@ -291,11 +379,12 @@ wait_joined() {
       log "${name}: joined"
       return 0
     fi
+    abort_if_blocked "$name" "$ip" "it did not join the cluster"
     if (( SECONDS - last >= 120 )); then
       if fetch_ca "$ip" >/dev/null; then
-        log "${name}: PKI answers with a different CA"
+        log "${name}: PKI answers with a different CA, health=${HEALTH_STATE}"
       else
-        log "${name}: PKI not answering yet"
+        log "${name}: PKI not answering yet, health=${HEALTH_STATE}"
       fi
       last=$SECONDS
     fi
@@ -305,17 +394,39 @@ wait_joined() {
 }
 
 node_failed() {
-  local name="$1" ip="$2" reason="$3" measure ca
+  local name="$1" ip="$2" reason="$3" measure ca expected timing
   measure="$(get_measure "$ip" || echo "no answer")"
+  # Read again rather than reuse what the loop last saw: this block is the
+  # whole diagnosis an operator gets, and it should describe the node now.
+  read_node_health "$ip"
   if ca="$(fetch_ca "$ip")"; then
     if [[ -f "${STATE_DIR}/ca.pem" && "$ca" == "$(cat "${STATE_DIR}/ca.pem")" ]]; then ca="cluster CA"; else ca="another CA"; fi
   else
     ca="no answer"
   fi
+  # The authority side does not put the accepted measurement in its 403 body
+  # yet, so the endpoint emits expected_id_hex as null by contract. Say that,
+  # rather than print a bare dash that reads as "the node has no answer".
+  expected="$HEALTH_EXPECTED_HEX"
+  [[ "$expected" == "-" ]] && expected="not published by the authority yet"
+  # A blocked node did not run out of time: it published a cause no retry can
+  # fix and the wait ended on the spot. "within --node-timeout" would claim the
+  # opposite of what happened, in the one report where the distinction is the
+  # point.
+  if [[ "$HEALTH_STATE" == blocked ]]; then
+    timing="Stopped at once rather than waiting out --node-timeout (${NODE_TIMEOUT}s)."
+  else
+    timing="Gave up after --node-timeout (${NODE_TIMEOUT}s)."
+  fi
   cat >&2 <<EOF
 
-Node ${name} failed: ${reason} within --node-timeout (${NODE_TIMEOUT}s).
+Node ${name} failed: ${reason}.
+${timing}
   public IP:        ${ip:-none}
+  node health:      ${HEALTH_STATE} (${HEALTH_REASON_CLASS})
+  diagnosis:        ${HEALTH_SUMMARY}
+  mrEnclave seen:   ${HEALTH_RECEIVED_HEX}
+  mrEnclave wanted: ${expected}
   Measurement API:  ${measure}
   PKI (${PKI_PORT}):       ${ca}
   gossip (${GOSSIP_PORT}):    $(gossip_open "$ip" && echo open || echo closed)
@@ -845,17 +956,18 @@ config_state() {
 
 status_table() {
   local groups group name index role release info ip size location zone measure type hex reg ca domain
-  local conf conf_bad=0 conf_unknown=0
+  local conf conf_bad=0 conf_unknown=0 health
+  local -a blocked=()
   groups="$(cluster_groups)"
   [[ -n "$groups" ]] || { log "Cluster ${CLUSTER}: no resource groups"; return 0; }
   echo
-  printf '%-28s %-9s %-20s %-14s %-15s %-13s %-17s %-8s %-4s %s\n' \
-    NODE ROLE SIZE LOCATION IP TEE MRENCLAVE REGISTRY CA CONFIG
+  printf '%-28s %-9s %-20s %-14s %-15s %-13s %-17s %-8s %-4s %-8s %s\n' \
+    NODE ROLE SIZE LOCATION IP TEE MRENCLAVE REGISTRY CA HEALTH CONFIG
   while IFS=$'\t' read -r group name index role release; do
     info="$(az vm show -d -g "$group" -n "$name" \
       --query '[hardwareProfile.vmSize, location, zones[0], publicIps]' -o tsv 2>/dev/null | tr '\n' '\t' || true)"
     IFS=$'\t' read -r size location zone ip <<<"$info"
-    type="-" hex="-" reg="-" ca="-"
+    type="-" hex="-" reg="-" ca="-" health="-"
     if [[ -n "${ip:-}" ]]; then
       if measure="$(get_measure "$ip")"; then
         type="${measure%% *}"; hex="${measure#* }"
@@ -872,6 +984,14 @@ status_table() {
       else
         ca=down
       fi
+      # The rollup, not a substitute for the two probes above: CA stays the
+      # positive evidence that this node serves the cluster's PKI, and HEALTH
+      # is what says whether waiting for it is still worth anything.
+      read_node_health "$ip"
+      health="$HEALTH_STATE"
+      if [[ "$health" == blocked ]]; then
+        blocked+=("  ${name}: ${HEALTH_REASON_CLASS} — ${HEALTH_SUMMARY}")
+      fi
     fi
     conf="$(config_state "$group" "$name")"
     # Only a definite answer from storage counts as broken: a "?" is this
@@ -881,10 +1001,19 @@ status_table() {
       GONE|EXPIRED) conf_bad=$((conf_bad + 1)) ;;
       \?*) conf_unknown=$((conf_unknown + 1)) ;;
     esac
-    printf '%-28s %-9s %-20s %-14s %-15s %-13s %-17s %-8s %-4s %s\n' \
-      "$name" "$role" "${size:--}" "${location:--}/${zone:--}" "${ip:--}" "$type" "${hex:0:16}" "$reg" "$ca" "$conf"
+    printf '%-28s %-9s %-20s %-14s %-15s %-13s %-17s %-8s %-4s %-8s %s\n' \
+      "$name" "$role" "${size:--}" "${location:--}/${zone:--}" "${ip:--}" "$type" "${hex:0:16}" "$reg" "$ca" "$health" "$conf"
   done <<<"$groups"
 
+  # Named here rather than left as a word in a column, because this is the one
+  # verdict for which the answer is never "run status again later".
+  if (( ${#blocked[@]} > 0 )); then
+    echo
+    echo "WARNING: ${#blocked[@]} node(s) report HEALTH=blocked — a cause no retry can fix."
+    printf '%s\n' "${blocked[@]}"
+    echo "  Waiting will not clear this. Fix the cause named above, or replace the node:"
+    echo "    ${LAUNCHER} --vm <node> --delete"
+  fi
   if [[ "$conf_bad" -gt 0 ]]; then
     echo
     echo "WARNING: ${conf_bad} node(s) can no longer fetch their provider_config (CONFIG GONE/EXPIRED)."
@@ -1008,6 +1137,13 @@ cmd_delete() {
 }
 
 ### Main #######################################################################
+
+# Run, not sourced. src/rootfs/tests/test_cluster_node_health.sh exercises the
+# probes and the waits directly against a stub endpoint, and they need neither
+# an argument list nor an Azure subscription behind them.
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+  return 0
+fi
 
 [[ $# -gt 0 ]] || { usage; exit 1; }
 command="$1"; shift

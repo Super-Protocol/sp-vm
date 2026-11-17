@@ -335,10 +335,15 @@ swarm's behaviour, not the script's.
 ```
 
 ```
-NODE                  ROLE      SIZE               LOCATION   IP              TEE           MRENCLAVE         REGISTRY CA   CONFIG
-rtest-node-1-mct4     bootstrap Standard_DC8es_v6  westus3/3  203.0.113.10    tdx-azure     3b87e54d9c175958  yes      ok   ok
-rtest-node-2-hiej     join      Standard_DC8es_v6  westus3/3  203.0.113.11    tdx-azure     3b87e54d9c175958  yes      ok   ok
-rtest-node-3-pqtc     join      Standard_DC8as_v5  eastus/1   203.0.113.12    sev-snp-azure 1cccb72fb97be3a0  yes      GONE
+NODE                  ROLE      SIZE               LOCATION   IP              TEE           MRENCLAVE         REGISTRY CA   HEALTH   CONFIG
+rtest-node-1-mct4     bootstrap Standard_DC8es_v6  westus3/3  203.0.113.10    tdx-azure     3b87e54d9c175958  yes      ok   serving  ok
+rtest-node-2-hiej     join      Standard_DC8es_v6  westus3/3  203.0.113.11    tdx-azure     3b87e54d9c175958  yes      ok   serving  ok
+rtest-node-3-pqtc     join      Standard_DC8as_v5  eastus/1   203.0.113.12    sev-snp-azure 1cccb72fb97be3a0  yes      down blocked  GONE
+
+WARNING: 1 node(s) report HEALTH=blocked — a cause no retry can fix.
+  rtest-node-3-pqtc: pki-authority-sync:http-403-unvalidated — the authority issued a certificate it will not accept; this node cannot join
+  Waiting will not clear this. Fix the cause named above, or replace the node:
+    ./run_custom_conf_vm.sh --vm <node> --delete
 
 UI: https://swarm.example.com/ is up
 ```
@@ -347,6 +352,7 @@ UI: https://swarm.example.com/ is up
 |---|---|
 | `REGISTRY` | `yes` / `no` — whether the `mrEnclave` is in the registry; `debug` — not checked for debug builds |
 | `CA` | `ok` — the node serves the cluster CA; `other` — a different CA; `down` — PKI does not answer |
+| `HEALTH` | the guest's own verdict on its bring-up, read from `:9180/api/v1/nodeHealth`: `serving` — it holds a fresh local witness that it serves; `booting` — a gate is still attempting inside its own budget; `degraded` — a gate failed on a retryable cause, or a record went stale; `blocked` — a gate failed on a cause **no retry can fix**, and waiting will not clear it; `unknown` — no verdict yet, which is also what a node that does not answer on `:9180` looks like. `unknown` is not a weaker `serving`, and `serving` is not a substitute for `CA`: this column is a veto and a diagnosis, never evidence that the cluster accepted the node |
 | `CONFIG` | whether the node's provider_config archive is still downloadable: `ok`; `GONE` — the blob is deleted; `EXPIRED` — the SAS expired. Anything but `ok` means the next reboot loses the node (see Pitfalls); fix it with `refresh-configs` |
 | `UI` | whether `https://<swarm_domain>/` and `/graphql` answer |
 
@@ -572,8 +578,13 @@ If a node does not make it within `--node-timeout`, the script prints a summary
 and stops:
 
 ```
-Node azure-test-node-2-k7q2 failed: it did not join the cluster within --node-timeout (1800s).
+Node azure-test-node-2-k7q2 failed: it did not join the cluster.
+Gave up after --node-timeout (1800s).
   public IP:        203.0.113.20
+  node health:      degraded (pki-authority-sync:timeout)
+  diagnosis:        pki-authority-sync.service failed on a retryable cause; this node is not serving
+  mrEnclave seen:   3b87e54d9c1759584c2a7e6b1d0f9382a5c4e7b6d9f10283746556473829100ab
+  mrEnclave wanted: not published by the authority yet
   Measurement API:  tdx-azure 3b87e54d…
   PKI (9443):       no answer
   gossip (7946):    open
@@ -581,14 +592,29 @@ Node azure-test-node-2-k7q2 failed: it did not join the cluster within --node-ti
   serial console:   az serial-console connect -g sp-vm-azure-test-node-2-k7q2 -n azure-test-node-2-k7q2
 ```
 
+`node health` is the guest's own verdict, read off `:9180` (see the `HEALTH`
+column above). When it is `blocked` the script does not wait out
+`--node-timeout` at all: a `blocked` node has already published that no retry
+can succeed, so the wait ends on the spot with the same block — the second line
+reads `Stopped at once rather than waiting out --node-timeout (1800s).` instead
+— and `up` or `add` stops there. That is the difference between reading the
+cause now and losing a day to a condition that was never going to clear.
+
+`mrEnclave wanted` is the measurement the cluster accepts. The authority does
+not yet put it in the rejection it sends back, so until that lands it reads
+`not published by the authority yet`; `mrEnclave seen` is always the one this
+node holds. When both are present, a one-line diff of the two is the whole
+diagnosis of a rejected node.
+
 How to read it:
 
 | Symptom | Likely cause |
 |---|---|
+| `node health: blocked` | the node itself says no retry can succeed, and `reason_class` names which gate decided that. Read `diagnosis` and the two `mrEnclave` lines — nothing below applies, and nothing is gained by waiting or by running the command again unchanged |
 | Measurement API does not answer | the VM did not boot, or the provider_config did not arrive (wrong template, expired blob) |
 | Measurement API answers, PKI silent, release build | the `mrEnclave` was not accepted. Check the registry; with `--skip-registry` the script did not wait for it |
 | Measurement API answers, PKI silent, node had been running | it rebooted (Azure service healing) and its provider_config archive was gone, so it booted blank. Check `CONFIG` in `status`, then `refresh-provider-config` that node — `--no-restart` is wrong here, it has to reboot to pick the archive up |
-| Measurement API answers, PKI silent, the serial console shows `pki-authority-sync.service FAILED` | the authority refuses to sign this node — usually a `caBundle` pinned in its provider_config against an authority that has since regenerated its root. The console block names the authority it tried and carries the attempt's own error (repeated hourly, with a one-line reminder in between). On a debug build `/run/sp-health/pki-authority-sync.json` has the same verdict per attempt; nothing exposes it off the node yet. The unit retries every 60 s and brings `swarm-db`, `swarm-node` and `swarm-services` up itself once a later attempt succeeds |
+| Measurement API answers, PKI silent, the serial console shows `pki-authority-sync.service FAILED` | the authority refuses to sign this node — usually a `caBundle` pinned in its provider_config against an authority that has since regenerated its root. The console block names the authority it tried and carries the attempt's own error (repeated hourly, with a one-line reminder in between). `/run/sp-health/pki-authority-sync.json` has the same verdict per attempt, and `:9180/api/v1/nodeHealth` serves it off the node on any build — which is what `HEALTH` and the `node health` line report, so this no longer needs the console. A `caBundle` mismatch is retryable, so it shows as `degraded`; a measurement the authority will not accept is `blocked`. The unit retries every 60 s and brings `swarm-db`, `swarm-node` and `swarm-services` up itself once a later attempt succeeds |
 | PKI serves a different CA | the node came up as a bootstrap: its config has empty `join_addresses`, `caBundle` and `servers`. On the bootstrap node this means its config was never promoted to a join config — see above; run `refresh-configs` before rebooting it |
 | all nodes `ok`, the UI does not come up | the cluster is still converging, or the nodes are too small; see `status` and the sizes above |
 
