@@ -1,0 +1,7 @@
+{
+  "mrenclave": "9266d69807b20f5003dea7c2d6b62f7306d196d3ec89f52d763fe31ab9ecbf2e",
+  "signature": "fjTiJu9Rci6NwoNOUNYNFVTCahBnkdYtlKZpt/F0hgsbhbG/PaO5BEJI/xpcqV4+WE1JL/OavsJXVKvIT5xj7aXr5SolQWmmI9a5HSMv6Bgd/kmTqb5CexwUYvGBEUmYYJi/tDEn4EBAPhE4L1c4y6Bak/1RJO5rkP7bO/v45uPttgSNfZu7E8l3jugipZ/J7br9HCKtBJlAaXqzyi/5S+Xjn8WbVqQqbTzbMl+i7hYkus8WKpCQgrquMbcjb1UtZy+9E0U5jAt8JkdXGPvyI9pCOufjimcWErNmCv22n6RwEkfSPLgmmiiGq1WqDRAO5tUXuAWplOm+XVIFIlQVHbwGPg9VrEmtipTwM4KcWrNxzJxHAJlbYYECKLUSf6uQG7fg3Awv/eP18CqvmNq2odVR+bksXUr/TrXFzJbfsaV4aiKUrpg4Sg1ATRC5HF5VgGCsZE9kwkZ/OI93bOfmhyI1f2+UwmNqcG3qXTqS5Zcx2KWBBfdfIbxfU5Viu5XF",
+  "build": "build-448-release",
+  "description": "SUP-784: build-448-release, non-debug kernel cmdline",
+  "creationDate": "2026-11-17T11:52:34.609Z"
+}
