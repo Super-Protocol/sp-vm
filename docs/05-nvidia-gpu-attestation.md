@@ -140,6 +140,12 @@ service. `proxy` keeps the raw evidence and the PKI authority checks it. Both
 services. Setting only one of the two URLs is rejected when the VM config is
 built. Without an `nvtrust` section the verifier stays `nras`.
 
+`timeout` (a positive number of milliseconds) and `tmp` (a scratch directory)
+are copied into the cert-gen config. The sync client receives only `verifier`,
+`rimUrl`, and `ocspUrl`. Any other `nvtrust` key is rejected by `get-vm-mode`,
+before cert generation and authority sync start. Surrounding whitespace on
+`verifier` is ignored.
+
 ## Binding to the CPU TEE
 
 ### Calculating the Hash

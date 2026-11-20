@@ -280,6 +280,12 @@ def detect_network_type() -> str:
     return network_type
 
 
+# Cert-gen consumes the whole section. The sync client schema accepts only the
+# first three keys, so configure-sync-client drops timeout and tmp.
+_NVTRUST_KEYS = ("verifier", "rimUrl", "ocspUrl", "timeout", "tmp")
+_NVTRUST_SYNC_KEYS = ("verifier", "rimUrl", "ocspUrl")
+
+
 def read_nvtrust(config_data: dict) -> dict | None:
     raw = config_data.get("nvtrust")
     if raw is None:
@@ -287,7 +293,15 @@ def read_nvtrust(config_data: dict) -> dict | None:
     if not isinstance(raw, dict):
         raise ValueError("Invalid config: 'nvtrust' must be a mapping")
 
+    unknown = sorted(set(raw) - set(_NVTRUST_KEYS))
+    if unknown:
+        raise ValueError(
+            "Invalid config: unknown nvtrust keys: " + ", ".join(unknown)
+        )
+
     verifier = raw.get("verifier", "nras")
+    if isinstance(verifier, str):
+        verifier = verifier.strip()
     if verifier not in ("nras", "proxy"):
         raise ValueError("Invalid config: nvtrust.verifier must be 'nras' or 'proxy'")
 
@@ -305,7 +319,24 @@ def read_nvtrust(config_data: dict) -> dict | None:
             "Invalid config: nvtrust.rimUrl and nvtrust.ocspUrl must both be set"
         )
     rendered.update(urls)
+
+    if "timeout" in raw:
+        timeout = raw["timeout"]
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+            raise ValueError("Invalid config: nvtrust.timeout must be a positive number")
+        rendered["timeout"] = timeout
+
+    if "tmp" in raw:
+        tmp = raw["tmp"]
+        if not isinstance(tmp, str) or not tmp.strip():
+            raise ValueError("Invalid config: nvtrust.tmp must be a non-empty string")
+        rendered["tmp"] = tmp.strip()
+
     return rendered
+
+
+def nvtrust_for_sync_client(nvtrust: dict) -> dict:
+    return {key: nvtrust[key] for key in _NVTRUST_SYNC_KEYS if key in nvtrust}
 
 
 def load_swarm_config(config_path: Path) -> dict:
@@ -607,7 +638,7 @@ def build_sync_client_pki_authority(config_data: dict) -> dict:
     rendered = {"pki_authority": rendered_pki_authority}
     nvtrust = read_nvtrust(config_data)
     if nvtrust is not None:
-        rendered["nvtrust"] = nvtrust
+        rendered["nvtrust"] = nvtrust_for_sync_client(nvtrust)
     return rendered
 
 
@@ -622,6 +653,8 @@ def run_get_vm_mode(config_path: Path, output_path: Path) -> int:
             raise ValueError("Invalid config: root must be a mapping")
 
         vm_mode = detect_swarm_pki_state(config_data)
+        # Fail here, before pki-cert-init and pki-authority-sync, on a bad nvtrust section.
+        read_nvtrust(config_data)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(f"{vm_mode}\n", encoding="utf-8")
         log("INFO", f"Detected vm-mode '{vm_mode}' and saved to {output_path}")
