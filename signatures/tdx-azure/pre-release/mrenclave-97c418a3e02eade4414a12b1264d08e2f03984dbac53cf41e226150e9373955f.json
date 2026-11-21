@@ -1,0 +1,7 @@
+{
+  "mrenclave": "97c418a3e02eade4414a12b1264d08e2f03984dbac53cf41e226150e9373955f",
+  "signature": "u+8MtIz15j/tsreo3uJ7B28gEr2HJHSQ6nXcQ7gmSmKrDguEvM6ZK1fusiKvT9tgQO6PI6ul9+MXQeZ1lgjeExlUYcGcOqE2VlBZL+U9ZdsWnSPbaljH6TAfFBKBLKWNCmNo6FhDNPmeGDuEhci9hx98wpJs/atGHeWmQzKmIMq8DcWRPV98Ow9AfZMQHHf27yl57o3Y6DKqKzBOXYqzusUePAoBn3yXmxqmMFc1sj+aC2GwCFWf9WNXnUY10RpbWuAUlyHSerUp1nTksmnT/9xfox9edYBSzpqnBYH5JvLskA/5yIuCcOli34/bhDkCCP9/0pRZ/U7okt/0z8y4KYvHh6AGB8+TpVTnmLoX85s2Q8YU5UwCDKDSsf6bapCFGe+toVlTwCVwxzKdzd1OqWZpH3zYifRP5yiLStdWHWqBRCj11gkXLjrMymYd7GZrVNq9S49/BIqjig5sMQN7RCdrlZWKJ2sDf8dxanVKr970bZWhgcIBs/Kexial+dAT",
+  "build": "build-477-release",
+  "description": "sp-vm build-477-release tdx-azure measurement (Azure DCesv6, read from azure-test-node-1-o6nt getMeasure); SUP-758",
+  "creationDate": "2026-11-21T11:13:00.658Z"
+}
