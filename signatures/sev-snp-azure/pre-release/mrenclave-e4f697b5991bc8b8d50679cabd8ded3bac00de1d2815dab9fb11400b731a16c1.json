@@ -1,0 +1,7 @@
+{
+  "mrenclave": "e4f697b5991bc8b8d50679cabd8ded3bac00de1d2815dab9fb11400b731a16c1",
+  "signature": "Qmr+1/goI70xDXZeI/dKQHgxA0naSYaZddYq1ak9xIfORWbsSP1MWfO7wfItlAsbpkKBZ8abQBZN1Z+1sytYw/2ccOePBQN0DeH6xmMOeXYHErd5Oo/KseZvFCsNrYoEk2mgS1BkN9MKrAZ6AWDHYuXLecdPc7v9WCT9gUPoumDaZSStDVbG6t4AI3XtQ6MxvgTeRL3NF1MNF8RVJmbZmHWUthqP7LdWVLee5PIaw9GBRMcdtJYOIiaUvLN38hzqlXda1ZQAQs9uC7y0Xt5Zb5Myb6/HCRJWYhBV2iBk9lDUqKsOEiwv9RgPuhcxsyObjdN84OJKqFzdH/XsO7qEDQn8upUcrWusEMQdJFLR0FvMaMW9GJQrYp+F+tT9gydAxmimGKrjnWPUF3pN0ubyNGFu78A1OVc4PmoJVvYNBJuoN/MPgyk0uUzZEleWcukLBvd7Qq4Mmu/ckoduGIF7WnQe4IAN++suTs4RXF1IPEE6e8WJuKFzfAJxwDGRtyZo",
+  "build": "build-477-release",
+  "description": "sp-vm build-477-release sev-snp-azure measurement (Azure NCC40ads_H100_v5, read from gpu-blueprints-node-3-et9j getMeasure); SUP-868",
+  "creationDate": "2026-11-22T08:05:00.391Z"
+}
