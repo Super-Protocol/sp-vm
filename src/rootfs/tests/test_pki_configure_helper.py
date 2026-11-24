@@ -278,5 +278,118 @@ class RunValidateTemplateTest(unittest.TestCase):
             self.assertEqual(helper.run_validate_template(Path(tmp) / "absent.yaml"), 1)
 
 
+class ReadNvtrustTest(unittest.TestCase):
+    def test_absent_section(self):
+        self.assertIsNone(helper.read_nvtrust({}))
+
+    def test_proxy_with_urls(self):
+        rendered = helper.read_nvtrust({
+            "nvtrust": {
+                "verifier": " proxy ",
+                "rimUrl": " https://rim.example ",
+                "ocspUrl": "https://ocsp.example",
+                "timeout": 120000,
+                "tmp": " /tmp/nvtrust-tmp ",
+            }
+        })
+        self.assertEqual(
+            rendered,
+            {
+                "verifier": "proxy",
+                "rimUrl": "https://rim.example",
+                "ocspUrl": "https://ocsp.example",
+                "timeout": 120000,
+                "tmp": "/tmp/nvtrust-tmp",
+            },
+        )
+
+    def test_local_is_rejected(self):
+        with self.assertRaises(ValueError):
+            helper.read_nvtrust({"nvtrust": {"verifier": "local"}})
+
+    def test_unknown_key_is_rejected(self):
+        with self.assertRaises(ValueError) as caught:
+            helper.read_nvtrust({"nvtrust": {"verifier": "nras", "cache": "/tmp"}})
+        self.assertIn("unknown nvtrust keys: cache", str(caught.exception))
+
+    def test_timeout_and_tmp_must_be_usable(self):
+        for section in (
+            {"timeout": 0},
+            {"timeout": -1},
+            {"timeout": True},
+            {"timeout": "120000"},
+            {"tmp": "  "},
+            {"tmp": 12},
+        ):
+            with self.subTest(section=section):
+                with self.assertRaises(ValueError):
+                    helper.read_nvtrust({"nvtrust": section})
+
+    def test_sync_client_keeps_verifier_urls_only(self):
+        rendered = helper.build_sync_client_pki_authority({
+            **config(**FULL_PEER_INFO),
+            "nvtrust": {
+                "verifier": "proxy",
+                "rimUrl": "https://rim.example",
+                "ocspUrl": "https://ocsp.example",
+                "timeout": 120000,
+                "tmp": "/tmp/nvtrust-tmp",
+            },
+        })
+        self.assertEqual(
+            rendered["nvtrust"],
+            {
+                "verifier": "proxy",
+                "rimUrl": "https://rim.example",
+                "ocspUrl": "https://ocsp.example",
+            },
+        )
+
+    def test_get_vm_mode_rejects_malformed_nvtrust_before_writing_the_mode(self):
+        data = config(bootstrap=True)
+        data["nvtrust"] = {"verifier": "local"}
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.yaml"
+            output_path = Path(tmp) / "mode"
+            config_path.write_text(yaml.dump(data), encoding="utf-8")
+            self.assertEqual(helper.run_get_vm_mode(config_path, output_path), 255)
+            self.assertFalse(output_path.exists())
+
+    def test_get_vm_mode_accepts_nvtrust_settings(self):
+        data = config(bootstrap=True)
+        data["nvtrust"] = {
+            "verifier": " nras ",
+            "timeout": 120000,
+            "tmp": "/tmp/nvtrust-tmp",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.yaml"
+            output_path = Path(tmp) / "mode"
+            config_path.write_text(yaml.dump(data), encoding="utf-8")
+            original = helper.refresh_maa_endpoint
+            helper.refresh_maa_endpoint = lambda: None
+            try:
+                self.assertEqual(helper.run_get_vm_mode(config_path, output_path), 0)
+            finally:
+                helper.refresh_maa_endpoint = original
+            self.assertEqual(output_path.read_text(encoding="utf-8"), "init\n")
+
+    def test_non_string_url_is_rejected(self):
+        with self.assertRaises(ValueError):
+            helper.read_nvtrust({
+                "nvtrust": {
+                    "verifier": "proxy",
+                    "rimUrl": 12,
+                    "ocspUrl": "https://ocsp.example",
+                }
+            })
+
+    def test_patch_template_passes_the_section_through(self):
+        template = {"certificates": [{"certRole": "root"}], "nvtrust": {"timeout": 120000}}
+        patched = helper.patch_template(template, "untrusted", {"verifier": "nras"})
+        self.assertEqual(patched["nvtrust"], {"verifier": "nras"})
+        self.assertEqual(patched["certificates"][0]["networkType"], "untrusted")
+
+
 if __name__ == "__main__":
     unittest.main()
