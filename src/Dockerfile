@@ -448,6 +448,14 @@ ADD rootfs/files/scripts/install_pki_components.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_pki_components.sh
 RUN --security=insecure /buildroot/files/scripts/install_pki_components.sh
 
+# SUP-922: the installed pki-vm-measurements must be one that serves
+# /v1/getQuote, and :9181 must stay closed in the firewall. Run here rather
+# than only in rootfs-tests.yml because only the built rootfs can show that the
+# pin bump actually landed in the image; install_pki_components.sh deletes the
+# manifest from the output root, so the pin files are read from /buildroot.
+ADD rootfs/tests/test_quote_api_exposure.sh /buildroot/tests/test_quote_api_exposure.sh
+RUN SP_QUOTE_TEST_INSTALLED_ROOT="${OUTPUTDIR}" /buildroot/tests/test_quote_api_exposure.sh
+
 # Azure TDX quote CLI used by tdx-azure PKI (pki-cert-generator / pki-vm-measurements)
 ADD rootfs/files/scripts/install_azure_guest_attest.sh /buildroot/files/scripts/
 RUN chmod +x /buildroot/files/scripts/install_azure_guest_attest.sh
