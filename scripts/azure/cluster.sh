@@ -79,6 +79,13 @@ MEASURE_PORT=9180
 POLL_SECONDS=20
 REGISTRY_POLL_SECONDS=30
 
+# How long a CA probe whose negative answer is acted upon at once keeps
+# re-probing before it is believed (see peer_serving_ca). Short on purpose: it
+# covers a probe that failed, not a node that is still converging - every wait
+# that has to outlast a boot has --node-timeout for that.
+CA_REPROBE_SECONDS=60
+CA_REPROBE_POLL_SECONDS=5
+
 NODE_TIMEOUT=1800
 UI_TIMEOUT=1800
 SKIP_REGISTRY=0
@@ -485,14 +492,52 @@ launch_node() {
   echo "$ip"
 }
 
+# <node name> -> its address, if that node serves the cluster CA.
+#
+# Every other probe in this script either polls until --node-timeout or only
+# fills in a column. This one is different: its callers act on a single
+# negative at once - `join_node` aborts the whole bring-up, and
+# `promote_bootstrap_config` concludes that the bootstrap config cannot be
+# promoted - so here a failed probe must not be mistaken for a node that
+# stopped serving. SUP-949 was exactly that: one `curl` failed five seconds
+# after the same node's CA had been fetched, verified and saved, and `up` died
+# on it with "No cluster node serves the cluster CA" while the cluster was
+# serving the whole time.
+#
+# So a negative is returned only after the probe has kept failing for
+# CA_REPROBE_SECONDS, and the address is resolved again on every attempt: a
+# transient `az vm show` failure looks the same from here as a serving node
+# with no address, because node_ip swallows the error.
+peer_serving_ca() {
+  local name="$1" deadline=$((SECONDS + CA_REPROBE_SECONDS)) ip retried=0
+  while :; do
+    ip="$(node_ip "$name")"
+    if [[ -n "$ip" ]] && ca_matches "$ip"; then
+      if (( retried )); then
+        log "${name} (${ip}): serves the cluster CA; the earlier probe had failed"
+      fi
+      echo "$ip"
+      return 0
+    fi
+    (( SECONDS < deadline )) || break
+    if (( ! retried )); then
+      log "${name}: did not answer with the cluster CA; re-probing it for up to ${CA_REPROBE_SECONDS}s"
+      retried=1
+    fi
+    sleep "$CA_REPROBE_POLL_SECONDS"
+  done
+  if (( retried )); then
+    log "${name}: did not serve the cluster CA in ${CA_REPROBE_SECONDS}s of probes"
+  fi
+  return 1
+}
+
 # Addresses of the cluster nodes that serve the cluster CA, bootstrap first.
 live_peers() {
   local exclude="${1:-}" group name index role release ip
   while IFS=$'\t' read -r group name index role release; do
     [[ "$name" != "$exclude" ]] || continue
-    ip="$(node_ip "$name")"
-    [[ -n "$ip" ]] || continue
-    ca_matches "$ip" && echo "$ip"
+    ip="$(peer_serving_ca "$name")" && echo "$ip"
   done < <(cluster_groups)
 }
 
@@ -630,7 +675,10 @@ join_node() {
 
   if [[ -z "$name" ]] || ! vm_exists "$name"; then
     mapfile -t peers < <(live_peers "$name")
-    [[ ${#peers[@]} -gt 0 ]] || die "No cluster node serves the cluster CA; cannot add a node"
+    # Reached only after every node of the cluster has been re-probed for
+    # CA_REPROBE_SECONDS, so it is the cluster that is silent and not one
+    # probe that failed; say which, because that is where to start looking.
+    [[ ${#peers[@]} -gt 0 ]] || die "No node of ${CLUSTER} served the cluster CA, each re-probed for ${CA_REPROBE_SECONDS}s; cannot add a node. 'cluster.sh status --cluster ${CLUSTER}' shows what every node answers on ${PKI_PORT}."
     for peer in "${peers[@]}"; do peer_args+=(--peer "$peer"); done
     [[ -n "$name" ]] || name="$(new_node_name "$index")"
     # `add` remembers the name before creating anything, so an interrupted add
@@ -1138,9 +1186,10 @@ cmd_delete() {
 
 ### Main #######################################################################
 
-# Run, not sourced. src/rootfs/tests/test_cluster_node_health.sh exercises the
-# probes and the waits directly against a stub endpoint, and they need neither
-# an argument list nor an Azure subscription behind them.
+# Run, not sourced. src/rootfs/tests/test_cluster_node_health.sh and
+# test_cluster_ca_reprobe.sh exercise the probes, the waits and the peer scan
+# directly against stubs, and they need neither an argument list nor an Azure
+# subscription behind them.
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
   return 0
 fi

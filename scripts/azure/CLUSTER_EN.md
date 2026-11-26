@@ -297,7 +297,12 @@ What happens:
 2. It checks that every node that answers serves the cluster CA. If one serves
    a different CA, it stops: the resource groups mix in another cluster.
 3. It creates the node with the addresses of **all live** nodes. The bootstrap
-   does not have to be alive.
+   does not have to be alive. A node that does not answer with the cluster CA
+   is re-probed for up to 60 s before it is counted out, so one failed request
+   — to the node or to Azure — does not shrink the list of peers, and does not
+   end the command with `No node of <cluster> served the cluster CA` while the
+   cluster is in fact serving it. The log says when a probe is being repeated
+   and when it then succeeded.
 4. It waits for the Measurement API and the registry (release builds), then
    for the node to join.
 
@@ -615,6 +620,7 @@ How to read it:
 | Measurement API answers, PKI silent, release build | the `mrEnclave` was not accepted. Check the registry; with `--skip-registry` the script did not wait for it |
 | Measurement API answers, PKI silent, node had been running | it rebooted (Azure service healing) and its provider_config archive was gone, so it booted blank. Check `CONFIG` in `status`, then `refresh-provider-config` that node — `--no-restart` is wrong here, it has to reboot to pick the archive up |
 | Measurement API answers, PKI silent, the serial console shows `pki-authority-sync.service FAILED` | the authority refuses to sign this node — usually a `caBundle` pinned in its provider_config against an authority that has since regenerated its root. The console block names the authority it tried and carries the attempt's own error (repeated hourly, with a one-line reminder in between). `/run/sp-health/pki-authority-sync.json` has the same verdict per attempt, and `:9180/api/v1/nodeHealth` serves it off the node on any build — which is what `HEALTH` and the `node health` line report, so this no longer needs the console. A `caBundle` mismatch is retryable, so it shows as `degraded`; a measurement the authority will not accept is `blocked`. The unit retries every 60 s and brings `swarm-db`, `swarm-node` and `swarm-services` up itself once a later attempt succeeds |
+| `No node of <cluster> served the cluster CA, each re-probed for 60s` | not one probe that failed: every node of the cluster was asked repeatedly and none answered with the CA in `ca.pem`. Run `status` to see what each one answers on 9443 — `down` everywhere means the nodes are not serving the PKI (check `CONFIG`, see above), `other` means the local `ca.pem` belongs to another cluster |
 | PKI serves a different CA | the node came up as a bootstrap: its config has empty `join_addresses`, `caBundle` and `servers`. On the bootstrap node this means its config was never promoted to a join config — see above; run `refresh-configs` before rebooting it |
 | all nodes `ok`, the UI does not come up | the cluster is still converging, or the nodes are too small; see `status` and the sizes above |
 
