@@ -11,11 +11,19 @@
 # On the H200 stand that is the difference between "this node never came back"
 # and "Fabric Manager never became active; replace or reseat the GPU".
 #
+# SUP-950: every verdict this script publishes other than `attempting` is also
+# `final` - the unit is Type=oneshot with no Restart=, so once it has exited
+# nothing will ever rewrite the record. Its `ttl_sec` bounds the ONE attempt it
+# makes, not a gap between writes, so without that flag a satisfied barrier
+# ages into `stale` 40 minutes after boot and demotes a serving node to
+# `degraded`. `terminal` says no retry can succeed; `final` says no further
+# write will follow, which is the fact the staleness rule needs.
+#
 # What it publishes to /run/sp-health/sp-nvidia-gpu-ready.json, and nothing
-# more: a state, a terminal flag and a reason class from a closed set. No device
-# names, no PCI addresses, no nvidia-smi output - the record is served off the
-# node on an unauthenticated port (SUP-376 contract §4), and reason is COMPOSED,
-# never CAPTURED.
+# more: a state, a terminal flag, a final flag and a reason class from a closed
+# set. No device names, no PCI addresses, no nvidia-smi output - the record is
+# served off the node on an unauthenticated port (SUP-376 contract §4), and
+# reason is COMPOSED, never CAPTURED.
 
 set -euo pipefail
 
@@ -39,6 +47,7 @@ readonly ttl_sec="${SP_NVIDIA_READY_TTL_SEC:-$((wait_timeout * 2))}"
 # missing health file is a reporting gap, not a reason to refuse certificates.
 publish_state() {
     local state="$1" reason_class="$2" reason="$3" terminal="${4:-false}" exit_code="${5:-}"
+    local final="${6:-false}"
     local -a args=(
         --unit "$unit_name"
         --state "$state"
@@ -47,6 +56,7 @@ publish_state() {
         --ttl-sec "$ttl_sec"
         --gate true
         --terminal "$terminal"
+        --final "$final"
     )
     [[ -n "$exit_code" ]] && args+=(--exit-code "$exit_code")
     "$publish" "${args[@]}" \
@@ -63,7 +73,8 @@ if ! "$gpu_present"; then
     # still coming up" are different facts, and only one of them is a reason to
     # keep waiting.
     publish_state ok no-gpu \
-        "no NVIDIA GPU is present, so the readiness barrier is satisfied vacuously"
+        "no NVIDIA GPU is present, so the readiness barrier is satisfied vacuously" \
+        false "" true
     exit 0
 fi
 
@@ -89,7 +100,7 @@ while true; do
             # pki-authority-sync never start and the node can never serve.
             publish_state failed fabricmanager-timeout \
                 "Fabric Manager did not become active within ${wait_timeout}s, so NVIDIA GPU access stays blocked" \
-                true 1
+                true 1 true
             exit 1
         fi
         "$sleep_cmd" "$delay"
@@ -104,7 +115,7 @@ while true; do
         if (( fabric_required == 0 )) \
             || "$systemctl_cmd" is-active --quiet nvidia-fabricmanager.service; then
             publish_state ok gpu-ready \
-                "NVIDIA confidential-computing readiness is established" "" 0
+                "NVIDIA confidential-computing readiness is established" "" 0 true
             exit 0
         fi
         continue
@@ -114,7 +125,7 @@ while true; do
         echo "nvidia-persistenced/CC ready state failed after ${max_persistence_attempts} attempts" >&2
         publish_state failed persistenced-failed \
             "nvidia-persistenced did not establish confidential-computing readiness in ${max_persistence_attempts} attempts" \
-            true 1
+            true 1 true
         exit 1
     fi
 

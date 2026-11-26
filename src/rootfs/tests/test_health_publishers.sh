@@ -15,7 +15,12 @@
 #     HTTP with no auth;
 #   - the health surface does not sit behind the thing it reports on. The GPU
 #     barrier exits 1 and never retries, so Requires= on it meant no :9180 at
-#     all on a GPU node whose GPU never came ready.
+#     all on a GPU node whose GPU never came ready;
+#   - SUP-950: a one-shot that FINISHED publishes `final`, and a repeating
+#     publisher does not. Without that distinction the record of a successful
+#     one-shot ages past its own ttl_sec and the rollup reports a serving node
+#     as `degraded` - which is why `final` is asserted per publisher below and
+#     not only on sp-health-publish's validation.
 
 set -uo pipefail
 
@@ -80,10 +85,14 @@ record="$pub_dir/node-serving.json"
 [[ -f "$record" ]] || fail "the record was not written to the directory the endpoint reads"
 [[ "$(json_field "$record" schema)" == "sp.unit-health/v1" ]] \
     || fail "the record does not name its schema"
-for field in unit state terminal gate ttl_sec reason_class reason updated_at; do
+for field in unit state terminal final gate ttl_sec reason_class reason updated_at; do
     grep -q "\"$field\":" "$record" || fail "the record is missing the $field field"
 done
 [[ "$(json_field "$record" terminal)" == "false" ]] || fail "terminal did not default to false"
+# Both defaults are the conservative one. A caller that has not decided must
+# not claim this record will never be rewritten: a reader that believes it
+# stops applying ttl_sec to the record altogether.
+[[ "$(json_field "$record" final)" == "false" ]] || fail "final did not default to false"
 [[ "$(json_field "$record" gate)" == "true" ]] || fail "gate did not default to true"
 grep -q '"ca_ok": true,' "$record" || fail "a --bool flag did not reach the record as a boolean"
 grep -q '"exit_code": null,' "$record" || fail "an absent exit code is not null"
@@ -119,7 +128,7 @@ run_publish --unit node-serving.service --state ok --reason-class x \
 # have produced {state: "ok", ..., terminal: true}: exactly the record the
 # --terminal rule below exists to make unconstructible, arriving at the
 # endpoint looking like a legitimate terminal verdict.
-for reserved in schema unit state terminal gate ttl_sec exit_code reason_class reason updated_at; do
+for reserved in schema unit state terminal final gate ttl_sec exit_code reason_class reason updated_at; do
     run_publish --unit node-serving.service --state ok --reason-class x --reason y \
         --ttl-sec 60 --bool "$reserved=true" \
         && fail "--bool $reserved was accepted: it would override the record's own $reserved"
@@ -137,6 +146,23 @@ grep -q '"membership_ok": false,' "$record" || fail "the second legitimate --boo
 run_publish --unit node-serving.service --state ok --reason-class x \
     --reason y --ttl-sec 60 --terminal true \
     && fail "terminal was accepted on a state that is not failed"
+# SUP-950: `final` says no further write will follow, so an attempt in progress
+# can never be final. A reader that believed it would stop applying ttl_sec to
+# the one state ttl_sec exists for - an `attempting` record left behind by a
+# SIGKILLed publisher - and read `booting` for the rest of the boot.
+run_publish --unit pki-authority-sync.service --state attempting --reason-class x \
+    --reason y --ttl-sec 60 --final true \
+    && fail "final was accepted on an attempting state: the node would read booting forever"
+run_publish --unit pki-authority-sync.service --state ok --reason-class x \
+    --reason y --ttl-sec 60 --final maybe \
+    && fail "a non-boolean --final value was accepted"
+for final_state in ok failed; do
+    run_publish --unit pki-authority-sync.service --state "$final_state" --reason-class x \
+        --reason y --ttl-sec 60 --final true --record final-case \
+        || fail "--final true was rejected on a $final_state state: $(cat "$pub_dir/stderr")"
+    [[ "$(json_field "$pub_dir/final-case.json" final)" == "true" ]] \
+        || fail "--final true did not reach the record on a $final_state state"
+done
 # A record name is a file name, never a path: the endpoint's directory is
 # compiled in, and nothing a publisher passes may walk out of it.
 run_publish --unit node-serving.service --state ok --reason-class x --reason y \
@@ -245,6 +271,11 @@ serving_record="$ok_dir/state/node-serving.json"
     || fail "a serving node did not publish the serving class"
 grep -q '"ca_ok": true,' "$serving_record" || fail "ca_ok is not true on a serving node"
 grep -q '"membership_ok": true,' "$serving_record" || fail "membership_ok is not true on a serving node"
+# A REPEATING publisher is never final: the `serving` verdict rests on this
+# record being fresh, so it must keep its ttl_sec and go stale the moment the
+# timer stops writing. This is the one record staleness must still demote.
+[[ "$(json_field "$serving_record" final)" == "false" ]] \
+    || fail "the repeating witness published itself as final; a dead probe would then read as serving forever"
 
 # It must probe exactly what the host probes, from loopback.
 grep -q 'https://127.0.0.1:9443/api/v1/pki/certs/ca' "$ok_dir/curl.log" \
@@ -265,7 +296,7 @@ done
 # above: every key in the record is on the allowlist.
 while IFS= read -r key; do
     case "$key" in
-        schema|unit|state|terminal|gate|ttl_sec|exit_code|reason_class|reason|updated_at) ;;
+        schema|unit|state|terminal|final|gate|ttl_sec|exit_code|reason_class|reason|updated_at) ;;
         ca_ok|membership_ok) ;;
         *) fail "the record carries an unexpected field '$key'" ;;
     esac
@@ -457,6 +488,11 @@ nogpu_record="$nogpu_dir/state/sp-nvidia-gpu-ready.json"
     || fail "a CPU-only VM did not publish ok: 'no GPU to wait for' and 'still waiting' are different facts"
 [[ "$(json_field "$nogpu_record" reason_class)" == "no-gpu" ]] \
     || fail "a CPU-only VM published '$(json_field "$nogpu_record" reason_class)'"
+# Type=oneshot with no Restart=: this record is the last word for the boot, and
+# its ttl_sec bounded the one attempt it made. Without `final` a CPU-only node
+# reads as `degraded` 40 minutes after boot (SUP-950).
+[[ "$(json_field "$nogpu_record" final)" == "true" ]] \
+    || fail "the satisfied barrier is not final, so its record ages into stale and demotes a serving node"
 
 # --- a GPU that comes ready ------------------------------------------------
 ready_dir="$test_root/gpu-ready"
@@ -469,6 +505,8 @@ ready_record="$ready_dir/state/sp-nvidia-gpu-ready.json"
     || fail "a ready GPU did not publish ok: $(cat "$ready_record")"
 [[ "$(json_field "$ready_record" reason_class)" == "gpu-ready" ]] \
     || fail "a ready GPU published '$(json_field "$ready_record" reason_class)'"
+[[ "$(json_field "$ready_record" final)" == "true" ]] \
+    || fail "an established barrier is not final, so its record ages into stale and demotes a serving node"
 
 # --- the Fabric Manager timeout: the H200 failure this was filed for -------
 # Type=oneshot with no Restart=, so systemd will never run this again, and
@@ -515,6 +553,12 @@ SP_TEST_GPU_PRESENT=1 SP_TEST_FABRIC_REQUIRED=1 SP_TEST_ACTIVE= SP_TEST_READY_TI
 waiting_record="$waiting_dir/state/sp-nvidia-gpu-ready.json"
 grep -q 'waiting-for-gpu\|fabricmanager-timeout' "$waiting_record" \
     || fail "the barrier published nothing while it was waiting"
+# And while it waits it is NOT final: a barrier killed mid-wait must still be
+# read as stale rather than as a node that is simply still coming up.
+if [[ "$(json_field "$waiting_record" reason_class)" == "waiting-for-gpu" ]]; then
+    [[ "$(json_field "$waiting_record" final)" == "false" ]] \
+        || fail "an in-flight wait published itself as final"
+fi
 # With the default timeout the ttl must outlast the whole wait, or a node
 # legitimately 15 minutes into GPU bring-up reads as stale.
 SP_NVIDIA_READY_TIMEOUT="$default_wait" SP_HEALTH_PUBLISH="$publish" \
