@@ -586,4 +586,35 @@ for gated in pki-cert-init pki-authority-sync; do
         || fail "$gated no longer requires the barrier: a certificate must not be issued against unestablished hardware"
 done
 
+# ===========================================================================
+# the endpoint that reads `final` has to be the one this image installs
+# ===========================================================================
+# SUP-950: the publishers above write `final`, and the staleness rule that
+# honours it lives in pki-vm-measurements 1.2.1. A pin below that is the
+# original bug back, silently: every record is published correctly and the
+# aggregator still ages a finished one-shot into `stale`, so a serving node
+# reports `degraded`. Nothing else in the tree would object, and the symptom
+# takes 15 minutes of cluster uptime to appear.
+#
+# Repository-tree mode only. src/Dockerfile ADDs the two pin files to
+# /buildroot, not into the output root - install_pki_components.sh deletes them
+# from the rootfs after `npm ci` - and test_quote_api_exposure.sh is the suite
+# that checks the INSTALLED package. rootfs-tests.yml runs this mode on every
+# PR, which is where a pin edit happens.
+if [[ -z "${SP_HEALTH_TEST_INSTALLED_ROOT:-}" ]]; then
+    readonly final_aware_version="1.2.1"
+    pin_manifest="$config_dir/npm/pki-components/package.json"
+    [[ -r "$pin_manifest" ]] || fail "$pin_manifest is missing: the pin cannot be checked"
+    pinned_measurements="$(sed -n 's/.*"@super-protocol\/pki-vm-measurements": *"\([^"]*\)".*/\1/p' \
+        "$pin_manifest" | head -n1)"
+    [[ -n "$pinned_measurements" ]] \
+        || fail "cannot read the pki-vm-measurements pin from $pin_manifest"
+    # True when $1 >= $2 under version ordering.
+    [[ "$(printf '%s\n%s\n' "$final_aware_version" "$pinned_measurements" | sort -V | head -n1)" \
+        == "$final_aware_version" ]] \
+        || fail "pki-vm-measurements is pinned at $pinned_measurements, below $final_aware_version," \
+            "whose staleness rule honours \`final\`. Below it a finished one-shot ages into stale" \
+            "and a serving node reports degraded (SUP-950)."
+fi
+
 echo "health publisher tests passed"
