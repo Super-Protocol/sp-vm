@@ -46,8 +46,16 @@ and `ok` with `no-gpu` on a CPU-only VM — because "no GPU to wait for" and "th
 GPU is still coming up" are different facts and only one of them is a reason to
 keep waiting.
 
+Every record it writes except `attempting` is also `final` (SUP-950): the unit
+is a one-shot that systemd never runs again, so once it has exited nothing will
+rewrite the record and its `ttl_sec` has nothing left to bound. Without that
+flag a *satisfied* barrier aged into `stale` 40 minutes after boot and demoted
+a serving node to `degraded`.
+
 `ttl_sec` is twice the barrier's own bound (2400 s), so a record from a node
-fifteen minutes into GPU bring-up still reads as fresh. Nothing device-specific
+fifteen minutes into GPU bring-up still reads as fresh — and `final` is what
+keeps a node fifteen *hours* in, long after the barrier was satisfied, reading
+as fresh too. Nothing device-specific
 is published: no PCI addresses, no device names, no `nvidia-smi` output. The
 record is served off the node on an unauthenticated port, and its `reason` is
 composed from publisher-authored templates, never captured from a tool.

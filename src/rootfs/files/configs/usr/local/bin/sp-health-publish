@@ -14,6 +14,7 @@
 #     "unit": "node-serving.service",
 #     "state": "attempting | ok | failed",
 #     "terminal": false,     # true iff NO retry of this unit can succeed
+#     "final": false,        # true iff this record is the publisher's LAST WORD
 #     "gate": true,          # does the node's ability to serve depend on it
 #     "ttl_sec": 60,         # past updated_at + this, the record is STALE
 #     "reason_class": "ca-unavailable",
@@ -34,6 +35,24 @@
 #
 # /run is tmpfs, so the whole surface is per-boot by construction: a reboot
 # cannot leave a node looking healthy before it is.
+#
+# *** `final` is what keeps a FINISHED one-shot out of the stale verdict. ***
+#
+# SUP-950: `ttl_sec` means two different things depending on the publisher. On a
+# repeating publisher (sp-node-serving-probe, on a 30 s timer) it bounds the gap
+# between writes. On a one-shot it bounds ONE ATTEMPT, so that a publisher
+# SIGKILLed by TimeoutStartSec cannot leave `attempting` on disk forever. Once a
+# one-shot has finished there is neither an attempt to bound nor a next write to
+# wait for - so a record that says a unit SUCCEEDED aged into `stale` and
+# demoted two fully serving nodes to `degraded`, with a rollup summary denying
+# they served while the node-serving witness in the same payload said they did.
+#
+# The endpoint cannot infer this: it sees one file per unit, and a one-shot that
+# completed looks exactly like a repeating publisher that died. So the publisher
+# says, exactly as with `terminal`. The two are different facts: `terminal` is a
+# property of the CAUSE (no retry can succeed), `final` of the RECORD (no
+# further write will follow). `--final true` is refused on `attempting`, where
+# it would pin the node at `booting` forever - SUP-370 at the reporting layer.
 #
 # *** /run/sp-health holds RECORDS ONLY, one *.json per unit. ***
 #
@@ -58,8 +77,8 @@ usage() {
 usage: sp-health-publish --unit <unit.service> --state attempting|ok|failed
                          --reason-class <class> --reason <text> --ttl-sec <n>
                          [--record <name>] [--gate true|false]
-                         [--terminal true|false] [--exit-code <n>]
-                         [--bool <key>=true|false]...
+                         [--terminal true|false] [--final true|false]
+                         [--exit-code <n>] [--bool <key>=true|false]...
 USAGE
     exit 64
 }
@@ -81,6 +100,7 @@ ttl_sec=""
 record=""
 gate=true
 terminal=false
+final=false
 exit_code=""
 bool_keys=()
 bool_values=()
@@ -94,7 +114,7 @@ bool_values=()
 # like a legitimate terminal verdict. No caller does this today; validating
 # rather than trusting is this script's whole justification, and this was the
 # one input where it did neither.
-readonly reserved_fields=" schema unit state terminal gate ttl_sec exit_code reason_class reason updated_at "
+readonly reserved_fields=" schema unit state terminal final gate ttl_sec exit_code reason_class reason updated_at "
 
 while (( $# )); do
     case "$1" in
@@ -106,6 +126,7 @@ while (( $# )); do
         --record) record="${2-}"; shift 2 || usage ;;
         --gate) gate="${2-}"; shift 2 || usage ;;
         --terminal) terminal="${2-}"; shift 2 || usage ;;
+        --final) final="${2-}"; shift 2 || usage ;;
         --exit-code) exit_code="${2-}"; shift 2 || usage ;;
         --bool)
             key="${2%%=*}"
@@ -135,12 +156,19 @@ done
 [[ "$ttl_sec" =~ ^[1-9][0-9]*$ ]] || die "--ttl-sec must be a positive number of seconds, got '$ttl_sec'"
 [[ "$gate" == true || "$gate" == false ]] || die "--gate must be true or false, got '$gate'"
 [[ "$terminal" == true || "$terminal" == false ]] || die "--terminal must be true or false, got '$terminal'"
+[[ "$final" == true || "$final" == false ]] || die "--final must be true or false, got '$final'"
 [[ -z "$exit_code" || "$exit_code" =~ ^[0-9]+$ ]] || die "--exit-code must be a number, got '$exit_code'"
 # Only attempting and ok are subject to ttl_sec; a terminal failure is sticky,
 # because a publisher that writes the one verdict able to end a wait and then
 # dies must not have it silently demoted to "keep waiting" (CTO ruling, SUP-376).
 [[ "$terminal" == false || "$state" == failed ]] \
     || die "--terminal true is only meaningful on a failed state"
+# An attempt in progress is never the last word, and a reader that believed it
+# was would stop applying ttl_sec to the one state ttl_sec exists for: an
+# `attempting` record whose publisher was killed. That is SUP-370 reproduced at
+# the reporting layer - the node reads `booting` for the rest of the boot.
+[[ "$final" == false || "$state" != attempting ]] \
+    || die "--final true is not meaningful on an attempting state"
 
 if [[ -z "$record" ]]; then
     record="${unit%.*}"
@@ -156,6 +184,7 @@ install -d -m 0755 "$state_dir" 2>/dev/null || true
     printf '  "unit": "%s",\n' "$unit"
     printf '  "state": "%s",\n' "$state"
     printf '  "terminal": %s,\n' "$terminal"
+    printf '  "final": %s,\n' "$final"
     printf '  "gate": %s,\n' "$gate"
     printf '  "ttl_sec": %s,\n' "$ttl_sec"
     printf '  "exit_code": %s,\n' "${exit_code:-null}"

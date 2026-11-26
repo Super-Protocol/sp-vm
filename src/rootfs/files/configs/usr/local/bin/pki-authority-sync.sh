@@ -35,6 +35,13 @@
 #     stale, and stale is a verdict, never silence.
 #   - `gate` - whether the node's ability to serve depends on this unit, so a
 #     non-gate publisher can be added later without touching the rollup.
+#   - `final` - true iff this record is this publisher's last word for the boot.
+#     This unit is a one-shot: once the sync has SUCCEEDED it never writes
+#     again, so its `ttl_sec` has nothing left to bound and the record must not
+#     age into `stale`. SUP-950 was exactly that - a successful sync aged out
+#     and the rollup downgraded two serving nodes to `degraded` with a summary
+#     saying they did not serve. `terminal` is about the cause, `final` about
+#     the record; an `attempting` record is never final.
 #
 # And one rule, which is what makes a single redactor sufficient for the whole
 # chain (contract §4):
@@ -202,7 +209,10 @@ servers_json() {
 
 # reason/reason_class are publisher-authored literals plus numbers - see the
 # COMPOSED, never CAPTURED rule at the top of this file. terminal defaults to
-# false: a caller that has not decided must not claim a wait can end.
+# false: a caller that has not decided must not claim a wait can end. final
+# defaults to false for the same reason in the other direction: a caller that
+# has not decided must not claim this record will never be rewritten, because a
+# reader that believes it stops applying ttl_sec to it.
 #
 # authority_servers and attempt_log stay in the file deliberately. They are
 # local-only - the private PKI topology and a runtime path - and the :9180
@@ -210,7 +220,7 @@ servers_json() {
 # them (contract §4).
 write_state() {
     local state="$1" reason="$2" exit_code="$3" reason_class="${4:-$1}"
-    local terminal="${5:-false}"
+    local terminal="${5:-false}" final="${6:-false}"
     install -d -m 0755 "$state_dir" 2>/dev/null || true
     {
         printf '{\n'
@@ -218,6 +228,7 @@ write_state() {
         printf '  "unit": "%s",\n' "$unit_name"
         printf '  "state": "%s",\n' "$state"
         printf '  "terminal": %s,\n' "$terminal"
+        printf '  "final": %s,\n' "$final"
         printf '  "gate": %s,\n' "$state_gate"
         printf '  "ttl_sec": %s,\n' "$state_ttl_sec"
         printf '  "attempt": %s,\n' "$attempt"
@@ -484,7 +495,11 @@ elapsed=$((SECONDS - started))
 trap - TERM INT
 
 if (( rc == 0 )); then
-    write_state ok "synced with the authority on attempt ${attempt} after ${elapsed}s" 0 ok false
+    # final: this unit is a one-shot with Restart=on-failure, so a success is
+    # the last record it will ever write for this boot. Without that flag the
+    # record ages past ttl_sec and a node that synced reads as `degraded`
+    # (SUP-950).
+    write_state ok "synced with the authority on attempt ${attempt} after ${elapsed}s" 0 ok false true
     # Forget the last failure reason, or a later identical one would be treated
     # as a repeat and never print its full block.
     rm -f "$last_reason_file" 2>/dev/null || true

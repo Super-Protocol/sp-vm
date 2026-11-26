@@ -175,6 +175,7 @@ in the `sp.unit-health/v1` record format (SUP-376):
   "unit": "pki-authority-sync.service",
   "state": "failed",
   "terminal": true,
+  "final": false,
   "gate": true,
   "ttl_sec": 480,
   "attempt": 412,
@@ -196,7 +197,7 @@ attempt. `/run` is tmpfs, so a reboot cannot leave a node looking synced before
 it has synced again. The units on the bootstrap path are bounded the same
 way — see [When Bootstrap Fails](02-first-vm-bootstrap.md#when-bootstrap-fails).
 
-The other three fields exist because a reader **outside** the guest has to act
+The other four fields exist because a reader **outside** the guest has to act
 on them:
 
 - **`terminal`** — true iff no retry of this unit can succeed, which is the
@@ -227,6 +228,25 @@ on them:
   layer. Past `updated_at + ttl_sec` the record is **stale**, and stale is a
   verdict, not silence. A `failed` + `terminal` record never goes stale: `/run`
   is tmpfs, so it cannot outlive its boot;
+- **`final`** — true iff this record is the publisher's **last word** for this
+  boot. `ttl_sec` means two different things depending on the publisher: on a
+  repeating one it bounds the gap between writes, on a one-shot it bounds the
+  single attempt. Once a one-shot has *finished* there is neither an attempt to
+  bound nor a next write to wait for, so its record must stop being judged on
+  freshness. SUP-950 is what happens otherwise: this unit's `state: ok,
+  exit_code: 0` record aged past 480 s and the rollup downgraded two fully
+  serving join nodes to `degraded`, with a summary denying they served while
+  the `node-serving` witness in the same payload said they did.
+
+  `final` and `terminal` are different facts and neither implies the other:
+  `terminal` is a property of the **cause** (no retry can succeed), `final` of
+  the **record** (no further write will follow). A success here is `final: true`
+  and not terminal — the unit is a one-shot that systemd does not restart on
+  success. A terminal 403 is `terminal: true` and *not* final — `Restart=on-failure`
+  starts the unit again and the next attempt publishes `attempting` over it.
+  And an `attempting` record is never final: `sp-health-publish` refuses the
+  combination, because a reader that believed it would stop applying `ttl_sec`
+  to the one state `ttl_sec` exists for;
 - **`gate`** — whether the node's ability to serve depends on this unit. Without
   certificates and without a swarm key, `swarm-db`, `swarm-node` and
   `swarm-services` all stay down, so this one is `true`.
@@ -351,7 +371,8 @@ the follow-up that converges the three writers of this format.
 
 `sp-health-publish` is the single writer of that format. It validates everything
 it is given — the state must be `attempting`, `ok` or `failed`; `ttl_sec` must be
-a positive number of seconds; `terminal` is only meaningful on a failure; a
+a positive number of seconds; `terminal` is only meaningful on a failure; `final`
+is never accepted on an attempt in progress; a
 record name is a file name and never a path — because a typo in a caller would
 otherwise reach an unauthenticated port as an unparseable record. And `reason`
 is **composed by the publisher, never captured** from a tool's output: that rule
@@ -406,9 +427,15 @@ never-clearing condition, reproduced by the code meant to report it. A truncated
 sentinel is not hypothetical, since the write truncates before it writes. And a
 sentinel dated in the future is ordinary rather than corrupt — chrony steps the
 clock during boot — so the budget restarts instead of freezing.
-The verdict is never `terminal`. This unit is a witness, not an authority on
-impossibility: a node can start serving at any later point, and the record flips
-straight back to `ok` when both probes pass. The verdicts that end a wait come
+The verdict is never `terminal`, and never `final` either. This unit is a
+witness, not an authority on impossibility: a node can start serving at any
+later point, and the record flips straight back to `ok` when both probes pass.
+It is also the one record whose staleness still has to demote the node — the
+`serving` verdict rests on this record being fresh, so a probe that stops
+writing must cost the node its verdict. The publishers that stop writing
+*because they finished* say `final` instead; this one never does — and the
+endpoint refuses a `final` claim on this stem whatever a future edit publishes,
+because a dead probe's last `ok` must never become a permanent `serving`. The verdicts that end a wait come
 from the gates that know they cannot be retried — `pki-authority-sync`'s
 `http-403-unvalidated`, or the GPU barrier's `fabricmanager-timeout`.
 

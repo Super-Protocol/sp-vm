@@ -381,6 +381,12 @@ make_env "$ok_dir"
 run_sync "$ok_dir" ok || fail "a successful sync did not exit 0"
 grep -q '"state": "ok"' "$ok_dir/state/pki-authority-sync.json" \
     || fail "a successful sync did not publish state ok"
+# SUP-950: a success is the LAST record this unit ever writes for the boot -
+# it is a one-shot with Restart=on-failure, so nothing restarts it. The record
+# must say so, or it ages past its own ttl_sec and the rollup reports a node
+# that synced as `degraded` with a summary denying it serves.
+[[ "$(json_field "$ok_dir/state/pki-authority-sync.json" final)" == "true" ]] \
+    || fail "a successful sync did not publish final: its record would age into stale and demote a serving node"
 ! grep -q FAILED "$ok_dir/console" \
     || fail "a successful sync wrote a failure banner to the console"
 grep -q -- '--save-certs-prefix vm' "$ok_dir/argv.log" \
@@ -636,10 +642,32 @@ run_sync "$schema_dir" hang 1 && fail "the hanging schema sync exited 0"
 [[ "$(json_field "$schema_json" terminal)" == "false" ]] \
     || fail "a timeout was published as terminal; an authority can come back"
 
+# --- `final` is about the RECORD, `terminal` about the CAUSE ----------------
+# Every outcome other than a success is followed by another write: systemd
+# restarts the unit on failure, and the next start publishes `attempting`. So
+# only the success is final, and an in-flight attempt never is - a reader that
+# believed it would stop applying ttl_sec to the one state ttl_sec exists for.
+[[ "$(json_field "$schema_json" final)" == "false" ]] \
+    || fail "a retryable failure published itself as final"
+grep -q '"state": "attempting"' "$ok_dir/state/pki-authority-sync.json" \
+    && fail "the success case left an attempting record behind"
+attempting_dir="$test_root/attempting"
+make_env "$attempting_dir"
+run_sync "$attempting_dir" hang 1 && fail "the hanging sync exited 0"
+# The in-flight record is written before the attempt and rewritten after it;
+# neither write may be final.
+! grep -q '"final": true' "$attempting_dir/state/pki-authority-sync.json" \
+    || fail "an in-flight attempt published itself as final: the node would read booting for the rest of the boot"
+
 # A missing client cannot be fixed by restarting: the image is signed.
 missing_json="$missing_dir/state/pki-authority-sync.json"
 [[ "$(json_field "$missing_json" terminal)" == "true" ]] \
     || fail "a client missing from a signed image was not published as terminal"
+# Terminal, but not final: systemd restarts this unit on failure, so the next
+# start overwrites this record. `terminal: true` is already what exempts it
+# from the staleness rule.
+[[ "$(json_field "$missing_json" final)" == "false" ]] \
+    || fail "a terminal failure claimed to be the last write; the next restart publishes over it"
 [[ "$(json_field "$missing_json" reason_class)" == "missing-client" ]] \
     || fail "the missing client lost its reason class"
 
