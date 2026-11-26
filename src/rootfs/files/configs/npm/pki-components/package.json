@@ -6,6 +6,6 @@
   "dependencies": {
     "@super-protocol/pki-cert-generator": "5.2.0",
     "@super-protocol/pki-sync-client": "5.2.0",
-    "@super-protocol/pki-vm-measurements": "1.2.0"
+    "@super-protocol/pki-vm-measurements": "1.2.1"
   }
 }
