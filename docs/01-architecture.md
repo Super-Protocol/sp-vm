@@ -56,6 +56,13 @@ validates the
 and the resulting `mrEnclave`. Only after this validation is the root CA used
 to verify certificates issued within that Swarm.
 
+Intel TDX collateral can come from the in-guest PCCS (`attestation.mode:
+online`, the default) or from a site PCCS (`offline`). Offline does not change
+the trust anchor: the PCK chain and TCB Info are still signed by Intel. The
+mode is the same on every VM. A guest that is not bare-metal `tdx` does not
+boot in `offline`, and the PKI Authority rejects a challenge whose mode or CPU
+type does not match.
+
 ## PKI Authority
 
 PKI Authority (TEE-PKI) is the server side of VM enrollment. It runs on every

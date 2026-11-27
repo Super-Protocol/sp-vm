@@ -344,6 +344,20 @@ class ReadNvtrustTest(unittest.TestCase):
                 "ocspUrl": "https://ocsp.example",
             },
         )
+        self.assertEqual(rendered["pki_authority"]["attestationMode"], "online")
+
+    def test_sync_client_records_offline_attestation_mode(self):
+        rendered = helper.build_sync_client_pki_authority({
+            **config(**FULL_PEER_INFO),
+            "attestation": {
+                "mode": "offline",
+                "tdx": {
+                    "pccsUrl": "https://pccs.example/sgx/certification/v4/",
+                    "pccsCaPem": CA,
+                },
+            },
+        })
+        self.assertEqual(rendered["pki_authority"]["attestationMode"], "offline")
 
     def test_get_vm_mode_rejects_malformed_nvtrust_before_writing_the_mode(self):
         data = config(bootstrap=True)
@@ -389,6 +403,145 @@ class ReadNvtrustTest(unittest.TestCase):
         patched = helper.patch_template(template, "untrusted", {"verifier": "nras"})
         self.assertEqual(patched["nvtrust"], {"verifier": "nras"})
         self.assertEqual(patched["certificates"][0]["networkType"], "untrusted")
+
+
+CA_PEM = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+
+
+class ReadAttestationTest(unittest.TestCase):
+    def test_absent_section_is_online(self):
+        self.assertEqual(helper.read_attestation({}), {"mode": "online"})
+
+    def test_online_ignores_tdx(self):
+        self.assertEqual(
+            helper.read_attestation({"attestation": {"mode": "online", "tdx": {}}}),
+            {"mode": "online"},
+        )
+
+    def test_offline_requires_url_and_ca(self):
+        for section in (
+            {"mode": "offline"},
+            {"mode": "offline", "tdx": {}},
+            {"mode": "offline", "tdx": {"pccsUrl": "https://pccs.example/sgx/certification/v4/"}},
+            {"mode": "offline", "tdx": {"pccsUrl": "http://pccs.example/", "pccsCaPem": CA_PEM}},
+            {"mode": "offline", "tdx": {"pccsUrl": "https://pccs.example/", "pccsCaPem": "nope"}},
+        ):
+            with self.subTest(section=section):
+                with self.assertRaises(ValueError):
+                    helper.read_attestation({"attestation": section})
+
+    def test_offline_returns_url_and_pem(self):
+        rendered = helper.read_attestation({
+            "attestation": {
+                "mode": "offline",
+                "tdx": {
+                    "pccsUrl": " https://pccs.example/sgx/certification/v4/ ",
+                    "pccsCaPem": CA_PEM.strip(),
+                },
+            }
+        })
+        self.assertEqual(rendered["mode"], "offline")
+        self.assertEqual(rendered["pccsUrl"], "https://pccs.example/sgx/certification/v4/")
+        self.assertTrue(rendered["pccsCaPem"].endswith("\n"))
+
+    def test_unknown_key_is_rejected(self):
+        with self.assertRaises(ValueError):
+            helper.read_attestation({"attestation": {"mode": "online", "cache": True}})
+
+    def test_get_vm_mode_rejects_offline_without_url(self):
+        data = config(bootstrap=True)
+        data["attestation"] = {"mode": "offline"}
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.yaml"
+            output_path = Path(tmp) / "mode"
+            config_path.write_text(yaml.dump(data), encoding="utf-8")
+            self.assertEqual(helper.run_get_vm_mode(config_path, output_path), 255)
+            self.assertFalse(output_path.exists())
+
+    def test_get_vm_mode_rejects_non_tdx_when_offline(self):
+        data = config(bootstrap=True)
+        data["attestation"] = {
+            "mode": "offline",
+            "tdx": {"pccsUrl": "https://pccs.example/sgx/certification/v4/", "pccsCaPem": CA_PEM},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.yaml"
+            output_path = Path(tmp) / "mode"
+            config_path.write_text(yaml.dump(data), encoding="utf-8")
+            original = helper.detect_cpu_type
+            helper.detect_cpu_type = lambda cpu_type_path=None: "tdx-azure"
+            try:
+                self.assertEqual(helper.run_get_vm_mode(config_path, output_path), 255)
+                self.assertFalse(output_path.exists())
+            finally:
+                helper.detect_cpu_type = original
+
+    def test_get_vm_mode_accepts_tdx_when_offline(self):
+        data = config(bootstrap=True)
+        data["attestation"] = {
+            "mode": "offline",
+            "tdx": {"pccsUrl": "https://pccs.example/sgx/certification/v4/", "pccsCaPem": CA_PEM},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = Path(tmp) / "config.yaml"
+            output_path = Path(tmp) / "mode"
+            config_path.write_text(yaml.dump(data), encoding="utf-8")
+            original = helper.detect_cpu_type
+            helper.detect_cpu_type = lambda cpu_type_path=None: "tdx"
+            try:
+                self.assertEqual(helper.run_get_vm_mode(config_path, output_path), 0)
+                self.assertEqual(output_path.read_text(encoding="utf-8").strip(), "init")
+            finally:
+                helper.detect_cpu_type = original
+
+    def test_apply_writes_local_qcnl_for_online(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            qcnl = root / "qcnl.conf"
+            ca = root / "pccs-site.crt"
+            ca.write_text(CA_PEM, encoding="utf-8")
+            mode = root / "mode"
+            self.assertEqual(
+                helper.apply_tdx_collateral({}, qcnl, ca, mode),
+                "online",
+            )
+            text = qcnl.read_text(encoding="utf-8")
+            self.assertIn("https://localhost:8081/sgx/certification/v4/", text)
+            self.assertIn('"use_secure_cert": false', text)
+            self.assertFalse(ca.exists())
+
+    def test_apply_writes_site_qcnl_for_offline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            qcnl = root / "qcnl.conf"
+            ca = root / "pccs-site.crt"
+            mode = root / "mode"
+            helper.apply_tdx_collateral(
+                {
+                    "attestation": {
+                        "mode": "offline",
+                        "tdx": {
+                            "pccsUrl": "https://pccs.example/sgx/certification/v4/",
+                            "pccsCaPem": CA_PEM,
+                        },
+                    }
+                },
+                qcnl,
+                ca,
+                mode,
+            )
+            text = qcnl.read_text(encoding="utf-8")
+            self.assertIn("https://pccs.example/sgx/certification/v4/", text)
+            self.assertIn('"use_secure_cert": true', text)
+            self.assertEqual(ca.read_text(encoding="utf-8"), CA_PEM)
+            self.assertEqual(mode.read_text(encoding="utf-8").strip(), "offline")
+
+    def test_cert_init_does_not_require_pccs_directly(self):
+        unit = (SRC / "rootfs/files/configs/pki-service/systemd/pki-cert-init.service").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("pccs.service", unit)
+        self.assertIn("tdx-collateral.service", unit)
 
 
 if __name__ == "__main__":

@@ -35,6 +35,34 @@ and `swarm_db.bootstrap: false` turns the empty combination above into a
 configuration error. See `detect_swarm_pki_state` in
 `src/rootfs/files/configs/pki-service/scripts/pki_configure_helper.py`.
 
+## Attestation mode
+
+`attestation.mode` selects where Intel TDX collateral comes from. The same
+section is required on the first VM and on every VM that joins. An omitted
+section means `online`.
+
+```yaml
+attestation:
+  mode: offline
+  tdx:
+    pccsUrl: https://pccs.site.internal:8081/sgx/certification/v4/
+    pccsCaPem: |
+      -----BEGIN CERTIFICATE-----
+      ...
+      -----END CERTIFICATE-----
+```
+
+`online` keeps the in-guest PCCS and ignores `attestation.tdx`. `offline`
+requires both `pccsUrl` and `pccsCaPem`. `tdx-collateral.service` rewrites
+`/etc/sgx_default_qcnl.conf` to that URL, trusts the given CA, and does not
+start `pccs.service`. There is no fallback to localhost or to Intel.
+
+Before either PKI unit starts, `get-vm-mode` runs
+`pki-cert-generator get-attestation-type` when the mode is `offline`. The only
+accepted result is `tdx`. `tdx-azure`, `tdx-google`, `sev-snp`,
+`sev-snp-azure`, and `untrusted` fail the unit and no certificate is issued.
+`online` does not move that check into `get-vm-mode`.
+
 ## Sequence
 
 ![Bootstrap sequence](assets/first-vm-bootstrap.svg)
@@ -75,6 +103,10 @@ its format and verification are described in
 [chapter 8](08-azure-attestation.md).
 
 The detected CPU type is written to `/etc/swarm/swarm-cpu-type`.
+
+In `offline` mode this detection also runs from `get-vm-mode`, on the first VM
+and on a joining VM, and anything other than `tdx` stops the boot. Cloud
+platforms are not given a local collateral URL.
 
 ## 2. Creating Keys and the Challenge
 

@@ -3,7 +3,7 @@ Description=Populate /sp with the provider_config (on-premise disk / GCP s3fs / 
 After=network-online.target
 Wants=network-online.target
 # Must be ready before any service that reads /sp
-Before=swarm-db.service swarm-node.service swarm-services.service pki-vm-mode.service
+Before=swarm-db.service swarm-node.service swarm-services.service tdx-collateral.service pki-vm-mode.service
 
 [Service]
 Type=oneshot

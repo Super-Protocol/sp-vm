@@ -635,11 +635,140 @@ def build_sync_client_pki_authority(config_data: dict) -> dict:
 
     rendered_pki_authority = dict(pki_authority)
     rendered_pki_authority["servers"] = merged_servers
+    rendered_pki_authority["attestationMode"] = read_attestation(config_data)["mode"]
     rendered = {"pki_authority": rendered_pki_authority}
     nvtrust = read_nvtrust(config_data)
     if nvtrust is not None:
         rendered["nvtrust"] = nvtrust_for_sync_client(nvtrust)
     return rendered
+
+
+_ATTESTATION_MODES = ("online", "offline")
+_OFFLINE_CPU_TYPE = "tdx"
+_LOCAL_PCCS_URL = "https://localhost:8081/sgx/certification/v4/"
+_PCCS_CA_NAME = "pccs-site.crt"
+
+
+def read_attestation(config_data: dict) -> dict:
+    raw = config_data.get("attestation")
+    if raw is None:
+        return {"mode": "online"}
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid config: 'attestation' must be a mapping")
+
+    unknown = sorted(set(raw) - {"mode", "tdx"})
+    if unknown:
+        raise ValueError(
+            "Invalid config: unknown attestation keys: " + ", ".join(unknown)
+        )
+
+    mode = raw.get("mode", "online")
+    if isinstance(mode, str):
+        mode = mode.strip()
+    if mode not in _ATTESTATION_MODES:
+        raise ValueError(
+            "Invalid config: attestation.mode must be 'online' or 'offline'"
+        )
+    if mode == "online":
+        return {"mode": "online"}
+
+    tdx = raw.get("tdx")
+    if not isinstance(tdx, dict):
+        raise ValueError(
+            "Invalid config: attestation.tdx is required when mode is offline"
+        )
+    unknown_tdx = sorted(set(tdx) - {"pccsUrl", "pccsCaPem"})
+    if unknown_tdx:
+        raise ValueError(
+            "Invalid config: unknown attestation.tdx keys: " + ", ".join(unknown_tdx)
+        )
+
+    pccs_url = tdx.get("pccsUrl")
+    if isinstance(pccs_url, str):
+        pccs_url = pccs_url.strip()
+    if not isinstance(pccs_url, str) or not pccs_url.startswith("https://"):
+        raise ValueError(
+            "Invalid config: attestation.tdx.pccsUrl must be an https URL"
+        )
+
+    pccs_ca = tdx.get("pccsCaPem")
+    if isinstance(pccs_ca, str):
+        pccs_ca = pccs_ca.strip()
+    if not isinstance(pccs_ca, str) or "BEGIN CERTIFICATE" not in pccs_ca:
+        raise ValueError(
+            "Invalid config: attestation.tdx.pccsCaPem must be a PEM certificate"
+        )
+    if not pccs_ca.endswith("\n"):
+        pccs_ca += "\n"
+
+    return {"mode": "offline", "pccsUrl": pccs_url, "pccsCaPem": pccs_ca}
+
+
+def render_qcnl(pccs_url: str, use_secure_cert: bool) -> str:
+    secure = "true" if use_secure_cert else "false"
+    return (
+        "{\n"
+        f'  "pccs_url": "{pccs_url}",\n'
+        f'  "use_secure_cert": {secure},\n'
+        '  "pccs_api_version": "3.1",\n'
+        '  "retry_times": 6,\n'
+        '  "retry_delay": 10,\n'
+        '  "pck_cache_expire_hours": 168,\n'
+        '  "verify_collateral_cache_expire_hours": 168\n'
+        "}\n"
+    )
+
+
+def detect_cpu_type(cpu_type_path: Path = Path(SWARM_CPU_TYPE_FILE)) -> str:
+    cpu_type_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "/usr/bin/pki-cert-generator",
+            "get-attestation-type",
+            "--output",
+            str(cpu_type_path),
+        ],
+        check=True,
+    )
+    cpu_type = read_first_line(cpu_type_path)
+    if cpu_type is None:
+        raise ValueError(f"CPU type file is missing or empty: {cpu_type_path}")
+    return cpu_type
+
+
+def enforce_offline_platform(cpu_type_path: Path = Path(SWARM_CPU_TYPE_FILE)) -> None:
+    cpu_type = detect_cpu_type(cpu_type_path)
+    if cpu_type != _OFFLINE_CPU_TYPE:
+        raise ValueError(
+            f"Offline attestation admits only {_OFFLINE_CPU_TYPE}, detected '{cpu_type}'"
+        )
+
+
+def apply_tdx_collateral(
+    config_data: dict,
+    qcnl_path: Path,
+    ca_path: Path,
+    mode_path: Path,
+) -> str:
+    attestation = read_attestation(config_data)
+    mode_path.parent.mkdir(parents=True, exist_ok=True)
+    qcnl_path.parent.mkdir(parents=True, exist_ok=True)
+    if attestation["mode"] == "online":
+        qcnl_path.write_text(
+            render_qcnl(_LOCAL_PCCS_URL, False),
+            encoding="utf-8",
+        )
+        if ca_path.exists():
+            ca_path.unlink()
+    else:
+        qcnl_path.write_text(
+            render_qcnl(attestation["pccsUrl"], True),
+            encoding="utf-8",
+        )
+        ca_path.parent.mkdir(parents=True, exist_ok=True)
+        ca_path.write_text(attestation["pccsCaPem"], encoding="utf-8")
+    mode_path.write_text(attestation["mode"] + "\n", encoding="utf-8")
+    return attestation["mode"]
 
 
 def run_get_vm_mode(config_path: Path, output_path: Path) -> int:
@@ -653,8 +782,11 @@ def run_get_vm_mode(config_path: Path, output_path: Path) -> int:
             raise ValueError("Invalid config: root must be a mapping")
 
         vm_mode = detect_swarm_pki_state(config_data)
-        # Fail here, before pki-cert-init and pki-authority-sync, on a bad nvtrust section.
+        # Fail here, before pki-cert-init and pki-authority-sync, on a bad section.
         read_nvtrust(config_data)
+        attestation = read_attestation(config_data)
+        if attestation["mode"] == "offline":
+            enforce_offline_platform()
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(f"{vm_mode}\n", encoding="utf-8")
         log("INFO", f"Detected vm-mode '{vm_mode}' and saved to {output_path}")
@@ -756,6 +888,25 @@ def run_configure_sync_client(config_path: Path, output_path: Path) -> int:
 
 
 
+def run_apply_tdx_collateral(
+    config_path: Path,
+    qcnl_path: Path,
+    ca_path: Path,
+    mode_path: Path,
+) -> int:
+    if not config_path.exists():
+        log("ERROR", f"Config file does not exist: {config_path}")
+        return 1
+    try:
+        config_data = load_swarm_config(config_path)
+        mode = apply_tdx_collateral(config_data, qcnl_path, ca_path, mode_path)
+        log("INFO", f"TDX collateral mode '{mode}' written to {qcnl_path}")
+        return 0
+    except Exception as error:
+        log("ERROR", f"Failed to apply TDX collateral: {error}")
+        return 1
+
+
 def generate_swarm_key(swarm_key_path: Path = Path(SWARM_KEY_FILE)) -> None:
     """Generate a 32-byte swarm key once and reuse it on subsequent runs."""
 
@@ -833,6 +984,31 @@ def main():
         help="Path to output vm-mode file",
     )
 
+    collateral_parser = subparsers.add_parser(
+        "apply-tdx-collateral",
+        help="Point QCNL at the local PCCS or the configured site PCCS",
+    )
+    collateral_parser.add_argument(
+        "--config",
+        default="/sp/swarm/config.yaml",
+        help="Path to swarm config (default: /sp/swarm/config.yaml)",
+    )
+    collateral_parser.add_argument(
+        "--qcnl",
+        default="/etc/sgx_default_qcnl.conf",
+        help="QCNL config to write",
+    )
+    collateral_parser.add_argument(
+        "--ca",
+        default=f"/usr/local/share/ca-certificates/{_PCCS_CA_NAME}",
+        help="Site PCCS CA certificate path",
+    )
+    collateral_parser.add_argument(
+        "--mode-out",
+        default="/etc/swarm/tdx-collateral-mode",
+        help="File that receives online or offline",
+    )
+
     args = parser.parse_args()
 
     if args.command == "configure":
@@ -846,6 +1022,14 @@ def main():
 
     if args.command == "get-vm-mode":
         return run_get_vm_mode(Path(args.config), Path(args.output))
+
+    if args.command == "apply-tdx-collateral":
+        return run_apply_tdx_collateral(
+            Path(args.config),
+            Path(args.qcnl),
+            Path(args.ca),
+            Path(args.mode_out),
+        )
 
     log("ERROR", f"Unsupported command: {args.command}")
     return 1

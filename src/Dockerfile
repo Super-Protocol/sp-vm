@@ -276,6 +276,7 @@ ADD rootfs/files/configs/pki-service/scripts/*.sh "${OUTPUTDIR}/usr/local/bin/pk
 ADD rootfs/files/configs/pki-service/systemd/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-vm-mode.service "${OUTPUTDIR}/etc/systemd/system"
+ADD rootfs/files/configs/pki-service/systemd/tdx-collateral.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements-healthcheck.service "${OUTPUTDIR}/etc/systemd/system"
 ADD rootfs/files/configs/pki-service/systemd/pki-vm-measurements-healthcheck.timer "${OUTPUTDIR}/etc/systemd/system"
@@ -286,16 +287,19 @@ ADD rootfs/files/configs/usr/local/bin/pki-authority-sync.sh "${OUTPUTDIR}/usr/l
 ADD rootfs/files/configs/usr/local/bin/sp-boot-attempt.sh "${OUTPUTDIR}/usr/local/bin/sp-boot-attempt.sh"
 ADD rootfs/files/configs/usr/local/bin/pki-cert-init.sh "${OUTPUTDIR}/usr/local/bin/pki-cert-init.sh"
 ADD rootfs/files/configs/usr/local/bin/pki-vm-mode.sh "${OUTPUTDIR}/usr/local/bin/pki-vm-mode.sh"
+ADD rootfs/files/configs/usr/local/bin/tdx-collateral.sh "${OUTPUTDIR}/usr/local/bin/tdx-collateral.sh"
 RUN chmod 0755 "${OUTPUTDIR}/usr/local/bin/pki-authority-sync.sh" \
           "${OUTPUTDIR}/usr/local/bin/sp-boot-attempt.sh" \
           "${OUTPUTDIR}/usr/local/bin/pki-cert-init.sh" \
-          "${OUTPUTDIR}/usr/local/bin/pki-vm-mode.sh"
+          "${OUTPUTDIR}/usr/local/bin/pki-vm-mode.sh" \
+          "${OUTPUTDIR}/usr/local/bin/tdx-collateral.sh"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-authority-sync"
 ADD rootfs/files/configs/pki-service/conf/secrets-config.yaml "${OUTPUTDIR}/etc/super/pki-authority-sync/secrets-config.yaml"
 RUN mkdir -p "${OUTPUTDIR}/etc/super/pki-cert-generator"
 ADD rootfs/files/configs/pki-service/conf/cert-gen-config-template.yaml "${OUTPUTDIR}/etc/super/pki-cert-generator/cert-gen-config-template.yaml"
 RUN chmod +x "${OUTPUTDIR}"/usr/local/bin/pki-authority/*.py
 RUN mkdir -p "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants" "${OUTPUTDIR}/etc/systemd/system/timers.target.wants"
+RUN ln -s /etc/systemd/system/tdx-collateral.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/tdx-collateral.service"
 RUN ln -s /etc/systemd/system/pki-authority-sync.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-authority-sync.service"
 RUN ln -s /etc/systemd/system/pki-cert-init.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-cert-init.service"
 RUN ln -s /etc/systemd/system/pki-vm-measurements.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pki-vm-measurements.service"

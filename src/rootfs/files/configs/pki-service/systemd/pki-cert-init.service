@@ -1,8 +1,8 @@
 [Unit]
 Description=PKI certificate initialization service
-After=sp-nvidia-gpu-ready.service pccs.service pki-vm-mode.service
+After=sp-nvidia-gpu-ready.service tdx-collateral.service pki-vm-mode.service
 Wants=pki-vm-mode.service
-Requires=sp-nvidia-gpu-ready.service pccs.service pki-vm-mode.service
+Requires=sp-nvidia-gpu-ready.service tdx-collateral.service pki-vm-mode.service
 # SUP-375: retry forever, but never faster than RestartSec.
 StartLimitIntervalSec=0
 

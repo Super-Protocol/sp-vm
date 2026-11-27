@@ -62,6 +62,7 @@ gate_units=(
     pki-cert-init.service
     pki-vm-mode.service
     pki-authority-sync.service
+    tdx-collateral.service
 )
 
 # --- tree-wide: the shape itself must be gone ---

@@ -180,11 +180,6 @@ function update_pccs_service() {
     fi
 }
 
-function enable_pccs_service() {
-    log_info "enabling PCCS service";
-    ln -sf /usr/lib/systemd/system/pccs.service "${OUTPUTDIR}/etc/systemd/system/multi-user.target.wants/pccs.service";
-}
-
 chroot_init;
 download_intel_sgx_packages;
 install_intel_sgx_packages;
@@ -192,7 +187,6 @@ install_pccs_package;
 create_pccs_config;
 prepare_ssl_key_directory;
 update_pccs_service;
-enable_pccs_service;
 set_pccs_permissions;
 rm -f "${INTEL_SGX_DOWNLOADED_PATHS[@]}";
 chroot_deinit;

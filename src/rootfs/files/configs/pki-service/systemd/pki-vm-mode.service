@@ -1,7 +1,8 @@
 [Unit]
 Description=PKI VM mode detector service
-After=network-online.target
+After=network-online.target tdx-collateral.service
 Wants=network-online.target
+Requires=tdx-collateral.service
 # SUP-375: retry forever, but never faster than RestartSec.
 StartLimitIntervalSec=0
 

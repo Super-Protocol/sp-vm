@@ -1,0 +1,21 @@
+[Unit]
+Description=Select the TDX collateral source
+After=provider-config.service
+Before=pki-vm-mode.service
+Requires=provider-config.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+TimeoutStartSec=120
+Restart=on-failure
+RestartSec=10
+ExecStart=/usr/local/bin/tdx-collateral.sh
+# A failed boot attempt drops every Requires= dependent with JOB_DEPENDENCY,
+# and Restart= cannot revive a unit whose start job never ran. pki-vm-mode
+# then revives the PKI units behind it.
+ExecStartPost=-/usr/bin/systemctl --no-block start pki-vm-mode.service pki-cert-init.service
+
+[Install]
+WantedBy=multi-user.target
